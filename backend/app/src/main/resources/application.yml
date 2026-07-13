@@ -1,0 +1,22 @@
+server:
+  port: 8080   # Admin API + dashboard. API simulasi memakai port per-simulator.
+
+spring:
+  application:
+    name: behavio
+  datasource:
+    url: ${BEHAVIO_DB_URL:jdbc:postgresql://localhost:5432/behavio}
+    username: ${BEHAVIO_DB_USER:behavio}
+    password: ${BEHAVIO_DB_PASSWORD:behavio}
+  jpa:
+    hibernate:
+      ddl-auto: none        # skema dikelola Liquibase, bukan Hibernate
+    open-in-view: false
+  liquibase:
+    change-log: classpath:db/changelog/db.changelog-master.yaml
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

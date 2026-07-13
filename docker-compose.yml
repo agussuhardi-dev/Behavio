@@ -1,0 +1,20 @@
+services:
+  postgres:
+    image: postgres:17
+    container_name: behavio-postgres
+    environment:
+      POSTGRES_DB: behavio
+      POSTGRES_USER: behavio
+      POSTGRES_PASSWORD: behavio
+    ports:
+      - "5432:5432"
+    volumes:
+      - behavio-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U behavio -d behavio"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  behavio-pgdata:
