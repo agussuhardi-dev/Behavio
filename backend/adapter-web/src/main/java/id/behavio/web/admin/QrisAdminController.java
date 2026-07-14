@@ -50,6 +50,15 @@ public class QrisAdminController {
                 "note", r.reason()));
     }
 
+    @PostMapping("/{referenceNo}/expire")
+    public ResponseEntity<?> expire(@PathVariable UUID id, @PathVariable String referenceNo) {
+        QrisService.PayResult r = service.adminExpire(id, referenceNo);
+        if (!r.found()) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(Map.of("referenceNo", referenceNo, "note", r.reason()));
+    }
+
     /** Ringkasan QR untuk tampilan dashboard. */
     record QrView(String referenceNo, String partnerReferenceNo, String merchantId, String qrType,
                  String amount, String currency, String status, boolean hasCallback) {

@@ -1,6 +1,7 @@
 package id.behavio.web.admin;
 
 import id.behavio.core.port.AccountAdmin;
+import org.springframework.dao.InvalidDataAccessApiUsageException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -37,7 +38,7 @@ public class AccountAdminController {
         try {
             UUID rowId = admin.createPartner(id, partnerId, body.get("publicKeyPem"), body.get("clientSecret"));
             return ResponseEntity.ok(Map.of("id", rowId, "partnerId", partnerId));
-        } catch (IllegalArgumentException e) {
+        } catch (IllegalArgumentException | InvalidDataAccessApiUsageException e) {
             return ResponseEntity.status(409).body(Map.of("error", e.getMessage()));
         }
     }
@@ -64,7 +65,7 @@ public class AccountAdminController {
         try {
             UUID accId = admin.createAccount(id, partnerRowId, accountNo, str(body.get("holderName")), balance);
             return ResponseEntity.ok(Map.of("id", accId, "accountNo", accountNo));
-        } catch (IllegalArgumentException e) {
+        } catch (IllegalArgumentException | InvalidDataAccessApiUsageException e) {
             return ResponseEntity.status(409).body(Map.of("error", e.getMessage()));
         }
     }
@@ -72,12 +73,8 @@ public class AccountAdminController {
     @PutMapping("/accounts/{accountId}/balance")
     public ResponseEntity<?> setBalance(@PathVariable UUID id, @PathVariable UUID accountId,
                                         @RequestBody Map<String, Object> body) {
-        try {
-            admin.setBalance(id, accountId, decimal(body.get("balance")));
-            return ResponseEntity.ok(Map.of("status", "updated"));
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        }
+        admin.setBalance(id, accountId, decimal(body.get("balance")));
+        return ResponseEntity.ok(Map.of("status", "updated"));
     }
 
     @DeleteMapping("/accounts/{accountId}")

@@ -4,6 +4,7 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import id.behavio.core.engine.SimRequest;
 import id.behavio.core.engine.SimResponse;
+import id.behavio.core.port.EndpointRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -16,6 +17,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
@@ -24,6 +26,10 @@ import java.util.concurrent.Executors;
  * Port/Server Manager (design.md §6.3): buka-tutup server HTTP per-simulator secara
  * runtime. Tiap simulator = satu port; semua mengarah ke satu mesin eksekusi. Memakai
  * JDK HttpServer agar isolasi per-port nyata (stop = connection-refused → basis Fault A).
+ *
+ * Routing DATA-DRIVEN via {@link EndpointRegistry}: path setiap operasi SNAP dapat
+ * di-custom per-simulator dari dashboard (design.md §2 — bank berbeda kerap punya
+ * path/versi berbeda, mis. BRI vs ASPI standar). Path yang tak dikenal → 404 eksplisit.
  */
 @Component
 public class SimulatorServerManager {
@@ -35,17 +41,20 @@ public class SimulatorServerManager {
     private final AccessTokenService accessTokenService;
     private final VirtualAccountService virtualAccountService;
     private final QrisService qrisService;
+    private final EndpointRegistry endpointRegistry;
     private final Map<UUID, HttpServer> servers = new ConcurrentHashMap<>();
 
     public SimulatorServerManager(SimulationExecutor executor, SnapRequestMapper mapper,
                                   AccessTokenService accessTokenService,
                                   VirtualAccountService virtualAccountService,
-                                  QrisService qrisService) {
+                                  QrisService qrisService,
+                                  EndpointRegistry endpointRegistry) {
         this.executor = executor;
         this.mapper = mapper;
         this.accessTokenService = accessTokenService;
         this.virtualAccountService = virtualAccountService;
         this.qrisService = qrisService;
+        this.endpointRegistry = endpointRegistry;
     }
 
     public synchronized void start(UUID simulatorId, int port) {
@@ -83,71 +92,62 @@ public class SimulatorServerManager {
             Map<String, String> headers = headers(exchange);
             String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
 
-            // Endpoint khusus: Access Token B2B (bukan alur scenario/engine)
-            if ("POST".equalsIgnoreCase(method) && path.endsWith("/access-token/b2b")) {
-                AccessTokenService.Result r = accessTokenService.issue(simulatorId, headers, body);
-                write(exchange, r.status(), Map.of("Content-Type", "application/json"), r.body());
+            Optional<String> operation = endpointRegistry.resolveOperation(simulatorId, method, path);
+            if (operation.isEmpty()) {
+                write(exchange, 404, Map.of("Content-Type", "application/json"),
+                        "{\"responseCode\":\"4040400\",\"responseMessage\":\"Path not registered on this simulator\"}");
                 return;
             }
 
-            // Endpoint khusus: Virtual Account (design.md Lampiran A2) — CRUD stateful,
-            // bukan alur scenario/rule seperti transfer.
-            if ("POST".equalsIgnoreCase(method) && path.endsWith("/transfer-va/create-va")) {
-                VirtualAccountService.Result r = virtualAccountService.create(simulatorId, method, path, headers, body);
-                write(exchange, r.status(), Map.of("Content-Type", "application/json"), r.body());
-                return;
-            }
-            if ("POST".equalsIgnoreCase(method) && path.endsWith("/transfer-va/status")) {
-                VirtualAccountService.Result r = virtualAccountService.inquiry(simulatorId, method, path, headers, body);
-                write(exchange, r.status(), Map.of("Content-Type", "application/json"), r.body());
-                return;
-            }
-            if ("DELETE".equalsIgnoreCase(method) && path.endsWith("/transfer-va/delete-va")) {
-                VirtualAccountService.Result r = virtualAccountService.delete(simulatorId, method, path, headers, body);
-                write(exchange, r.status(), Map.of("Content-Type", "application/json"), r.body());
-                return;
-            }
-
-            // Endpoint khusus: QRIS MPM (design.md Lampiran A3) — evaluasi via
-            // Scenario/Rule yang sama dengan transfer (customizable dari dashboard).
-            if ("POST".equalsIgnoreCase(method) && path.endsWith("/qr/qr-mpm-generate")) {
-                QrisService.Result r = qrisService.generate(simulatorId, method, path, headers, body);
-                write(exchange, r.status(), Map.of("Content-Type", "application/json"), r.body());
-                return;
-            }
-            if ("POST".equalsIgnoreCase(method) && path.endsWith("/qr/qr-mpm-query")) {
-                QrisService.Result r = qrisService.query(simulatorId, method, path, headers, body);
-                write(exchange, r.status(), Map.of("Content-Type", "application/json"), r.body());
-                return;
-            }
-            if ("POST".equalsIgnoreCase(method) && path.endsWith("/qr/qr-mpm-refund")) {
-                QrisService.Result r = qrisService.refund(simulatorId, method, path, headers, body);
-                write(exchange, r.status(), Map.of("Content-Type", "application/json"), r.body());
-                return;
-            }
-
-            SimRequest request = new SimRequest(method, path, headers, mapper.toFields(body), body);
-            SimResponse response = executor.execute(simulatorId, request);
-
-            // Efek fisik fault diterapkan PASCA-commit (design.md §4.2)
-            SimResponse.Fault fault = response.fault();
-            if (fault != null && fault.delayMillis() > 0) {
-                try {
-                    Thread.sleep(fault.delayMillis());
-                } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
+            switch (operation.get()) {
+                case "access-token" -> {
+                    AccessTokenService.Result r = accessTokenService.issue(simulatorId, headers, body);
+                    write(exchange, r.status(), Map.of("Content-Type", "application/json"), r.body());
                 }
+                case "va-create" -> {
+                    VirtualAccountService.Result r = virtualAccountService.create(simulatorId, method, path, headers, body);
+                    write(exchange, r.status(), Map.of("Content-Type", "application/json"), r.body());
+                }
+                case "va-status" -> {
+                    VirtualAccountService.Result r = virtualAccountService.inquiry(simulatorId, method, path, headers, body);
+                    write(exchange, r.status(), Map.of("Content-Type", "application/json"), r.body());
+                }
+                case "va-delete" -> {
+                    VirtualAccountService.Result r = virtualAccountService.delete(simulatorId, method, path, headers, body);
+                    write(exchange, r.status(), Map.of("Content-Type", "application/json"), r.body());
+                }
+                case "qris-generate" -> {
+                    QrisService.Result r = qrisService.generate(simulatorId, method, path, headers, body);
+                    write(exchange, r.status(), Map.of("Content-Type", "application/json"), r.body());
+                }
+                case "qris-query" -> {
+                    QrisService.Result r = qrisService.query(simulatorId, method, path, headers, body);
+                    write(exchange, r.status(), Map.of("Content-Type", "application/json"), r.body());
+                }
+                case "qris-refund" -> {
+                    QrisService.Result r = qrisService.refund(simulatorId, method, path, headers, body);
+                    write(exchange, r.status(), Map.of("Content-Type", "application/json"), r.body());
+                }
+                case "qris-cancel", "qris-expire" -> {
+                    QrisService.Result r = qrisService.cancel(simulatorId, method, path, headers, body);
+                    write(exchange, r.status(), Map.of("Content-Type", "application/json"), r.body());
+                }
+                case "qris-decode" -> {
+                    QrisService.Result r = qrisService.decode(simulatorId, method, path, headers, body);
+                    write(exchange, r.status(), Map.of("Content-Type", "application/json"), r.body());
+                }
+                case "qris-payment" -> {
+                    QrisService.Result r = qrisService.payment(simulatorId, method, path, headers, body);
+                    write(exchange, r.status(), Map.of("Content-Type", "application/json"), r.body());
+                }
+                case "qris-apply-ott" -> {
+                    QrisService.Result r = qrisService.applyOtt(simulatorId, method, path, headers, body);
+                    write(exchange, r.status(), Map.of("Content-Type", "application/json"), r.body());
+                }
+                case "transfer" -> handleTransfer(simulatorId, method, path, headers, body, exchange);
+                default -> write(exchange, 404, Map.of("Content-Type", "application/json"),
+                        "{\"responseCode\":\"4040400\",\"responseMessage\":\"Operation not implemented\"}");
             }
-            if (fault != null && fault.drop()) {
-                // commit-then-drop: state sudah berubah, respons TIDAK dikirim (koneksi ditutup)
-                log.info("Simulator {} FAULT commit-then-drop — respons di-drop", simulatorId);
-                return;
-            }
-            String outBody = response.body();
-            if (fault != null && fault.corrupt()) {
-                outBody = corrupt(outBody);
-            }
-            write(exchange, response.httpStatus(), response.headers(), outBody);
         } catch (Exception e) {
             log.warn("Simulator {} error memproses request: {}", simulatorId, e.toString());
             write(exchange, 500, Map.of("Content-Type", "application/json"),
@@ -155,6 +155,32 @@ public class SimulatorServerManager {
         } finally {
             exchange.close();
         }
+    }
+
+    private void handleTransfer(UUID simulatorId, String method, String path, Map<String, String> headers,
+                                String body, HttpExchange exchange) throws IOException {
+        SimRequest request = new SimRequest(method, path, headers, mapper.toFields(body), body);
+        SimResponse response = executor.execute(simulatorId, request);
+
+        // Efek fisik fault diterapkan PASCA-commit (design.md §4.2)
+        SimResponse.Fault fault = response.fault();
+        if (fault != null && fault.delayMillis() > 0) {
+            try {
+                Thread.sleep(fault.delayMillis());
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+            }
+        }
+        if (fault != null && fault.drop()) {
+            // commit-then-drop: state sudah berubah, respons TIDAK dikirim (koneksi ditutup)
+            log.info("Simulator {} FAULT commit-then-drop — respons di-drop", simulatorId);
+            return;
+        }
+        String outBody = response.body();
+        if (fault != null && fault.corrupt()) {
+            outBody = corrupt(outBody);
+        }
+        write(exchange, response.httpStatus(), response.headers(), outBody);
     }
 
     /** Ambil header dengan nama kanonik SNAP uppercase (X-PARTNER-ID, X-EXTERNAL-ID, ...). */

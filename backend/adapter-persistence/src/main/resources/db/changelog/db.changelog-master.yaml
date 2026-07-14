@@ -5,3 +5,9 @@ databaseChangeLog:
       file: db/changelog/changes/002-webhook-outbox.sql
   - include:
       file: db/changelog/changes/003-scenario-definition.sql
+  - include:
+      file: db/changelog/changes/004-endpoint-operation.sql
+  - include:
+      file: db/changelog/changes/005-qris-cancel.sql
+  - include:
+      file: db/changelog/changes/006-endpoint-headers.sql

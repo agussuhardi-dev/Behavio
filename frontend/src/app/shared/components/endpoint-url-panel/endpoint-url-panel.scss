@@ -1,0 +1,112 @@
+.epu {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+
+  &__msg {
+    font-size: 12px;
+    color: #5b7cfa;
+    padding: 4px 0 8px;
+  }
+}
+
+.epu-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 0;
+  border-top: 1px solid rgba(120, 120, 120, 0.12);
+  flex-wrap: wrap;
+
+  &:first-child { border-top: none; }
+
+  &__label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 190px;
+    font-size: 12.5px;
+  }
+  &__method {
+    font-size: 10px;
+    font-weight: 700;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: rgba(91, 124, 250, 0.16);
+    color: #5b7cfa;
+  }
+  &__tag {
+    font-size: 9.5px;
+    font-weight: 700;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: rgba(240, 173, 78, 0.18);
+    color: #e0912f;
+  }
+  &__field {
+    flex: 1;
+    min-width: 220px;
+    margin-bottom: -18px;
+    font-family: ui-monospace, monospace;
+    font-size: 12px;
+  }
+  &__hdr-badge {
+    font-size: 9px;
+    font-weight: 700;
+    padding: 1px 5px;
+    border-radius: 4px;
+    background: rgba(46, 204, 113, 0.18);
+    color: #24a35a;
+  }
+}
+
+.epu-headers {
+  border: 1px solid rgba(120, 120, 120, 0.16);
+  border-radius: 8px;
+  padding: 10px;
+  margin: 4px 0 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+
+  &__head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    mat-icon { font-size: 16px; width: 16px; height: 16px; }
+  }
+  &__row, &__add {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  &__key {
+    width: 160px;
+    margin-bottom: -18px;
+  }
+  &__val {
+    flex: 1;
+    min-width: 160px;
+    margin-bottom: -18px;
+  }
+  &__actions {
+    display: flex;
+    gap: 8px;
+  }
+}
+
+.epu-add {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-top: 1px solid rgba(120, 120, 120, 0.16);
+  flex-wrap: wrap;
+  margin-top: 4px;
+
+  &__method { width: 100px; margin-bottom: -18px; }
+  &__path { flex: 1; min-width: 180px; margin-bottom: -18px; }
+}

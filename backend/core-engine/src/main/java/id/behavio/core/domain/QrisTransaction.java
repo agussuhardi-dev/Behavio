@@ -27,6 +27,7 @@ public class QrisTransaction {
     /** Nominal aktual yang dibayar (diisi saat markPaid — wajib untuk static). */
     private BigDecimal paidAmount;
     private BigDecimal refundedAmount;
+    private Instant paidAt;
     private final Instant createdAt;
 
     public QrisTransaction(UUID id, UUID simulatorId, UUID partnerId, String partnerReferenceNo,
@@ -52,14 +53,34 @@ public class QrisTransaction {
         this.createdAt = createdAt;
     }
 
-    public void markPaid(BigDecimal paidAmount) {
+    public void markPaid(BigDecimal paidAmount, Instant paidAt) {
         this.status = QrisStatus.PAID;
         this.paidAmount = paidAmount;
+        this.paidAt = paidAt;
     }
 
-    public void markRefunded(BigDecimal refundedAmount) {
-        this.status = QrisStatus.REFUNDED;
-        this.refundedAmount = refundedAmount;
+    public void markExpired() {
+        this.status = QrisStatus.EXPIRED;
+    }
+
+    /**
+     * Terapkan refund (mendukung partial): {@code refundedAmount} terakumulasi;
+     * status berubah jadi REFUNDED hanya saat kumulatif mencapai paidAmount (full).
+     * Selain itu tetap PAID (sudah sebagian dikembalikan, masih bisa direfund lagi).
+     */
+    public void applyRefund(BigDecimal amount) {
+        BigDecimal already = this.refundedAmount == null ? BigDecimal.ZERO : this.refundedAmount;
+        this.refundedAmount = already.add(amount);
+        if (this.paidAmount != null && this.refundedAmount.compareTo(this.paidAmount) >= 0) {
+            this.status = QrisStatus.REFUNDED;
+        }
+    }
+
+    /** Sisa yang masih bisa direfund (paidAmount - refundedAmount kumulatif). */
+    public BigDecimal refundableAmount() {
+        if (paidAmount == null) return BigDecimal.ZERO;
+        BigDecimal already = refundedAmount == null ? BigDecimal.ZERO : refundedAmount;
+        return paidAmount.subtract(already);
     }
 
     public UUID id() { return id; }
@@ -77,5 +98,6 @@ public class QrisTransaction {
     public QrisStatus status() { return status; }
     public BigDecimal paidAmount() { return paidAmount; }
     public BigDecimal refundedAmount() { return refundedAmount; }
+    public Instant paidAt() { return paidAt; }
     public Instant createdAt() { return createdAt; }
 }

@@ -102,12 +102,25 @@
 
           <!-- Edit request/response -->
           <div class="sim-editline">
-            <button mat-stroked-button (click)="editing() === s.id ? closeEditor() : openEditor(s)">
-              <mat-icon>edit</mat-icon>
-              {{ editing() === s.id ? 'Tutup editor' : 'Edit request/response' }}
+            <button mat-stroked-button [disabled]="editorLoading()" (click)="editing() === s.id ? closeEditor() : openEditor(s)">
+              <ng-container>
+                @if (editorLoading() && editing() !== s.id) {
+                  <mat-icon class="spin">autorenew</mat-icon> Memuat…
+                } @else {
+                  <mat-icon>edit</mat-icon>
+                  {{ editing() === s.id ? 'Tutup editor' : 'Edit request/response' }}
+                }
+              </ng-container>
             </button>
             <span class="sim-editline__hint">Ubah kondisi & isi response scenario "{{ scenarioFor(s.id) }}"</span>
           </div>
+
+          <!-- Error tetap terlihat walau panel gagal terbuka (mis. backend tak terjangkau) -->
+          @if (editorError() && editing() !== s.id) {
+            <div class="editor__msg editor__msg--err">
+              <mat-icon>error</mat-icon> {{ editorError() }}
+            </div>
+          }
 
           @if (editing() === s.id) {
             <div class="editor">
@@ -115,6 +128,14 @@
                 <mat-icon>tune</mat-icon>
                 Definisi scenario: <b>{{ editorScenario() }}</b>
               </div>
+              @if (editorExample(); as ex) {
+                <div class="editor__example">
+                  <div class="editor__example-head">
+                    <mat-icon>lightbulb</mat-icon> Contoh request untuk uji kondisi ini
+                  </div>
+                  <pre>{{ ex }}</pre>
+                </div>
+              }
               <textarea
                 class="editor__area"
                 spellcheck="false"
@@ -296,6 +317,20 @@
                   </button>
                 </div>
               </div>
+            </div>
+          }
+
+          <!-- URL Endpoint (bisa di-custom, mis. gaya BRI /intrabank/snap/v2.0/...) -->
+          <div class="sim-editline">
+            <button mat-stroked-button (click)="toggleEpu(s)">
+              <mat-icon>link</mat-icon>
+              {{ epuOpen() === s.id ? 'Tutup URL Endpoint' : 'URL Endpoint' }}
+            </button>
+            <span class="sim-editline__hint">Sesuaikan path tiap operasi — bank berbeda kerap punya path/versi berbeda</span>
+          </div>
+          @if (epuOpen() === s.id) {
+            <div class="editor">
+              <app-endpoint-url-panel [simulatorId]="s.id" [operations]="bankOperations" />
             </div>
           }
 

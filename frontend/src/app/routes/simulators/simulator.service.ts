@@ -9,6 +9,15 @@ export interface Simulator {
   status: 'RUNNING' | 'STOPPED';
 }
 
+export interface EndpointConfig {
+  operation: string;
+  method: string;
+  path: string;
+  defaultPath: string;
+  label: string;
+  headers?: string;
+}
+
 export interface PartnerView {
   id: string;
   partnerId: string;
@@ -104,20 +113,25 @@ export class SimulatorService {
     return this.http.delete(`${this.base}/${id}`);
   }
 
-  /** @param product Endpoint mana yang diedit: 'transfer' (default) atau 'qris'. */
-  setScenario(id: string, name: string, product: 'transfer' | 'qris' = 'transfer') {
+  /** @param product Endpoint mana yang diedit: 'transfer', 'qris', 'qris-query', dst. */
+  setScenario(id: string, name: string, product: string = 'transfer') {
     return this.http.put(`${this.base}/${id}/active-scenario?product=${product}`, { name });
   }
 
+  /** Scenario yang SEDANG aktif di server — agar dropdown dashboard sinkron. */
+  getActiveScenario(id: string, product: string = 'transfer') {
+    return this.http.get<{ name: string }>(`${this.base}/${id}/scenarios/active?product=${product}`);
+  }
+
   /** Ambil definisi JSON scenario (custom bila ada, selain itu preset blueprint). */
-  getDefinition(id: string, scenario: string, product: 'transfer' | 'qris' = 'transfer') {
+  getDefinition(id: string, scenario: string, product: string = 'transfer') {
     return this.http.get(`${this.base}/${id}/scenarios/${encodeURIComponent(scenario)}/definition?product=${product}`, {
       responseType: 'text',
     });
   }
 
   /** Simpan definisi custom (override request cond + response). */
-  saveDefinition(id: string, scenario: string, json: string, product: 'transfer' | 'qris' = 'transfer') {
+  saveDefinition(id: string, scenario: string, json: string, product: string = 'transfer') {
     return this.http.put(
       `${this.base}/${id}/scenarios/${encodeURIComponent(scenario)}/definition?product=${product}`,
       json,
@@ -126,7 +140,7 @@ export class SimulatorService {
   }
 
   /** Kembalikan scenario ke preset (hapus override). */
-  resetDefinition(id: string, scenario: string, product: 'transfer' | 'qris' = 'transfer') {
+  resetDefinition(id: string, scenario: string, product: string = 'transfer') {
     return this.http.delete(
       `${this.base}/${id}/scenarios/${encodeURIComponent(scenario)}/definition?product=${product}`
     );
@@ -196,5 +210,39 @@ export class SimulatorService {
       `${this.base}/${id}/qris/${encodeURIComponent(referenceNo)}/pay`,
       amount ? { amount } : {}
     );
+  }
+
+  /** Batalkan/kedaluwarsakan QR yang belum dibayar (hanya berlaku untuk status ACTIVE). */
+  expireQris(id: string, referenceNo: string) {
+    return this.http.post<{ note: string }>(
+      `${this.base}/${id}/qris/${encodeURIComponent(referenceNo)}/expire`,
+      {}
+    );
+  }
+
+  // ---- URL Endpoint (path dapat di-custom per bank, design.md §2) ----
+
+  listEndpoints(id: string) {
+    return this.http.get<EndpointConfig[]>(`${this.base}/${id}/endpoints`);
+  }
+
+  addEndpoint(id: string, method: string, path: string, headers?: string, label?: string) {
+    return this.http.post(`${this.base}/${id}/endpoints`, { method, path, headers, label });
+  }
+
+  deleteEndpoint(id: string, operation: string) {
+    return this.http.delete(`${this.base}/${id}/endpoints/${operation}`);
+  }
+
+  updateEndpointPath(id: string, operation: string, path: string) {
+    return this.http.put(`${this.base}/${id}/endpoints/${operation}`, { path });
+  }
+
+  updateEndpointMeta(id: string, operation: string, method: string, headers: string) {
+    return this.http.put(`${this.base}/${id}/endpoints/${operation}`, { method, headers });
+  }
+
+  resetEndpointPath(id: string, operation: string) {
+    return this.http.put(`${this.base}/${id}/endpoints/${operation}`, { path: null });
   }
 }

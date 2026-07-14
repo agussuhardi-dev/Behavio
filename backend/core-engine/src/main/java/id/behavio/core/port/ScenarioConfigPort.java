@@ -1,6 +1,7 @@
 package id.behavio.core.port;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -13,6 +14,9 @@ public interface ScenarioConfigPort {
 
     /** Nama semua scenario untuk endpoint {@code product} pada simulator. */
     List<String> scenarioNames(UUID simulatorId, String product);
+
+    /** Nama scenario yang SEDANG aktif untuk endpoint {@code product} — agar dashboard sinkron. */
+    Optional<String> activeScenarioName(UUID simulatorId, String product);
 
     /**
      * Definisi efektif scenario sebagai JSON: definisi custom bila ada di DB,

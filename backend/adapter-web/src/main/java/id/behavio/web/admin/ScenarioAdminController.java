@@ -27,25 +27,33 @@ public class ScenarioAdminController {
 
     @GetMapping
     public List<String> list(@PathVariable UUID id, @RequestParam(defaultValue = "transfer") String product) {
-        return scenarios.scenarioNames(id, product);
+        List<String> names = scenarios.scenarioNames(id, product);
+        return names.isEmpty() ? List.of("Normal") : names;
+    }
+
+    /** Scenario yang SEDANG aktif — dipakai dashboard agar dropdown sinkron dengan server. */
+    @GetMapping("/active")
+    public ResponseEntity<?> active(@PathVariable UUID id, @RequestParam(defaultValue = "transfer") String product) {
+        String name = scenarios.activeScenarioName(id, product).orElse("Normal");
+        return ResponseEntity.ok(Map.of("name", name));
     }
 
     @GetMapping(value = "/{name}/definition", produces = MediaType.TEXT_PLAIN_VALUE)
     public String get(@PathVariable UUID id, @PathVariable String name,
                       @RequestParam(defaultValue = "transfer") String product) {
-        return scenarios.effectiveDefinition(id, product, name);
+        try {
+            return scenarios.effectiveDefinition(id, product, name);
+        } catch (Exception e) {
+            return scenarios.effectiveDefinition(id, product, "Normal");
+        }
     }
 
     @PutMapping(value = "/{name}/definition", consumes = MediaType.TEXT_PLAIN_VALUE)
     public ResponseEntity<?> save(@PathVariable UUID id, @PathVariable String name,
                                   @RequestParam(defaultValue = "transfer") String product,
                                   @RequestBody String json) {
-        try {
-            scenarios.saveDefinition(id, product, name, json);
-            return ResponseEntity.ok(Map.of("status", "saved", "scenario", name));
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        }
+        scenarios.saveDefinition(id, product, name, json);
+        return ResponseEntity.ok(Map.of("status", "saved", "scenario", name));
     }
 
     @DeleteMapping("/{name}/definition")

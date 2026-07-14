@@ -63,6 +63,7 @@ public class DemoSeeder implements CommandLineRunner {
         ep.simulatorId = simId;
         ep.method = TransferIntrabankBlueprint.METHOD;
         ep.path = TransferIntrabankBlueprint.PATH;
+        ep.operation = "transfer";
         em.persist(ep);
 
         UUID normalId = UUID.randomUUID();
@@ -86,6 +87,7 @@ public class DemoSeeder implements CommandLineRunner {
         qrisEp.simulatorId = simId;
         qrisEp.method = QrisMpmBlueprint.METHOD;
         qrisEp.path = QrisMpmBlueprint.PATH;
+        qrisEp.operation = "qris-generate";
         em.persist(qrisEp);
 
         UUID qrisNormalId = UUID.randomUUID();
@@ -94,6 +96,17 @@ public class DemoSeeder implements CommandLineRunner {
         em.persist(scenario(UUID.randomUUID(), qrisEndpointId, "Service Down"));
         qrisEp.activeScenarioId = qrisNormalId;
         em.merge(qrisEp);
+
+        for (id.behavio.core.blueprint.SnapOperations.Op op : id.behavio.core.blueprint.SnapOperations.ALL) {
+            if ("transfer".equals(op.key()) || "qris-generate".equals(op.key())) continue;
+            EndpointEntity plain = new EndpointEntity();
+            plain.id = UUID.randomUUID();
+            plain.simulatorId = simId;
+            plain.method = op.method();
+            plain.path = op.defaultPath();
+            plain.operation = op.key();
+            em.persist(plain);
+        }
 
         log.info("[seed] demo siap — simulator={} port={} partner=PARTNER001 " +
                 "source=1234567890(1.000.000) benef=9876543210(0). Scenario aktif: Normal. " +

@@ -72,6 +72,11 @@ public final class QrisMpmBlueprint {
         body.put("referenceNo", "{{referenceNo}}");
         body.put("partnerReferenceNo", "{{partnerReferenceNo}}");
         body.put("qrContent", "{{qrContent}}");
+        body.put("qrUrl", "{{qrUrl}}");
+        body.put("redirectUrl", "{{redirectUrl}}");
+        body.put("merchantName", "{{merchantName}}");
+        body.put("storeId", "{{storeId}}");
+        body.put("terminalId", "{{terminalId}}");
         Map<String, Object> additionalInfo = new LinkedHashMap<>();
         additionalInfo.put("merchantId", "{{merchantId}}");
         body.put("additionalInfo", additionalInfo);

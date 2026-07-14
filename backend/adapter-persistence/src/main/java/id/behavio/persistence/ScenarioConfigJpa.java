@@ -13,12 +13,17 @@ import java.util.UUID;
  * mana pun (generik lewat {@code product} → method+path, lihat {@link ProductEndpoints}).
  * Definisi custom disimpan di kolom scenarios.definition; bila kosong, dikembalikan
  * serialisasi preset blueprint sebagai titik awal edit.
+ *
+ * Termasuk lazy-provisioning: bila simulator belum punya endpoint QRIS (simulator lama
+ * sebelum Fase 4), endpoint + scenario otomatis dibuat saat pertama kali diakses.
  */
 @Repository
 public class ScenarioConfigJpa implements ScenarioConfigPort {
 
     private final JdbcClient db;
     private final ScenarioCodec codec = new ScenarioCodec();
+
+    private static final String[] QRIS_SCENARIO_NAMES = {"Normal", "Merchant Diblokir", "Service Down"};
 
     public ScenarioConfigJpa(JdbcClient db) {
         this.db = db;
@@ -27,6 +32,7 @@ public class ScenarioConfigJpa implements ScenarioConfigPort {
     @Override
     public List<String> scenarioNames(UUID simulatorId, String product) {
         ProductEndpoints.Endpoint ep = ProductEndpoints.resolve(product);
+        ensureProvisioned(simulatorId, product, ep);
         return db.sql("""
                 SELECT s.name FROM scenarios s
                 JOIN endpoints e ON s.endpoint_id = e.id
@@ -37,8 +43,22 @@ public class ScenarioConfigJpa implements ScenarioConfigPort {
     }
 
     @Override
+    public Optional<String> activeScenarioName(UUID simulatorId, String product) {
+        ProductEndpoints.Endpoint ep = ProductEndpoints.resolve(product);
+        ensureProvisioned(simulatorId, product, ep);
+        return db.sql("""
+                SELECT s.name FROM scenarios s
+                JOIN endpoints e ON e.id = s.endpoint_id
+                WHERE e.simulator_id = ? AND e.path = ? AND e.active_scenario_id = s.id
+                """)
+                .param(simulatorId).param(ep.path())
+                .query(String.class).optional();
+    }
+
+    @Override
     public String effectiveDefinition(UUID simulatorId, String product, String scenarioName) {
         ProductEndpoints.Endpoint ep = ProductEndpoints.resolve(product);
+        ensureProvisioned(simulatorId, product, ep);
         Optional<String> custom = db.sql("""
                 SELECT COALESCE(s.definition::text, '') FROM scenarios s
                 JOIN endpoints e ON s.endpoint_id = e.id
@@ -56,6 +76,7 @@ public class ScenarioConfigJpa implements ScenarioConfigPort {
     public void saveDefinition(UUID simulatorId, String product, String scenarioName, String definitionJson) {
         codec.parse(scenarioName, definitionJson); // validasi sebelum simpan
         ProductEndpoints.Endpoint ep = ProductEndpoints.resolve(product);
+        ensureProvisioned(simulatorId, product, ep);
         int updated = db.sql("""
                 UPDATE scenarios s SET definition = ?::jsonb
                 FROM endpoints e
@@ -71,6 +92,7 @@ public class ScenarioConfigJpa implements ScenarioConfigPort {
     @Override
     public void resetDefinition(UUID simulatorId, String product, String scenarioName) {
         ProductEndpoints.Endpoint ep = ProductEndpoints.resolve(product);
+        ensureProvisioned(simulatorId, product, ep);
         db.sql("""
                 UPDATE scenarios s SET definition = NULL
                 FROM endpoints e
@@ -78,5 +100,41 @@ public class ScenarioConfigJpa implements ScenarioConfigPort {
                 """)
                 .param(simulatorId).param(ep.path()).param(scenarioName)
                 .update();
+    }
+
+    /**
+     * Pastikan simulator punya endpoint + scenario baseline untuk product QRIS apa pun.
+     * product="qris" → 3 scenario (Normal, Merchant Diblokir, Service Down).
+     * product QRIS lain → 1 scenario (Normal).
+     */
+    private void ensureProvisioned(UUID simulatorId, String product, ProductEndpoints.Endpoint ep) {
+        String p = product == null ? "" : product.trim().toLowerCase();
+        if (!p.startsWith("qris")) return;
+
+        boolean exists = db.sql("SELECT 1 FROM endpoints WHERE simulator_id = ? AND path = ?")
+                .param(simulatorId).param(ep.path())
+                .query(Integer.class).optional().isPresent();
+        if (exists) return;
+
+        UUID endpointId = UUID.randomUUID();
+        String operation = p.equals("qris") ? "qris-generate" : p;
+        db.sql("INSERT INTO endpoints (id, simulator_id, method, path, operation) VALUES (?, ?, ?, ?, ?)")
+                .param(endpointId).param(simulatorId).param(ep.method()).param(ep.path()).param(operation)
+                .update();
+
+        String[] names = p.equals("qris") ? QRIS_SCENARIO_NAMES : new String[]{"Normal"};
+        UUID normalId = null;
+        for (String scName : names) {
+            UUID scId = UUID.randomUUID();
+            if ("Normal".equals(scName)) normalId = scId;
+            db.sql("INSERT INTO scenarios (id, endpoint_id, name) VALUES (?, ?, ?)")
+                    .param(scId).param(endpointId).param(scName)
+                    .update();
+        }
+        if (normalId != null) {
+            db.sql("UPDATE endpoints SET active_scenario_id = ? WHERE id = ?")
+                    .param(normalId).param(endpointId)
+                    .update();
+        }
     }
 }

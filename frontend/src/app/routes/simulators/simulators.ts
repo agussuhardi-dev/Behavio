@@ -15,6 +15,7 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 
 import { AccountView, PartnerView, SCENARIOS, Scenario, Simulator, SimulatorService, VirtualAccountView } from './simulator.service';
 import { SimulatorFormDialog, SimulatorFormResult } from './simulator-form-dialog';
+import { EndpointUrlPanel } from '../../shared/components/endpoint-url-panel/endpoint-url-panel';
 
 interface LiveEvent {
   method: string;
@@ -42,6 +43,7 @@ interface LiveEvent {
     MatProgressBarModule,
     MatSelectModule,
     MatTooltipModule,
+    EndpointUrlPanel,
   ],
   templateUrl: './simulators.html',
   styleUrl: './simulators.scss',
@@ -64,6 +66,21 @@ export class Simulators implements OnInit, OnDestroy {
   readonly editorText = signal<string>('');
   readonly editorError = signal<string>('');
   readonly editorSaved = signal<boolean>(false);
+  readonly editorLoading = signal<boolean>(false);
+
+  /** Contoh request agar user paham field apa yang dipakai kondisi scenario. */
+  editorExample(): string {
+    return `POST /v1.0/transfer-intrabank
+Header: X-PARTNER-ID: PARTNER001
+Header: X-EXTERNAL-ID: TRX-001
+
+{
+  "partnerReferenceNo": "PREF-001",
+  "amount": { "value": "50000.00", "currency": "IDR" },
+  "sourceAccountNo": "1234567890",
+  "beneficiaryAccountNo": "9876543210"
+}`;
+  }
 
   // panel Virtual Account
   readonly vaOpen = signal<string | null>(null);
@@ -74,6 +91,10 @@ export class Simulators implements OnInit, OnDestroy {
   // panel Partner & Rekening
   readonly bankOpen = signal<string | null>(null);
   readonly partnerList = signal<PartnerView[]>([]);
+
+  // panel URL Endpoint (operasi terkait bank — beda dari panel QRIS di halaman lain)
+  readonly epuOpen = signal<string | null>(null);
+  readonly bankOperations = ['access-token', 'transfer', 'va-create', 'va-status', 'va-delete'];
   readonly accountList = signal<AccountView[]>([]);
   readonly bankMsg = signal<string>('');
   readonly newPartnerId = signal('');
@@ -171,12 +192,21 @@ export class Simulators implements OnInit, OnDestroy {
     this.editorError.set('');
     this.editorSaved.set(false);
     this.editorScenario.set(scenario);
+    this.editorLoading.set(true);
     this.api.getDefinition(s.id, scenario).subscribe({
       next: text => {
         this.editorText.set(text);
         this.editing.set(s.id);
+        this.editorLoading.set(false);
       },
-      error: () => this.editorError.set('Gagal memuat definisi.'),
+      error: err => {
+        this.editorLoading.set(false);
+        this.editorError.set(
+          err?.status === 0
+            ? 'Tidak dapat menghubungi backend (localhost:8080). Pastikan server menyala.'
+            : `Gagal memuat definisi (${err?.status ?? '?'}): ${err?.error?.error ?? err?.message ?? 'error tak dikenal'}`
+        );
+      },
     });
   }
 
@@ -363,5 +393,9 @@ export class Simulators implements OnInit, OnDestroy {
   removeAccount(s: Simulator, a: AccountView) {
     if (!confirm(`Hapus rekening "${a.accountNo}"?`)) return;
     this.api.deleteAccount(s.id, a.id).subscribe(() => this.reloadBank(s));
+  }
+
+  toggleEpu(s: Simulator) {
+    this.epuOpen.set(this.epuOpen() === s.id ? null : s.id);
   }
 }

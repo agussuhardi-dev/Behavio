@@ -37,8 +37,11 @@
   flex-wrap: wrap;
 
   &__field {
-    min-width: 320px;
+    min-width: 280px;
     margin-bottom: -18px;
+  }
+  &__spacer {
+    flex: 1;
   }
 }
 
@@ -144,15 +147,61 @@
 .qris-try {
   font-size: 12px;
   summary { cursor: pointer; opacity: 0.7; }
-  pre {
-    margin: 8px 0 0;
-    padding: 12px;
-    border-radius: 8px;
-    background: rgba(120, 120, 120, 0.12);
-    overflow-x: auto;
-    font-size: 11.5px;
-    line-height: 1.5;
+
+  &__box {
+    position: relative;
+    margin-top: 8px;
+
+    pre {
+      margin: 0;
+      padding: 12px 44px 12px 12px;
+      border-radius: 8px;
+      background: rgba(120, 120, 120, 0.12);
+      overflow-x: auto;
+      font-size: 11.5px;
+      line-height: 1.5;
+    }
+    button {
+      position: absolute;
+      top: 4px;
+      right: 4px;
+    }
   }
+}
+
+.editor__example {
+  border: 1px solid rgba(91, 124, 250, 0.3);
+  border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: 10px;
+
+  &-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    background: rgba(91, 124, 250, 0.1);
+    mat-icon { color: #5b7cfa; font-size: 16px; width: 16px; height: 16px; }
+  }
+  pre {
+    margin: 0;
+    padding: 10px 12px;
+    font-size: 11px;
+    line-height: 1.5;
+    background: rgba(120, 120, 120, 0.05);
+    overflow-x: auto;
+  }
+}
+
+.spin {
+  animation: qris-spin 0.9s linear infinite;
+}
+
+@keyframes qris-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 .qris-msg {
@@ -231,4 +280,40 @@
   &--on { background: rgba(46, 204, 113, 0.16); color: #24a35a; }
   &--warn { background: rgba(240, 173, 78, 0.16); color: #e0912f; }
   &--sm { padding: 2px 8px; font-size: 10.5px; }
+}
+
+// endpoint expansion panel
+.qris-ep {
+  box-shadow: none !important;
+  border: 1px solid rgba(120, 120, 120, 0.16);
+  border-radius: 8px;
+  margin: 0;
+
+  .mat-expansion-panel-header {
+    padding: 0 16px;
+    font-size: 13px;
+  }
+  .mat-expansion-panel-header-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  &__method {
+    font-size: 10px;
+    font-weight: 700;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: rgba(91, 124, 250, 0.16);
+    color: #5b7cfa;
+  }
+  &__body {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 0 0 8px;
+  }
+  &__scenario {
+    width: 100%;
+    margin-bottom: -12px;
+  }
 }

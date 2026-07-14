@@ -613,11 +613,213 @@ baseline provisioning saat simulator dibuat.
   ASLI (bukan seed) sampai sukses dengan saldo terpotong tepat → partner & akun
   dihapus bersih. Dashboard (proxy `:4200`) menampilkan data yang sama.
 
-### Belum dibangun (berikutnya)
-QRIS MPM (Lampiran A3), builder visual rule (saat ini editor JSON teks — "advanced
-mode"), penerapan editor override ke endpoint VA & QRIS, Recorder/Replay UI, editor
-Monaco (ganti textarea), Workspace sebagai pengelompokan opsional lintas banyak
-profil bank (belum diperlukan karena isolasi sudah lewat port+simulator_id).
+### Fase 4 (lanjutan) — QRIS MPM lengkap: static/dynamic + Refund ✅ (2026-07-14)
+Berbeda dari VA (logika tetap) — Generate QR dievaluasi lewat **Scenario/Rule yang
+sama persis dengan Transfer Intrabank**, sehingga responsnya **dapat di-custom dari
+dashboard** (bukan cuma logika tetap), memenuhi permintaan eksplisit "sesuai SNAP
+dan bisa di-custom juga".
+
+**Generalisasi infrastruktur (prasyarat)**: `ScenarioConfigPort`/`ScenarioConfigJpa`/
+`SimulatorAdmin.setActiveScenario` diparameterisasi dengan `product` (method+path,
+lihat `ProductEndpoints`) — sebelumnya hardcoded khusus transfer-intrabank. QRIS
+kini pakai infrastruktur editor yang identik (`GET/PUT/DELETE
+.../scenarios/{name}/definition?product=qris`). Transfer-intrabank diverifikasi
+**tidak regresi** setelah generalisasi (8 scenario tetap utuh, tes lulus).
+
+**EMV QR asli** (`EmvQrBuilder`, core-engine, pure Java): TLV (Tag-Length-Value)
++ **CRC16-CCITT-FALSE sungguhan** (bukan string tiruan) — diverifikasi lewat
+vektor uji standar independen ("123456789"→`0x29B1`). Field 54 (amount) hanya
+disertakan untuk QR **dynamic** (Point of Initiation "12"); QR **static** ("11")
+tidak menyertakannya — nominal diisi saat bayar.
+
+**Domain & persistence**: `QrisTransaction` (+`QrisType` STATIC/DYNAMIC,
+`QrisStatus` ACTIVE/PAID/REFUNDED/EXPIRED). `QrisRepositoryJdbc` → tabel generik
+`entities` (type='qris'), sesuai hybrid storage.
+
+**Endpoint** (`QrisService`, adapter-web):
+- `POST /v1.0/qr/qr-mpm-generate` (`2004700`) — evaluasi scenario aktif (Normal/
+  Merchant Diblokir/Service Down), `qrContent`+`referenceNo` computed var seperti
+  `referenceNo` di transfer. Auth sama persis transfer (X-PARTNER-ID + STRICT
+  HMAC+expiry token).
+- `POST /v1.0/qr/qr-mpm-query` (`2005100`) — status ACTIVE→`03` pending,
+  PAID→`00` success, REFUNDED→`04`.
+- `POST /v1.0/qr/qr-mpm-refund` (`2007800`, **terverifikasi via DOKU+Duitku**) —
+  hanya **full refund** didukung (simplifikasi terdokumentasi); validasi status
+  PAID & amount cocok.
+- **Payment Notify** (A3.4): sama pola VA — webhook yang KAMI kirim, dipicu aksi
+  dashboard "Tandai Dibayar" (`POST .../qris/{referenceNo}/pay`); static WAJIB
+  isi nominal saat bayar, dynamic pakai nominal tertanam.
+- **responseCode kegagalan generik** (service "00", terverifikasi Faspay):
+  `4040001` Transaction Not Found, `4040013` Invalid Amount.
+
+**Dashboard — HALAMAN TERPISAH** (`/qris`, bukan panel di kartu Simulator):
+pilih profil (dropdown) + **Tambah/Duplikat/Hapus/Nyala-Mati profil langsung dari
+halaman ini** (reuse `SimulatorFormDialog`), dropdown+editor scenario QRIS, daftar
+QR (status, Tandai Dibayar dengan input nominal utk static, catatan refund via
+curl), 3 contoh curl (generate dynamic/static, refund) dengan **tombol Salin**.
+Halaman Simulators dilebarkan (`max-width` 1200→1760px, kartu minmax 360→460px)
+menyusul QRIS dipindah keluar.
+
+**Bug UX ditemukan & diperbaiki** (dari testing langsung, kedua halaman): pesan
+error editor (`editorError`) sebelumnya dirender **di dalam** blok
+`@if(editing)`, sehingga kegagalan (mis. backend tak terjangkau) membuat klik
+"Edit request/response" terasa tidak bereaksi sama sekali (panel tak terbuka,
+error pun tak tampak). Diperbaiki: error dipindah agar selalu terlihat +
+indikator loading saat memuat + pesan error lebih spesifik (beda pesan utk
+`status:0` vs error HTTP lain). Juga ditambah **contoh request** di dalam editor
+(field apa yang dipakai kondisi) untuk kedua halaman.
+
+**Terverifikasi end-to-end HTTP lengkap**: generate dynamic (qrContent EMV benar,
+field 54 ada), generate static (field 54 absen), validasi amount≤0 ditolak,
+Merchant Diblokir & Service Down, mark-paid dynamic & static + **webhook Payment
+Notify diterima sink** dengan field persis A3.4, query status 3 keadaan, refund
+sukses + double-refund ditolak + amount-mismatch ditolak, **override response
+kustom dari dashboard** (custom field & pesan langsung dipakai, qrContent tetap
+terhitung benar, reset kembali preset), STRICT signature+expiry-token (token
+tak-pernah-diterbitkan ditolak walau signature "valid" matematis).
+
+### QRIS — penyelesaian akhir ✅ (2026-07-14, sesi lanjutan "tolong selesaikan qris")
+Menutup 3 celah yang sebelumnya tercatat "belum dibangun":
+
+- **Cancel/Expire** (`POST /v1.0/qr/qr-expire`, `responseCode` sukses `2005000`
+  — diverifikasi via web, sourced dari implementasi bank nyata). Hanya QR
+  **ACTIVE** (belum dibayar) yang bisa dikedaluwarsakan → status `EXPIRED`.
+  Query setelahnya balas `latestTransactionStatus:"07"`.
+- **Partial refund**: `QrisTransaction.applyRefund()` kini **akumulatif**
+  (`refundedAmount` bertambah tiap refund) — status baru berubah jadi
+  `REFUNDED` saat kumulatif mencapai `paidAmount` (lunas); sebelum itu tetap
+  `PAID`. Validasi: `refundAmount` harus ≤ sisa (`refundableAmount()`).
+- **Sinkronisasi scenario aktif di dashboard**: sebelumnya dropdown scenario
+  selalu berasumsi `'Normal'` di client tanpa mengecek server — kalau
+  scenario diganti di sesi/tab lain, dashboard menampilkan info salah. Port
+  baru `ScenarioConfigPort.activeScenarioName()` + Admin API
+  `GET .../scenarios/active?product=`; dashboard QRIS fetch nilai asli saat
+  memilih simulator.
+
+### QRIS — alignment SNAP MPM spec ✅ (2026-07-14)
+Diselaraskan dengan spesifikasi ASPI SNAP BI MPM (portal developer ASPI):
+
+- **Cancel Payment** (`POST /v1.0/qr/qr-mpm-cancel`, service 77, sukses `2007700`)
+  — sebelumnya `qr-expire` dengan path & service code tidak sesuai spec.
+  Request: `originalReferenceNo`, `originalPartnerReferenceNo`, `originalExternalId`,
+  `merchantId` (M), `reason` (M). Response: `cancelTime`, `transactionDate`.
+  Backward compat: `qris-expire` tetap berfungsi via alias di routing.
+- **Generate response** diperkaya field MPM spec: `qrUrl`, `redirectUrl`,
+  `merchantName`, `storeId`, `terminalId` di top-level response + `additionalInfo`.
+- **Query response** diperkaya: `originalExternalId`, `serviceCode`, `paidTime`,
+  `feeAmount`, `terminalId`.
+- **Refund** tambah field spec: `originalExternalId`, `reason` di request/response;
+  `refundNo` mandatory, `refundTime`.
+- **2 endpoint baru**:
+  - `POST /v1.0/qr/qr-mpm-decode` (service 48, `2004800`) — balas dummy
+    `merchantInfos` (merchantPAN + acquirerName), `transactionAmount`,
+    `merchantCategory`, `merchantLocation`.
+  - `POST /v1.0/qr/qr-mpm-payment` (service 50, `2005000`) — Host-to-Host
+    payment, validasi `partnerReferenceNo`+`amount`, return `referenceNo`,
+    `transactionDate`, `amount`, `feeAmount`, `verificationId`.
+- **Domain**: `QrisTransaction.paidAt` (Instant) untuk `paidTime` di query.
+- **Liquibase** migrasi `005-qris-cancel.sql` — rename old endpoints.
+- **Frontend**: 6 contoh curl (generate dynamic/static, refund, cancel, decode,
+  payment); QRIS page tetap halaman terpisah `/qris`.
+
+**Bug keamanan/integritas ditemukan & diperbaiki saat verifikasi**: aksi
+dashboard "Tandai Dibayar" (`markPaid`) **tidak mengecek status QR** sebelum
+mengeksekusi — terbukti nyata: QR yang sudah `EXPIRED` bisa "dibayar" lagi
+(status balik ke `PAID`, `query` balas sukses `00`), sebuah kondisi tak
+konsisten. UI dashboard sudah menyembunyikan tombol untuk status non-ACTIVE,
+tapi endpoint backend sendiri tidak menegakkan invariant itu (rawan lewat
+panggilan API langsung). Diperbaiki: `markPaid` kini menolak bila status
+bukan `ACTIVE`, sama seperti `adminExpire`.
+
+**Terverifikasi HTTP end-to-end**: sinkron scenario aktif (ganti di server,
+dashboard baca nilai benar), expire (+tolak expire ganda, +tolak bayar QR
+expired setelah fix), partial refund 2x hingga lunas (+tolak refund melebihi
+sisa), regresi nol (transfer & VA tetap sukses setelah semua perubahan).
+
+**Belum dibangun (berikutnya)**: builder visual rule (kini editor JSON teks/
+"advanced mode"), Recorder/Replay UI, editor Monaco (ganti textarea), Workspace
+pengelompokan opsional, Live View SSE Simulators tanpa error handler
+(ditemukan, ditunda).
+
+---
+
+### URL/path endpoint yang dapat di-custom per-simulator ✅ (2026-07-14)
+Menutup celah yang tercatat di atas: bank berbeda kerap memakai path/versi
+berbeda dari standar ASPI (mis. BRI: `/intrabank/snap/v2.0/transfer-intrabank`
+alih-alih `/v1.0/transfer-intrabank`). Sebelumnya routing 100% hardcoded
+(`path.endsWith(...)`) — mengubah path di UI tidak akan pernah memengaruhi
+server sungguhan. Sekarang **data-driven**, path disimpan per-simulator di DB.
+
+- **`SnapOperations`** (core-engine): katalog murni-data 9 operasi SNAP (key,
+  method, defaultPath ASPI, label) — satu sumber kebenaran untuk path default.
+- **`EndpointRegistry`** (port) + **`EndpointRegistryJdbc`** (adapter-persistence):
+  `resolveOperation(simulatorId, method, path)` mencari baris `endpoints` yang
+  cocok; `updatePath`/`resetPath` untuk CRUD dari dashboard. Kolom baru
+  `endpoints.operation` (migrasi `004-endpoint-operation.sql`, unique index
+  parsial `(simulator_id, operation) WHERE operation IS NOT NULL`).
+- **Self-healing/lazy-provisioning**: bila `resolveOperation` tak menemukan
+  baris cocok tapi path yang diminta match salah satu `defaultPath` di
+  `SnapOperations`, baris langsung di-provision otomatis — menjaga kompatibilitas
+  mundur untuk simulator yang dibuat sebelum fitur ini ada (tanpa perlu migrasi
+  data manual per simulator).
+- **`SimulatorServerManager`**: 8 pengecekan `path.endsWith(...)` diganti satu
+  dispatch `switch` berbasis `operation` hasil `resolveOperation`. Path yang
+  tak terdaftar kini benar-benar 404 (`4040400`) — sebelumnya silently jatuh
+  ke transfer engine, sebuah bug laten yang baru ketahuan lewat perubahan ini.
+- **Provisioning** (`JpaSimulatorAdmin.provisionBaseline`, `DemoSeeder`):
+  simulator baru langsung mendapat 9 baris `endpoints` dengan `operation`
+  terisi (bukan cuma 2 seperti sebelumnya).
+- **Admin API** (`EndpointAdminController`): `GET/PUT/DELETE
+  /api/admin/v1/simulators/{id}/endpoints[/​{operation}]` — list, update path,
+  reset ke default ASPI.
+- **Dashboard**: komponen reusable `EndpointUrlPanel` (standalone, Angular
+  signal `input()`), diinstansiasi **independen** di dua halaman terpisah
+  (bukan penggabungan Simulators+QRIS — tetap dua halaman, satu komponen
+  dipakai ulang dengan filter `operations` berbeda): Simulators
+  (`access-token`, `transfer`, `va-*`) & QRIS (`qris-*`). Tiap baris tampil
+  path saat ini, tag "CUSTOM" bila beda dari default, tombol Simpan/Reset.
+
+**2 bug ditemukan & diperbaiki saat verifikasi end-to-end:**
+
+1. **QRIS custom path memutus resolusi scenario.** `QrisService.generate()`
+   memanggil `config.findActiveScenario(simulatorId, METHOD, path)` tapi
+   memakai konstanta hardcoded `QrisMpmBlueprint.PATH`, bukan parameter
+   `path` yang sesungguhnya masuk. Akibatnya begitu path QRIS di-custom,
+   lookup scenario tetap mencari path lama → `404 "No active scenario"`.
+   Diperbaiki jadi memakai `path` asli. **Bug kedua di lapisan yang sama**
+   ditemukan sesudahnya: `JpaConfigRepository.findActiveScenario()` menentukan
+   `product` ("qris" vs "transfer") dengan membandingkan `path` terhadap
+   `QrisMpmBlueprint.PATH` juga — perbandingan string yang sama-sama gagal
+   untuk path custom. Diperbaiki: `product` sekarang diturunkan dari kolom
+   `EndpointEntity.operation` (`"qris".startsWith` → produk "qris"), dengan
+   fallback ke perbandingan path lama hanya bila `operation` belum terisi
+   (data pra-migrasi yang belum tersentuh self-healing).
+2. **Validasi & deteksi tabrakan path selalu balas 500 mentah, bukan 400/409
+   rapi — bug sistemik, bukan cuma di kode baru.** `EndpointRegistryJdbc`
+   (dan repository JDBC lain seperti `AccountAdminJdbc`) memakai anotasi
+   `@Repository`, yang membuat Spring otomatis memasang
+   `PersistenceExceptionTranslationInterceptor` (AOP) — `IllegalArgumentException`
+   yang dilempar dari bean semacam itu **diterjemahkan otomatis** menjadi
+   `InvalidDataAccessApiUsageException` **sebelum** sampai ke controller mana
+   pun, sehingga `catch (IllegalArgumentException e)` lokal di 4 controller
+   (`EndpointAdminController`, `AccountAdminController`, `ScenarioAdminController`,
+   `SimulatorAdminController`) tidak pernah match. Dikonfirmasi bukan isolasi:
+   fitur deteksi partner duplikat yang sudah lama ada (`AccountAdminController`)
+   juga kena. **Perbaikan**: `ApiExceptionHandler` (`@RestControllerAdvice`
+   global) menangkap kedua tipe exception sekaligus → 400 dengan pesan asli.
+   Try/catch lokal yang kini redundan dihapus dari 3 controller; 2 titik di
+   `AccountAdminController` (create partner/account) yang sengaja balas
+   **409** (bukan 400, karena ini kasus konflik/duplikat) dipertahankan tapi
+   diperluas menangkap `InvalidDataAccessApiUsageException` juga, supaya
+   status 409-nya benar-benar tercapai.
+
+**Terverifikasi HTTP end-to-end**: path custom transfer (gaya BRI) — path
+lama 404, path baru sukses transfer, reset kembali ke default berfungsi;
+validasi path tanpa `/` → 400 bersih; tabrakan path antar-operasi → 400
+bersih; QRIS generate dengan path custom → sukses (bug #1 di atas, sebelum
+fix 404); reset QRIS ke default → sukses lagi; partner duplikat → 409 bersih
+(bukan 500, bug #2 di atas); regresi nol pada access-token & transfer path
+default setelah semua perubahan.
 
 ---
 
@@ -770,8 +972,12 @@ Merchant membalas `responseCode: 2002500` + echo `virtualAccountData`.
 | Fungsi | Method | Path (standar) | Service | responseCode sukses |
 |---|---|---|---|---|
 | Generate QR | POST | `/v1.0/qr/qr-mpm-generate` | 47 | `2004700` |
+| Decode QR | POST | `/v1.0/qr/qr-mpm-decode` | 48 | `2004800` |
+| Payment H2H | POST | `/v1.0/qr/qr-mpm-payment` | 50 | `2005000` |
 | Query status | POST | `/v1.0/qr/qr-mpm-query` | 51 | `2005100` |
 | **Payment Notify** (acquirer→merchant callback) | POST | `{merchantUrl}/v1.0/qr/qr-mpm-notify` | 52 | `2005200` |
+| Cancel Payment | POST | `/v1.0/qr/qr-mpm-cancel` | 77 | `2007700` |
+| Refund Payment | POST | `/v1.0/qr/qr-mpm-refund` | 78 | `2007800` |
 
 ### A3.2 Generate QR — request/response
 ```jsonc

@@ -101,6 +101,7 @@ public class QrisRepositoryJdbc implements QrisRepository {
         n.put("callbackUrl", qr.callbackUrl());
         n.put("paidAmount", qr.paidAmount() == null ? null : qr.paidAmount().toPlainString());
         n.put("refundedAmount", qr.refundedAmount() == null ? null : qr.refundedAmount().toPlainString());
+        n.put("paidAt", qr.paidAt() == null ? null : qr.paidAt().toString());
         n.put("createdAt", qr.createdAt().toString());
         return n.toString();
     }
@@ -109,13 +110,17 @@ public class QrisRepositoryJdbc implements QrisRepository {
         try {
             JsonNode n = mapper.readTree(json);
             QrisStatus status = statusColumn == null ? QrisStatus.ACTIVE : QrisStatus.valueOf(statusColumn);
-            return new QrisTransaction(
+            QrisTransaction qt = new QrisTransaction(
                     UUID.randomUUID(), simulatorId, partnerId,
                     text(n, "partnerReferenceNo"), text(n, "referenceNo"), text(n, "merchantId"), text(n, "terminalId"),
                     QrisType.valueOf(text(n, "qrType")),
                     decimal(n, "amount"), text(n, "currency"), text(n, "qrContent"), text(n, "callbackUrl"),
                     status, decimal(n, "paidAmount"), decimal(n, "refundedAmount"),
                     n.hasNonNull("createdAt") ? Instant.parse(n.get("createdAt").asText()) : Instant.now());
+            if (n.hasNonNull("paidAt")) {
+                qt.markPaid(qt.paidAmount(), Instant.parse(n.get("paidAt").asText()));
+            }
+            return qt;
         } catch (Exception e) {
             throw new IllegalStateException("Gagal parse data QRIS", e);
         }

@@ -109,11 +109,7 @@ public class SimulatorAdminController {
         if (name == null || name.isBlank()) {
             return ResponseEntity.badRequest().body(Map.of("error", "field 'name' wajib"));
         }
-        try {
-            admin.setActiveScenario(id, product, name);
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        }
+        admin.setActiveScenario(id, product, name);
         return ResponseEntity.ok(Map.of("id", id, "product", product, "activeScenario", name));
     }
 }

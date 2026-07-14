@@ -59,7 +59,9 @@ public class JpaConfigRepository implements ConfigRepository {
         if (sc == null) {
             return Optional.empty();
         }
-        String product = QrisMpmBlueprint.PATH.equals(path) ? "qris" : "transfer";
+        String operation = ep.get().operation;
+        String product = operation != null ? operation
+                : (QrisMpmBlueprint.PATH.equals(path) ? "qris" : "transfer");
         return Optional.of(resolveScenario(sc.id, product, sc.name));
     }
 

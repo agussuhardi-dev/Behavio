@@ -2,7 +2,6 @@ package id.behavio.web;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import id.behavio.core.blueprint.QrisMpmBlueprint;
 import id.behavio.core.domain.Partner;
 import id.behavio.core.domain.QrisStatus;
 import id.behavio.core.domain.QrisTransaction;
@@ -26,20 +25,20 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
-import java.time.OffsetDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
 /**
- * Endpoint SNAP <b>QRIS MPM</b> (design.md Lampiran A3): Generate QR (static/dynamic),
- * Query status, Refund. Berbeda dari VA — Generate QR dievaluasi lewat Scenario/Rule
- * yang SAMA persis dengan Transfer Intrabank (product="qris", lihat ScenarioConfigPort),
- * sehingga response-nya <b>dapat di-custom dari dashboard</b> (editor request/response
- * yang sudah ada, bukan logika tetap). qrContent (EMV QR asli) & referenceNo adalah
- * computed var seperti referenceNo di transfer.
+ * Endpoint SNAP <b>QRIS MPM</b> (design.md Lampiran A3, ASPI SNAP spec).
+ * Mencakup: Generate QR (48), Decode QR (48), Payment H2H (50), Query (51),
+ * Cancel (77), Refund (78).
+ *
+ * Generate QR dievaluasi lewat Scenario/Rule yang sama persis dengan Transfer
+ * Intrabank (product="qris"), sehingga response-nya dapat di-custom dari
+ * dashboard.
  */
 @Service
 public class QrisService {
@@ -75,7 +74,7 @@ public class QrisService {
         boolean failed() { return partner == null; }
     }
 
-    // ---------------- Generate QR ----------------
+    // ==================== Generate QR (service 47) ====================
 
     @Transactional
     public Result generate(UUID simulatorId, String method, String path, Map<String, String> headers, String body) {
@@ -85,11 +84,11 @@ public class QrisService {
 
         Map<String, Object> fields = parseGenerateFields(body);
 
-        Optional<Scenario> scenarioOpt = config.findActiveScenario(simulatorId, QrisMpmBlueprint.METHOD, QrisMpmBlueprint.PATH);
+        Optional<Scenario> scenarioOpt = config.findActiveScenario(simulatorId, method, path);
         if (scenarioOpt.isEmpty()) {
             return error(404, "4040401", "No active scenario for endpoint");
         }
-        EvalContext ctx = new EvalContext(fields, accNo -> null); // QRIS tak pakai saldo
+        EvalContext ctx = new EvalContext(fields, accNo -> null);
         Outcome outcome = pickOutcome(scenarioOpt.get(), ctx);
 
         boolean success = outcome.response().responseCode().startsWith("2");
@@ -102,6 +101,12 @@ public class QrisService {
         Object amountField = fields.get("amount");
         vars.put("amountValue", amountField == null ? "" : amountField.toString());
         vars.putIfAbsent("currency", "IDR");
+        vars.putIfAbsent("storeId", "");
+        vars.putIfAbsent("terminalId", "");
+        vars.putIfAbsent("merchantName", "BEHAVIO MERCHANT");
+        vars.putIfAbsent("merchantId", "");
+        vars.put("qrUrl", "");
+        vars.put("redirectUrl", "");
 
         if (success) {
             BigDecimal amount = amountField == null ? null : new BigDecimal(amountField.toString());
@@ -124,7 +129,90 @@ public class QrisService {
         return new Result(outcome.response().httpStatus(), responseBody);
     }
 
-    // ---------------- Query status ----------------
+    // ==================== Decode QR (service 48) ====================
+
+    @Transactional(readOnly = true)
+    public Result decode(UUID simulatorId, String method, String path, Map<String, String> headers, String body) {
+        AuthResult auth = authenticate(simulatorId, method, path, headers, body);
+        if (auth.failed()) return auth.error();
+
+        JsonNode n = parseOrEmpty(body);
+        String qrContent = text(n, "qrContent");
+        if (qrContent == null || qrContent.isBlank()) {
+            return error(400, "4004802", "Invalid Mandatory Field qrContent");
+        }
+
+        Map<String, Object> vars = new HashMap<>();
+        vars.put("responseCode", "2004800");
+        vars.put("responseMessage", "Successful");
+        vars.put("referenceNo", "QR" + System.currentTimeMillis() + String.format("%03d", (int) (Math.random() * 1000)));
+        vars.put("partnerReferenceNo", text(n, "partnerReferenceNo"));
+        vars.put("merchantName", "BEHAVIO MERCHANT");
+        vars.put("merchantCategory", "Food & Beverage");
+        vars.put("merchantLocation", "JAKARTA");
+        vars.put("redirectUrl", "");
+        vars.put("merchantPAN", "9360001410000000009");
+        vars.put("acquirerName", "BEHAVIO");
+        JsonNode amtNode = n.get("amount");
+        vars.put("amountValue", amtNode != null && amtNode.hasNonNull("value") ? amtNode.get("value").asText() : "0.00");
+        vars.put("currency", amtNode != null ? amtNode.path("currency").asText("IDR") : "IDR");
+        vars.put("feeValue", "0.00");
+
+        return renderScenario(simulatorId, method, path, vars);
+    }
+
+    // ==================== Apply OTT / Payment Redirect (service 49) ====================
+
+    @Transactional(readOnly = true)
+    public Result applyOtt(UUID simulatorId, String method, String path, Map<String, String> headers, String body) {
+        AuthResult auth = authenticate(simulatorId, method, path, headers, body);
+        if (auth.failed()) return auth.error();
+
+        JsonNode n = parseOrEmpty(body);
+        if (!n.has("userResources") || !n.get("userResources").isArray() || n.get("userResources").size() == 0) {
+            return error(400, "4004902", "Invalid Mandatory Field userResources");
+        }
+
+        Map<String, Object> vars = new HashMap<>();
+        vars.put("responseCode", "2004900");
+        vars.put("responseMessage", "Successful");
+        vars.put("resourceType", n.get("userResources").get(0).asText("OTT"));
+        vars.put("ottValue", UUID.randomUUID().toString().replace("-", ""));
+
+        return renderScenario(simulatorId, method, path, vars);
+    }
+
+    // ==================== Payment H2H (service 50) ====================
+
+    @Transactional
+    public Result payment(UUID simulatorId, String method, String path, Map<String, String> headers, String body) {
+        AuthResult auth = authenticate(simulatorId, method, path, headers, body);
+        if (auth.failed()) return auth.error();
+
+        JsonNode n = parseOrEmpty(body);
+        String partnerRefNo = text(n, "partnerReferenceNo");
+        JsonNode amtNode = n.get("amount");
+        if (partnerRefNo == null || amtNode == null || !amtNode.hasNonNull("value")) {
+            return error(400, "4005002", "Invalid Mandatory Field partnerReferenceNo/amount");
+        }
+        String referenceNo = "PAY" + System.currentTimeMillis() + String.format("%03d", (int) (Math.random() * 1000));
+
+        Map<String, Object> vars = new HashMap<>();
+        vars.put("responseCode", "2005000");
+        vars.put("responseMessage", "Successful");
+        vars.put("referenceNo", referenceNo);
+        vars.put("partnerReferenceNo", partnerRefNo);
+        vars.put("transactionDate", Instant.now().toString());
+        vars.put("amountValue", amtNode.get("value").asText());
+        vars.put("currency", amtNode.path("currency").asText("IDR"));
+        JsonNode feeNode = n.get("feeAmount");
+        vars.put("feeValue", feeNode != null && feeNode.hasNonNull("value") ? feeNode.get("value").asText() : "0.00");
+        vars.put("verificationId", text(n, "verificationId"));
+
+        return renderScenario(simulatorId, method, path, vars);
+    }
+
+    // ==================== Query status (service 51) ====================
 
     @Transactional(readOnly = true)
     public Result query(UUID simulatorId, String method, String path, Map<String, String> headers, String body) {
@@ -143,22 +231,26 @@ public class QrisService {
         }
         QrisTransaction qr = qrOpt.get();
 
-        Map<String, Object> body2 = new java.util.LinkedHashMap<>();
-        body2.put("responseCode", "2005100");
-        body2.put("responseMessage", "Successful");
-        body2.put("originalReferenceNo", qr.referenceNo());
-        body2.put("originalPartnerReferenceNo", qr.partnerReferenceNo());
-        body2.put("latestTransactionStatus", statusCode(qr.status()));
-        body2.put("transactionStatusDesc", statusDesc(qr.status()));
-        Map<String, Object> amount = new java.util.LinkedHashMap<>();
         BigDecimal shownAmount = qr.status() == QrisStatus.PAID ? qr.paidAmount() : qr.amount();
-        amount.put("value", shownAmount == null ? "0.00" : shownAmount.toPlainString());
-        amount.put("currency", qr.currency());
-        body2.put("amount", amount);
-        return new Result(200, writeJson(body2));
+        Map<String, Object> vars = new HashMap<>();
+        vars.put("responseCode", "2005100");
+        vars.put("responseMessage", "Successful");
+        vars.put("originalReferenceNo", qr.referenceNo());
+        vars.put("originalPartnerReferenceNo", qr.partnerReferenceNo());
+        vars.put("originalExternalId", n.hasNonNull("originalExternalId") ? n.get("originalExternalId").asText() : "");
+        vars.put("serviceCode", n.hasNonNull("serviceCode") ? n.get("serviceCode").asText() : "47");
+        vars.put("latestTransactionStatus", statusCode(qr.status()));
+        vars.put("transactionStatusDesc", statusDesc(qr.status()));
+        vars.put("paidTime", qr.status() == QrisStatus.PAID && qr.paidAt() != null ? qr.paidAt().toString() : "");
+        vars.put("amountValue", shownAmount == null ? "0.00" : shownAmount.toPlainString());
+        vars.put("currency", qr.currency());
+        vars.put("feeValue", "0.00");
+        vars.put("terminalId", qr.terminalId() != null ? qr.terminalId() : "");
+
+        return renderScenario(simulatorId, method, path, vars);
     }
 
-    // ---------------- Refund ----------------
+    // ==================== Refund (service 78) ====================
 
     @Transactional
     public Result refund(UUID simulatorId, String method, String path, Map<String, String> headers, String body) {
@@ -180,29 +272,64 @@ public class QrisService {
             return error(404, "4040001", "Transaction Not Found");
         }
         QrisTransaction qr = qrOpt.get();
-        if (qr.paidAmount() == null || refundAmount.compareTo(qr.paidAmount()) != 0) {
-            return error(400, "4040013", "Invalid Amount"); // simulator: hanya full refund didukung
+        if (refundAmount.signum() <= 0 || refundAmount.compareTo(qr.refundableAmount()) > 0) {
+            return error(400, "4040013", "Invalid Amount");
         }
 
-        qr.markRefunded(refundAmount);
+        qr.applyRefund(refundAmount);
         qrisRepo.save(qr);
 
-        Map<String, Object> resp = new java.util.LinkedHashMap<>();
-        resp.put("responseCode", "2007800");
-        resp.put("responseMessage", "Successful");
-        resp.put("originalReferenceNo", qr.referenceNo());
-        resp.put("originalPartnerReferenceNo", qr.partnerReferenceNo());
-        resp.put("refundNo", "RFD" + UUID.randomUUID().toString().substring(0, 12).toUpperCase());
-        resp.put("partnerRefundNo", partnerRefundNo);
-        Map<String, Object> refundAmt = new java.util.LinkedHashMap<>();
-        refundAmt.put("value", refundAmount.toPlainString());
-        refundAmt.put("currency", qr.currency());
-        resp.put("refundAmount", refundAmt);
-        resp.put("refundTime", Instant.now().toString());
-        return new Result(200, writeJson(resp));
+        Map<String, Object> vars = new HashMap<>();
+        vars.put("responseCode", "2007800");
+        vars.put("responseMessage", "Successful");
+        vars.put("originalPartnerReferenceNo", text(n, "originalPartnerReferenceNo") != null ? text(n, "originalPartnerReferenceNo") : qr.partnerReferenceNo());
+        vars.put("originalReferenceNo", qr.referenceNo());
+        vars.put("originalExternalId", text(n, "originalExternalId"));
+        vars.put("refundNo", "RFD" + UUID.randomUUID().toString().substring(0, 12).toUpperCase());
+        vars.put("partnerRefundNo", partnerRefundNo);
+        vars.put("refundAmountValue", refundAmount.toPlainString());
+        vars.put("currency", qr.currency());
+        vars.put("reason", text(n, "reason"));
+        vars.put("refundTime", Instant.now().toString());
+
+        return renderScenario(simulatorId, method, path, vars);
     }
 
-    // ---------------- Admin: list & mark-paid (dashboard) ----------------
+    // ==================== Cancel Payment (service 77) ====================
+
+    @Transactional
+    public Result cancel(UUID simulatorId, String method, String path, Map<String, String> headers, String body) {
+        AuthResult auth = authenticate(simulatorId, method, path, headers, body);
+        if (auth.failed()) return auth.error();
+        Partner partner = auth.partner();
+
+        JsonNode n = parseOrEmpty(body);
+        String originalReferenceNo = text(n, "originalReferenceNo");
+        if (originalReferenceNo == null || originalReferenceNo.isBlank()) {
+            return error(400, "4007702", "Invalid Mandatory Field originalReferenceNo");
+        }
+        Optional<QrisTransaction> qrOpt = qrisRepo.find(simulatorId, partner.id(), originalReferenceNo);
+        if (qrOpt.isEmpty() || qrOpt.get().status() != QrisStatus.ACTIVE) {
+            return error(404, "4040001", "Transaction Not Found");
+        }
+        QrisTransaction qr = qrOpt.get();
+        qr.markExpired();
+        qrisRepo.save(qr);
+
+        Instant now = Instant.now();
+        Map<String, Object> vars = new HashMap<>();
+        vars.put("responseCode", "2007700");
+        vars.put("responseMessage", "Successful");
+        vars.put("originalPartnerReferenceNo", text(n, "originalPartnerReferenceNo") != null ? text(n, "originalPartnerReferenceNo") : qr.partnerReferenceNo());
+        vars.put("originalReferenceNo", qr.referenceNo());
+        vars.put("originalExternalId", text(n, "originalExternalId"));
+        vars.put("cancelTime", now.toString());
+        vars.put("transactionDate", qr.createdAt().toString());
+
+        return renderScenario(simulatorId, method, path, vars);
+    }
+
+    // ==================== Admin: list, mark-paid, expire ====================
 
     @Transactional(readOnly = true)
     public java.util.List<QrisTransaction> list(UUID simulatorId) {
@@ -211,11 +338,6 @@ public class QrisService {
 
     public record PayResult(boolean found, boolean webhookSent, String reason) {}
 
-    /**
-     * Aksi dashboard "tandai dibayar" (mensimulasikan pelanggan scan & bayar).
-     * {@code amountOverride} WAJIB untuk QR static (nominal diisi saat bayar);
-     * diabaikan untuk dynamic (pakai nominal tertanam).
-     */
     @Transactional
     public PayResult markPaid(UUID simulatorId, String referenceNo, BigDecimal amountOverride) {
         Optional<QrisTransaction> qrOpt = qrisRepo.findAny(simulatorId, referenceNo);
@@ -223,33 +345,64 @@ public class QrisService {
             return new PayResult(false, false, "QR tidak ditemukan");
         }
         QrisTransaction qr = qrOpt.get();
+        if (qr.status() != QrisStatus.ACTIVE) {
+            return new PayResult(true, false, "QR berstatus " + qr.status() + " — hanya QR ACTIVE yang bisa dibayar");
+        }
         BigDecimal paid = qr.qrType() == QrisType.DYNAMIC ? qr.amount() : amountOverride;
         if (paid == null) {
             return new PayResult(true, false, "QR static butuh nominal saat bayar");
         }
-        qr.markPaid(paid);
+        Instant paidAt = Instant.now();
+        qr.markPaid(paid, paidAt);
         qrisRepo.save(qr);
 
         if (qr.callbackUrl() == null || qr.callbackUrl().isBlank()) {
             return new PayResult(true, false, "Tidak ada X-CALLBACK-URL tersimpan saat generate");
         }
-        Map<String, Object> notif = new java.util.LinkedHashMap<>();
+        Map<String, Object> notif = new LinkedHashMap<>();
         notif.put("originalReferenceNo", qr.referenceNo());
         notif.put("originalPartnerReferenceNo", qr.partnerReferenceNo());
-        Map<String, Object> amount = new java.util.LinkedHashMap<>();
-        amount.put("value", paid.toPlainString());
-        amount.put("currency", qr.currency());
-        notif.put("amount", amount);
         notif.put("latestTransactionStatus", "00");
         notif.put("transactionStatusDesc", "success");
+        notif.put("amount", Map.of("value", paid.toPlainString(), "currency", qr.currency()));
         notif.put("merchantId", qr.merchantId());
-        notif.put("paidTime", Instant.now().toString());
+        notif.put("paidTime", paidAt.toString());
         webhookSender.schedule(simulatorId, qr.callbackUrl(), Map.of("Content-Type", "application/json"),
                 writeJson(notif), Duration.ZERO);
         return new PayResult(true, true, "Payment Notify dijadwalkan");
     }
 
-    // ---------------- helper ----------------
+    @Transactional
+    public PayResult adminExpire(UUID simulatorId, String referenceNo) {
+        Optional<QrisTransaction> qrOpt = qrisRepo.findAny(simulatorId, referenceNo);
+        if (qrOpt.isEmpty()) {
+            return new PayResult(false, false, "QR tidak ditemukan");
+        }
+        QrisTransaction qr = qrOpt.get();
+        if (qr.status() != QrisStatus.ACTIVE) {
+            return new PayResult(true, false, "Hanya QR berstatus ACTIVE yang bisa dikedaluwarsakan");
+        }
+        qr.markExpired();
+        qrisRepo.save(qr);
+        return new PayResult(true, false, "QR dikedaluwarsakan");
+    }
+
+    // ==================== helpers ====================
+
+    /**
+     * Render response lewat scenario engine — endpoint punya blueprint "Normal"
+     * dengan template response ({{placeholders}}), dapat di-custom dari dashboard.
+     * Bila tak ada scenario, render langsung dari vars (backward-compat).
+     */
+    private Result renderScenario(UUID simulatorId, String method, String path, Map<String, Object> vars) {
+        Optional<Scenario> scenarioOpt = config.findActiveScenario(simulatorId, method, path);
+        if (scenarioOpt.isEmpty() || scenarioOpt.get().fallback() == null) {
+            return new Result(200, writeJson(vars));
+        }
+        Outcome outcome = scenarioOpt.get().fallback();
+        String responseBody = renderer.render(outcome.response().bodyTemplate(), vars);
+        return new Result(outcome.response().httpStatus(), responseBody);
+    }
 
     private Outcome pickOutcome(Scenario scenario, EvalContext ctx) {
         for (Rule rule : scenario.rules()) {
@@ -266,6 +419,7 @@ public class QrisService {
         putText(fields, n, "partnerReferenceNo");
         putText(fields, n, "merchantId");
         putText(fields, n, "terminalId");
+        putText(fields, n, "storeId");
         putText(fields, n, "validityPeriod");
         JsonNode amount = n.get("amount");
         if (amount != null && amount.hasNonNull("value")) {
@@ -313,7 +467,7 @@ public class QrisService {
             case PAID -> "00";
             case REFUNDED -> "04";
             case EXPIRED -> "07";
-            case ACTIVE -> "03"; // pending/belum dibayar
+            case ACTIVE -> "03";
         };
     }
 
@@ -343,7 +497,7 @@ public class QrisService {
     }
 
     private Result error(int status, String code, String message) {
-        Map<String, Object> body = new java.util.LinkedHashMap<>();
+        Map<String, Object> body = new LinkedHashMap<>();
         body.put("responseCode", code);
         body.put("responseMessage", message);
         return new Result(status, writeJson(body));

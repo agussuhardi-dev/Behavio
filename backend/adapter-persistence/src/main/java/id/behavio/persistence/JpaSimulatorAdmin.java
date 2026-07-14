@@ -169,6 +169,7 @@ public class JpaSimulatorAdmin implements SimulatorAdmin {
         ep.simulatorId = simId;
         ep.method = TransferIntrabankBlueprint.METHOD;
         ep.path = TransferIntrabankBlueprint.PATH;
+        ep.operation = "transfer";
         em.persist(ep);
 
         UUID normalId = null;
@@ -191,6 +192,7 @@ public class JpaSimulatorAdmin implements SimulatorAdmin {
         qrisEp.simulatorId = simId;
         qrisEp.method = QrisMpmBlueprint.METHOD;
         qrisEp.path = QrisMpmBlueprint.PATH;
+        qrisEp.operation = "qris-generate";
         em.persist(qrisEp);
 
         UUID qrisNormalId = null;
@@ -205,6 +207,19 @@ public class JpaSimulatorAdmin implements SimulatorAdmin {
         }
         qrisEp.activeScenarioId = qrisNormalId;
         em.merge(qrisEp);
+
+        // Operasi SNAP lain (tanpa scenario/rule): access-token, VA CRUD, QRIS query/refund/expire.
+        // Path default dari katalog SnapOperations — semuanya dapat di-custom dari dashboard.
+        for (id.behavio.core.blueprint.SnapOperations.Op op : id.behavio.core.blueprint.SnapOperations.ALL) {
+            if ("transfer".equals(op.key()) || "qris-generate".equals(op.key())) continue; // sudah dibuat di atas
+            EndpointEntity plain = new EndpointEntity();
+            plain.id = UUID.randomUUID();
+            plain.simulatorId = simId;
+            plain.method = op.method();
+            plain.path = op.defaultPath();
+            plain.operation = op.key();
+            em.persist(plain);
+        }
 
         return simId;
     }
