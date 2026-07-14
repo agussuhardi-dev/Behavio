@@ -14,34 +14,27 @@ import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatSelectModule } from '@angular/material/select';
 import { MatTooltipModule } from '@angular/material/tooltip';
 
-import {
-  AccountView,
-  PartnerView,
-  SCENARIOS,
-  Scenario,
-  Simulator,
-  SimulatorService,
-  VirtualAccountView,
-} from './simulator.service';
+import { AccountView, BankApi, SCENARIOS, VirtualAccountView } from '../../core/api/bank-api';
+import { PartnerView, Scenario, Simulator } from '../../core/api/product-api';
 import { SimulatorFormDialog, SimulatorFormResult } from './simulator-form-dialog';
 import { EndpointUrlPanel } from '../../shared/components/endpoint-url-panel/endpoint-url-panel';
 import { ConfirmDialog } from '../../shared/components/confirm-dialog/confirm-dialog';
 import { LocalStorageService } from '../../shared/services/storage.service';
 
 /**
- * Satu kartu endpoint bank. `product` menentukan endpoint mana yang di-edit di
- * Admin API — HANYA diisi untuk endpoint yang punya preset Blueprint di backend.
+ * Satu kartu endpoint bank. `operation` = kunci operasi di Admin API, HANYA diisi untuk
+ * endpoint yang punya preset Blueprint di backend; endpoint berlogika tetap
+ * (access-token, VA) tak punya scenario untuk diedit.
  *
- * Endpoint berlogika tetap (access-token, VA) sengaja TIDAK punya product: memanggil
- * Admin API dengan product tak dikenal akan jatuh ke `default` = transfer
- * (ProductEndpoints.resolve), sehingga malah mengubah scenario transfer.
+ * Dulu field ini bernama `product` dan nilai tak dikenal diam-diam jatuh ke transfer —
+ * sejak pemisahan produk, backend memvalidasinya terhadap katalog dan membalas 400.
  */
 interface EpMeta {
   key: string;
   label: string;
   method: string;
   desc: string;
-  product?: string;
+  operation?: string;
   curl: string;
   curlKey: string;
   scenarioList: Scenario[];
@@ -74,7 +67,8 @@ interface LiveEvent {
   styleUrl: './simulators.scss',
 })
 export class Simulators implements OnInit, OnDestroy {
-  private readonly api = inject(SimulatorService);
+  /** Produk BANK (schema `bank`, design.md §3.4) — halaman ini tak pernah menyentuh QRIS. */
+  readonly api = inject(BankApi);
   private readonly dialog = inject(MatDialog);
   private readonly storage = inject(LocalStorageService);
 
@@ -154,12 +148,12 @@ export class Simulators implements OnInit, OnDestroy {
     {
       key: 'transfer', label: 'Transfer Intrabank', method: 'POST',
       desc: 'Transfer antar rekening internal (service 17). Saldo benar-benar didebit & dikredit.',
-      product: 'transfer', curl: this.curlTransfer(), curlKey: 'trf', scenarioList: SCENARIOS,
+      operation: 'transfer', curl: this.curlTransfer(), curlKey: 'trf', scenarioList: SCENARIOS,
     },
     {
       key: 'transfer-interbank', label: 'Transfer Interbank', method: 'POST',
       desc: 'Transfer ke bank lain (service 18). Hanya debit sumber — rekening tujuan di bank berbeda.',
-      product: 'transfer-interbank', curl: this.curlInterbank(), curlKey: 'ibi',
+      operation: 'transfer-interbank', curl: this.curlInterbank(), curlKey: 'ibi',
       scenarioList: SCENARIOS.filter(s => ['Normal', 'Saldo Kurang', 'Limit'].includes(s.name)),
     },
     {
@@ -345,6 +339,7 @@ export class Simulators implements OnInit, OnDestroy {
     return keys.sort().map(k => `${k}: ${h[k]}`).join('\n');
   }
 
+  /** Saran port profil bank — pita 9001+ (QRIS memakai pita 9101+, lihat design.md §3.4). */
   private suggestedPort(): number {
     const used = new Set(this.sims().map(s => s.port));
     let p = 9001; while (used.has(p)) p++;
@@ -418,8 +413,8 @@ export class Simulators implements OnInit, OnDestroy {
 
   private syncAllScenarios() {
     for (const ep of this.endpointMeta()) {
-      if (!ep.product) continue;
-      this.api.getActiveScenario(this.selectedSimId(), ep.product).subscribe({
+      if (!ep.operation) continue;
+      this.api.getActiveScenario(this.selectedSimId(), ep.operation).subscribe({
         next: r => this.activeScenarios.update(m => ({ ...m, [ep.key]: r.name })),
         error: () => this.activeScenarios.update(m => ({ ...m, [ep.key]: 'Normal' })),
       });
@@ -431,16 +426,16 @@ export class Simulators implements OnInit, OnDestroy {
   scenarioMeta(list: Scenario[], name: string): Scenario | undefined { return list.find(s => s.name === name); }
 
   changeScenario(ep: EpMeta, name: string) {
-    if (!ep.product) return;
+    if (!ep.operation) return;
     this.activeScenarios.update(m => ({ ...m, [ep.key]: name }));
-    this.api.setScenario(this.selectedSimId(), name, ep.product).subscribe();
+    this.api.setScenario(this.selectedSimId(), name, ep.operation).subscribe();
   }
 
   openEditor(ep: EpMeta) {
-    if (!ep.product) return;
+    if (!ep.operation) return;
     const scenario = this.activeScenarioFor(ep.key);
     this.editorError.set(''); this.editorSaved.set(false); this.editorLoading.set(true);
-    this.api.getDefinition(this.selectedSimId(), scenario, ep.product).subscribe({
+    this.api.getDefinition(this.selectedSimId(), scenario, ep.operation).subscribe({
       next: text => {
         this.editorText.set(text); this.editorScenario.set(scenario);
         this.editingEp.set(ep.key); this.editorLoading.set(false);
@@ -457,18 +452,18 @@ export class Simulators implements OnInit, OnDestroy {
   onEditorInput(v: string) { this.editorText.set(v); this.editorSaved.set(false); this.editorError.set(''); }
 
   saveEditor(ep: EpMeta) {
-    if (!ep.product) return;
-    this.api.saveDefinition(this.selectedSimId(), this.editorScenario(), this.editorText(), ep.product).subscribe({
+    if (!ep.operation) return;
+    this.api.saveDefinition(this.selectedSimId(), this.editorScenario(), this.editorText(), ep.operation).subscribe({
       next: () => { this.editorSaved.set(true); this.editorError.set(''); },
       error: err => this.editorError.set(err?.error?.error ?? 'JSON tidak valid.'),
     });
   }
 
   resetEditor(ep: EpMeta) {
-    if (!ep.product) return;
-    this.api.resetDefinition(this.selectedSimId(), this.editorScenario(), ep.product).subscribe(() => {
+    if (!ep.operation) return;
+    this.api.resetDefinition(this.selectedSimId(), this.editorScenario(), ep.operation).subscribe(() => {
       this.editorSaved.set(false);
-      this.api.getDefinition(this.selectedSimId(), this.editorScenario(), ep.product!).subscribe(t => this.editorText.set(t));
+      this.api.getDefinition(this.selectedSimId(), this.editorScenario(), ep.operation!).subscribe(t => this.editorText.set(t));
     });
   }
 

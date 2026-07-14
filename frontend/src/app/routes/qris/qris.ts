@@ -14,20 +14,16 @@ import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatSelectModule } from '@angular/material/select';
 import { MatTooltipModule } from '@angular/material/tooltip';
 
-import {
-  QRIS_SCENARIOS,
-  QrisView,
-  Scenario,
-  Simulator,
-  SimulatorService,
-} from '../simulators/simulator.service';
+import { QRIS_SCENARIOS, QrisApi, QrisView } from '../../core/api/qris-api';
+import { Scenario, Simulator } from '../../core/api/product-api';
 import { SimulatorFormDialog, SimulatorFormResult } from '../simulators/simulator-form-dialog';
 import { EndpointUrlPanel } from '../../shared/components/endpoint-url-panel/endpoint-url-panel';
 import { ConfirmDialog } from '../../shared/components/confirm-dialog/confirm-dialog';
 import { LocalStorageService } from '../../shared/services/storage.service';
 
+/** Satu kartu endpoint QRIS. `operation` = kunci operasi di Admin API produk qris. */
 interface EpMeta {
-  key: string; label: string; desc: string; product: string;
+  key: string; label: string; desc: string; operation: string;
   curl: string; curlKey: string; scenarioList: Scenario[];
 }
 
@@ -52,14 +48,18 @@ interface LiveEvent {
   styleUrl: './qris.scss',
 })
 export class Qris implements OnInit, OnDestroy {
-  private readonly api = inject(SimulatorService);
+  /**
+   * Produk QRIS (schema `qris`, design.md §3.4). Profil di halaman ini adalah **PJP**
+   * dengan port & partner sendiri — sejak pemisahan, bukan lagi profil bank yang sama.
+   */
+  readonly api = inject(QrisApi);
   private readonly dialog = inject(MatDialog);
   private readonly storage = inject(LocalStorageService);
 
   /** Profil terakhir yang dipilih user — dipulihkan saat halaman dibuka lagi. */
   private static readonly LAST_SIM_KEY = 'behavio.qris.lastSimId';
 
-  readonly qrisOperations = ['qris-generate', 'qris-query', 'qris-refund', 'qris-cancel', 'qris-decode', 'qris-payment', 'qris-apply-ott'];
+  readonly qrisOperations = ['access-token', 'qris-generate', 'qris-query', 'qris-refund', 'qris-cancel', 'qris-decode', 'qris-payment', 'qris-apply-ott'];
 
   readonly sims = signal<Simulator[]>([]);
   readonly loading = signal(true);
@@ -98,37 +98,44 @@ export class Qris implements OnInit, OnDestroy {
 
   readonly endpointMeta = (): EpMeta[] => [
     {
-      key: 'qris-generate', label: 'Generate QR', product: 'qris',
+      // Sejak pemisahan produk (design.md §3.4), profil QRIS = PJP tersendiri yang
+      // menerbitkan token B2B-nya SENDIRI — token profil bank tak berlaku di sini.
+      key: 'access-token', label: 'Access Token B2B', operation: '',
+      desc: 'Terbitkan token Bearer B2B milik PJP ini — dipakai endpoint QRIS lain saat mode STRICT. Token profil bank TIDAK berlaku di sini.',
+      curl: this.curlToken(), curlKey: 'tok', scenarioList: [],
+    },
+    {
+      key: 'qris-generate', label: 'Generate QR', operation: 'qris-generate',
       desc: 'Buat QR (dynamic/static). Bisa di-custom: tolak amount ≤ 0, blokir merchant, simulasi down.',
       curl: this.curlDynamic(), curlKey: 'gen', scenarioList: QRIS_SCENARIOS,
     },
     {
-      key: 'qris-query', label: 'Query Status', product: 'qris-query',
+      key: 'qris-query', label: 'Query Status', operation: 'qris-query',
       desc: 'Cek status QR — pending/success/refunded/expired.',
       curl: this.curlQuery(), curlKey: 'qry', scenarioList: [{ name: 'Normal', desc: 'Response standar SNAP.', icon: 'check_circle', tone: 'ok' }],
     },
     {
-      key: 'qris-refund', label: 'Refund', product: 'qris-refund',
+      key: 'qris-refund', label: 'Refund', operation: 'qris-refund',
       desc: 'Refund QR yang sudah dibayar (full/partial).',
       curl: this.curlRefund(), curlKey: 'rfd', scenarioList: [{ name: 'Normal', desc: 'Response standar SNAP.', icon: 'check_circle', tone: 'ok' }],
     },
     {
-      key: 'qris-cancel', label: 'Cancel Payment', product: 'qris-cancel',
+      key: 'qris-cancel', label: 'Cancel Payment', operation: 'qris-cancel',
       desc: 'Batalkan QR yang belum dibayar (service 77).',
       curl: this.curlCancel(), curlKey: 'cnl', scenarioList: [{ name: 'Normal', desc: 'Response standar SNAP.', icon: 'check_circle', tone: 'ok' }],
     },
     {
-      key: 'qris-decode', label: 'Decode QR', product: 'qris-decode',
+      key: 'qris-decode', label: 'Decode QR', operation: 'qris-decode',
       desc: 'Decode QR content → merchant info.',
       curl: this.curlDecode(), curlKey: 'dcd', scenarioList: [{ name: 'Normal', desc: 'Response standar SNAP.', icon: 'check_circle', tone: 'ok' }],
     },
     {
-      key: 'qris-payment', label: 'Payment H2H', product: 'qris-payment',
+      key: 'qris-payment', label: 'Payment H2H', operation: 'qris-payment',
       desc: 'Host-to-host payment — customer bayar QR.',
       curl: this.curlPayment(), curlKey: 'pay', scenarioList: [{ name: 'Normal', desc: 'Response standar SNAP.', icon: 'check_circle', tone: 'ok' }],
     },
     {
-      key: 'qris-apply-ott', label: 'Apply OTT', product: 'qris-apply-ott',
+      key: 'qris-apply-ott', label: 'Apply OTT', operation: 'qris-apply-ott',
       desc: 'One-time token untuk redirect payment.',
       curl: this.curlOtt(), curlKey: 'ott', scenarioList: [{ name: 'Normal', desc: 'Response standar SNAP.', icon: 'check_circle', tone: 'ok' }],
     },
@@ -139,6 +146,12 @@ export class Qris implements OnInit, OnDestroy {
       this.copiedKey.set(key);
       setTimeout(() => this.copiedKey.set(null), 1500);
     });
+  }
+
+  curlToken(): string {
+    return `curl -X POST http://localhost:${this.port()}/v1.0/access-token/b2b \\
+  -H "X-CLIENT-KEY: PARTNER001" -H "Content-Type: application/json" \\
+  -d '{"grantType":"client_credentials"}'`;
   }
 
   curlDynamic(): string {
@@ -270,9 +283,15 @@ export class Qris implements OnInit, OnDestroy {
     return keys.sort().map(k => `${k}: ${h[k]}`).join('\n');
   }
 
+  /**
+   * Saran port untuk profil PJP baru. Memakai pita 9101+ — TERPISAH dari pita bank
+   * (9001+): halaman ini hanya melihat profil QRIS, jadi kalau menyarankan dari 9001 ia
+   * tak akan sadar port itu milik profil bank dan create selalu ditolak 409 oleh
+   * platform.port_registry (design.md §3.4). Bentrok sisa tetap dijaga backend.
+   */
   private suggestedPort(): number {
     const used = new Set(this.sims().map(s => s.port));
-    let p = 9001; while (used.has(p)) p++;
+    let p = 9101; while (used.has(p)) p++;
     return p;
   }
 
@@ -343,7 +362,11 @@ export class Qris implements OnInit, OnDestroy {
 
   private syncAllScenarios() {
     for (const ep of this.endpointMeta()) {
-      this.api.getActiveScenario(this.selectedSimId(), ep.product).subscribe({
+      // Endpoint berlogika tetap (access-token) tak punya scenario. Tanpa penjaga ini
+      // dashboard menembak `?operation=` kosong → backend 400 → errorInterceptor
+      // memunculkan toast error tiap halaman dibuka.
+      if (!ep.operation) continue;
+      this.api.getActiveScenario(this.selectedSimId(), ep.operation).subscribe({
         next: r => this.activeScenarios.update(m => ({ ...m, [ep.key]: r.name })),
         error: () => this.activeScenarios.update(m => ({ ...m, [ep.key]: 'Normal' })),
       });
@@ -354,13 +377,13 @@ export class Qris implements OnInit, OnDestroy {
 
   changeScenario(ep: EpMeta, name: string) {
     this.activeScenarios.update(m => ({ ...m, [ep.key]: name }));
-    this.api.setScenario(this.selectedSimId(), name, ep.product).subscribe();
+    this.api.setScenario(this.selectedSimId(), name, ep.operation).subscribe();
   }
 
   openEditor(ep: EpMeta) {
     const scenario = this.activeScenarioFor(ep.key);
     this.editorError.set(''); this.editorSaved.set(false); this.editorLoading.set(true);
-    this.api.getDefinition(this.selectedSimId(), scenario, ep.product as any).subscribe({
+    this.api.getDefinition(this.selectedSimId(), scenario, ep.operation).subscribe({
       next: text => {
         this.editorText.set(text); this.editorScenario.set(scenario);
         this.editingEp.set(ep.key); this.editorLoading.set(false);
@@ -377,16 +400,16 @@ export class Qris implements OnInit, OnDestroy {
   onEditorInput(v: string) { this.editorText.set(v); this.editorSaved.set(false); this.editorError.set(''); }
 
   saveEditor(ep: EpMeta) {
-    this.api.saveDefinition(this.selectedSimId(), this.editorScenario(), this.editorText(), ep.product as any).subscribe({
+    this.api.saveDefinition(this.selectedSimId(), this.editorScenario(), this.editorText(), ep.operation).subscribe({
       next: () => { this.editorSaved.set(true); this.editorError.set(''); },
       error: err => this.editorError.set(err?.error?.error ?? 'JSON tidak valid.'),
     });
   }
 
   resetEditor(ep: EpMeta) {
-    this.api.resetDefinition(this.selectedSimId(), this.editorScenario(), ep.product as any).subscribe(() => {
+    this.api.resetDefinition(this.selectedSimId(), this.editorScenario(), ep.operation).subscribe(() => {
       this.editorSaved.set(false);
-      this.api.getDefinition(this.selectedSimId(), this.editorScenario(), ep.product as any).subscribe(t => this.editorText.set(t));
+      this.api.getDefinition(this.selectedSimId(), this.editorScenario(), ep.operation).subscribe(t => this.editorText.set(t));
     });
   }
 

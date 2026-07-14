@@ -2,14 +2,12 @@ package id.behavio.web;
 
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
-import id.behavio.core.engine.SimRequest;
-import id.behavio.core.engine.SimResponse;
 import id.behavio.core.port.EndpointRegistry;
 import id.behavio.core.port.EventPublisher;
+import id.behavio.core.product.OperationHandler;
 import id.behavio.core.rule.FaultSpec;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 import java.io.OutputStream;
@@ -26,46 +24,33 @@ import java.util.concurrent.Executors;
 
 /**
  * Port/Server Manager (design.md §6.3): buka-tutup server HTTP per-simulator secara
- * runtime. Tiap simulator = satu port; semua mengarah ke satu mesin eksekusi. Memakai
- * JDK HttpServer agar isolasi per-port nyata (stop = connection-refused → basis Fault A).
+ * runtime. Tiap simulator = satu port. Memakai JDK HttpServer agar isolasi per-port nyata
+ * (stop = connection-refused → basis Fault A).
  *
- * Routing DATA-DRIVEN via {@link EndpointRegistry}: path setiap operasi SNAP dapat
- * di-custom per-simulator dari dashboard (design.md §2 — bank berbeda kerap punya
- * path/versi berbeda, mis. BRI vs ASPI standar). Path yang tak dikenal → 404 eksplisit.
+ * Satu instance per PRODUK (design.md §3.4): manager profil bank hanya mengenal handler
+ * bank, manager profil QRIS hanya handler QRIS. Routing tetap DATA-DRIVEN via
+ * {@link EndpointRegistry} (path tiap operasi dapat di-custom per-simulator, §2), tapi
+ * dispatch-nya kini lookup ke map handler yang didaftarkan produk — menggantikan satu
+ * {@code switch} panjang yang mencampur operasi bank & QRIS di satu tempat.
  */
-@Component
 public class SimulatorServerManager {
 
     private static final Logger log = LoggerFactory.getLogger(SimulatorServerManager.class);
+    private static final Map<String, String> JSON = Map.of("Content-Type", "application/json");
 
-    private final SimulationExecutor executor;
-    private final SnapRequestMapper mapper;
-    private final AccessTokenService accessTokenService;
-    private final VirtualAccountService virtualAccountService;
-    private final AccountService accountService;
-    private final TransactionHistoryService transactionHistoryService;
-    private final QrisService qrisService;
+    private final String product;
     private final EndpointRegistry endpointRegistry;
-    /** Fan-out ke semua EventPublisher (log + request_logs + SSE Live View), sama seperti CoreBeansConfig. */
+    private final Map<String, OperationHandler> handlers;
+    /** Fan-out ke semua EventPublisher (log + request_logs + SSE Live View). */
     private final EventPublisher events;
     private final Map<UUID, HttpServer> servers = new ConcurrentHashMap<>();
 
-    public SimulatorServerManager(SimulationExecutor executor, SnapRequestMapper mapper,
-                                  AccessTokenService accessTokenService,
-                                  VirtualAccountService virtualAccountService,
-                                  AccountService accountService,
-                                  TransactionHistoryService transactionHistoryService,
-                                  QrisService qrisService,
-                                  EndpointRegistry endpointRegistry,
+    public SimulatorServerManager(String product, EndpointRegistry endpointRegistry,
+                                  Map<String, OperationHandler> handlers,
                                   List<EventPublisher> eventPublishers) {
-        this.executor = executor;
-        this.mapper = mapper;
-        this.accessTokenService = accessTokenService;
-        this.virtualAccountService = virtualAccountService;
-        this.accountService = accountService;
-        this.transactionHistoryService = transactionHistoryService;
-        this.qrisService = qrisService;
+        this.product = product;
         this.endpointRegistry = endpointRegistry;
+        this.handlers = Map.copyOf(handlers);
         this.events = event -> eventPublishers.forEach(p -> p.publishRequestEvent(event));
     }
 
@@ -79,7 +64,7 @@ public class SimulatorServerManager {
             server.setExecutor(Executors.newFixedThreadPool(8));
             server.start();
             servers.put(simulatorId, server);
-            log.info("Simulator {} START di port {}", simulatorId, port);
+            log.info("Simulator {} [{}] START di port {}", simulatorId, product, port);
         } catch (IOException e) {
             throw new IllegalStateException("Gagal membuka port " + port + ": " + e.getMessage(), e);
         }
@@ -89,7 +74,7 @@ public class SimulatorServerManager {
         HttpServer server = servers.remove(simulatorId);
         if (server != null) {
             server.stop(0);
-            log.info("Simulator {} STOP", simulatorId);
+            log.info("Simulator {} [{}] STOP", simulatorId, product);
         }
     }
 
@@ -107,62 +92,23 @@ public class SimulatorServerManager {
 
             Optional<String> operation = endpointRegistry.resolveOperation(simulatorId, method, path);
             if (operation.isEmpty()) {
-                write(exchange, 404, Map.of("Content-Type", "application/json"),
+                write(exchange, 404, JSON,
                         "{\"responseCode\":\"4040400\",\"responseMessage\":\"Path not registered on this simulator\"}");
                 return;
             }
-
-            switch (operation.get()) {
-                case "access-token" -> {
-                    AccessTokenService.Result r = accessTokenService.issue(simulatorId, headers, body);
-                    writeAndEmit(simulatorId, method, path, headers, body, r.status(), r.body(), exchange, startNanos);
-                }
-                case "va-create" -> {
-                    VirtualAccountService.Result r = virtualAccountService.create(simulatorId, method, path, headers, body);
-                    writeAndEmit(simulatorId, method, path, headers, body, r.status(), r.body(), exchange, startNanos);
-                }
-                case "va-status" -> {
-                    VirtualAccountService.Result r = virtualAccountService.inquiry(simulatorId, method, path, headers, body);
-                    writeAndEmit(simulatorId, method, path, headers, body, r.status(), r.body(), exchange, startNanos);
-                }
-                case "va-delete" -> {
-                    VirtualAccountService.Result r = virtualAccountService.delete(simulatorId, method, path, headers, body);
-                    writeAndEmit(simulatorId, method, path, headers, body, r.status(), r.body(), exchange, startNanos);
-                }
-                case "qris-generate" -> writeQris(simulatorId, method, path, headers, body, exchange,
-                        qrisService.generate(simulatorId, method, path, headers, body), startNanos);
-                case "qris-query" -> writeQris(simulatorId, method, path, headers, body, exchange,
-                        qrisService.query(simulatorId, method, path, headers, body), startNanos);
-                case "qris-refund" -> writeQris(simulatorId, method, path, headers, body, exchange,
-                        qrisService.refund(simulatorId, method, path, headers, body), startNanos);
-                case "qris-cancel", "qris-expire" -> writeQris(simulatorId, method, path, headers, body, exchange,
-                        qrisService.cancel(simulatorId, method, path, headers, body), startNanos);
-                case "qris-decode" -> writeQris(simulatorId, method, path, headers, body, exchange,
-                        qrisService.decode(simulatorId, method, path, headers, body), startNanos);
-                case "qris-payment" -> writeQris(simulatorId, method, path, headers, body, exchange,
-                        qrisService.payment(simulatorId, method, path, headers, body), startNanos);
-                case "qris-apply-ott" -> writeQris(simulatorId, method, path, headers, body, exchange,
-                        qrisService.applyOtt(simulatorId, method, path, headers, body), startNanos);
-                case "transfer" -> handleTransfer(simulatorId, method, path, headers, body, exchange);
-                case "transfer-interbank" -> handleTransfer(simulatorId, method, path, headers, body, exchange);
-                case "balance-inquiry" -> {
-                    AccountService.Result r = accountService.balanceInquiry(simulatorId, method, path, headers, body);
-                    writeAndEmit(simulatorId, method, path, headers, body, r.status(), r.body(), exchange, startNanos);
-                }
-                case "account-inquiry-internal" -> {
-                    AccountService.Result r = accountService.internalInquiry(simulatorId, method, path, headers, body);
-                    writeAndEmit(simulatorId, method, path, headers, body, r.status(), r.body(), exchange, startNanos);
-                }
-                case "transaction-history-list" -> {
-                    TransactionHistoryService.Result r = transactionHistoryService.historyList(simulatorId, method, path, headers, body);
-                    writeAndEmit(simulatorId, method, path, headers, body, r.status(), r.body(), exchange, startNanos);
-                }
-                default -> write(exchange, 404, Map.of("Content-Type", "application/json"),
+            OperationHandler handler = handlers.get(operation.get());
+            if (handler == null) {
+                write(exchange, 404, JSON,
                         "{\"responseCode\":\"4040400\",\"responseMessage\":\"Operation not implemented\"}");
+                return;
             }
+
+            OperationHandler.Result result = handler.handle(new OperationHandler.Request(
+                    simulatorId, operation.get(), method, path, headers, body));
+            writeAndEmit(simulatorId, method, path, headers, body, result, exchange, startNanos);
         } catch (Exception e) {
-            log.warn("Simulator {} error memproses request: {}", simulatorId, e.toString());
-            write(exchange, 500, Map.of("Content-Type", "application/json"),
+            log.warn("Simulator {} [{}] error memproses request: {}", simulatorId, product, e.toString());
+            write(exchange, 500, JSON,
                     "{\"responseCode\":\"5000000\",\"responseMessage\":\"Internal error\"}");
         } finally {
             exchange.close();
@@ -170,14 +116,16 @@ public class SimulatorServerManager {
     }
 
     /**
-     * Tulis respons QRIS lalu siarkan RequestEvent ke Live View (SSE) + request_logs.
-     * Transfer sudah emit event dari dalam engine; QRIS lewat QrisService langsung
-     * sehingga event dipublikasikan di sini (pasca-tulis, di luar transaksi bisnis).
+     * Tulis respons lalu siarkan RequestEvent ke Live View (SSE) + request_logs.
+     *
+     * Efek fisik fault diterapkan PASCA-commit (design.md §4.2) — handler sudah menutup
+     * transaksinya saat sampai di sini. Emisi event kini SATU jalur untuk semua operasi;
+     * sebelumnya transfer meng-emit dari dalam engine sementara QRIS/VA dari lapisan web,
+     * sehingga isi & waktu event-nya tak persis sama antar-operasi.
      */
-    private void writeQris(UUID simulatorId, String method, String path,
-                           Map<String, String> requestHeaders, String requestBody,
-                           HttpExchange exchange, QrisService.Result r, long startNanos) throws IOException {
-        // Efek fisik fault diterapkan PASCA-commit (design.md §4.2) — sama seperti transfer.
+    private void writeAndEmit(UUID simulatorId, String method, String path,
+                              Map<String, String> requestHeaders, String requestBody,
+                              OperationHandler.Result r, HttpExchange exchange, long startNanos) throws IOException {
         FaultSpec fault = r.fault();
         if (fault != null && fault.delayMillis() > 0) {
             try {
@@ -186,16 +134,17 @@ public class SimulatorServerManager {
                 Thread.currentThread().interrupt();
             }
         }
+
         String outBody = r.body();
         boolean dropped = fault != null && fault.drop();
-        if (!dropped) {
+        if (dropped) {
+            // commit-then-drop: state sudah berubah, respons TIDAK dikirim (koneksi ditutup)
+            log.info("Simulator {} [{}] FAULT commit-then-drop — respons di-drop", simulatorId, product);
+        } else {
             if (fault != null && fault.corrupt()) {
                 outBody = corrupt(outBody);
             }
-            write(exchange, r.status(), Map.of("Content-Type", "application/json"), outBody);
-        } else {
-            // commit-then-drop: state sudah berubah, respons TIDAK dikirim (koneksi ditutup)
-            log.info("Simulator {} FAULT commit-then-drop (QRIS) — respons di-drop", simulatorId);
+            write(exchange, r.status(), r.headers(), outBody);
         }
 
         long durationMillis = (System.nanoTime() - startNanos) / 1_000_000;
@@ -205,7 +154,7 @@ public class SimulatorServerManager {
                     extractResponseCode(r.body()), durationMillis,
                     requestHeaders, requestBody, dropped ? "" : outBody));
         } catch (Exception e) {
-            log.warn("Simulator {} gagal publikasi event QRIS: {}", simulatorId, e.toString());
+            log.warn("Simulator {} [{}] gagal publikasi event: {}", simulatorId, product, e.toString());
         }
     }
 
@@ -218,32 +167,6 @@ public class SimulatorServerManager {
         if (q1 < 0) return "";
         int q2 = body.indexOf('"', q1 + 1);
         return q2 < 0 ? "" : body.substring(q1 + 1, q2);
-    }
-
-    private void handleTransfer(UUID simulatorId, String method, String path, Map<String, String> headers,
-                                String body, HttpExchange exchange) throws IOException {
-        SimRequest request = new SimRequest(method, path, headers, mapper.toFields(body), body);
-        SimResponse response = executor.execute(simulatorId, request);
-
-        // Efek fisik fault diterapkan PASCA-commit (design.md §4.2)
-        SimResponse.Fault fault = response.fault();
-        if (fault != null && fault.delayMillis() > 0) {
-            try {
-                Thread.sleep(fault.delayMillis());
-            } catch (InterruptedException ie) {
-                Thread.currentThread().interrupt();
-            }
-        }
-        if (fault != null && fault.drop()) {
-            // commit-then-drop: state sudah berubah, respons TIDAK dikirim (koneksi ditutup)
-            log.info("Simulator {} FAULT commit-then-drop — respons di-drop", simulatorId);
-            return;
-        }
-        String outBody = response.body();
-        if (fault != null && fault.corrupt()) {
-            outBody = corrupt(outBody);
-        }
-        write(exchange, response.httpStatus(), response.headers(), outBody);
     }
 
     /** Ambil header dengan nama kanonik SNAP uppercase (X-PARTNER-ID, X-EXTERNAL-ID, ...). */
@@ -276,23 +199,6 @@ public class SimulatorServerManager {
             try (OutputStream os = exchange.getResponseBody()) {
                 os.write(bytes);
             }
-        }
-    }
-
-    /** Tulis respons lalu siarkan event ke Live View (SSE) + request_logs. */
-    private void writeAndEmit(UUID simulatorId, String method, String path,
-                               Map<String, String> requestHeaders, String requestBody,
-                               int status, String responseBody,
-                               HttpExchange exchange, long startNanos) throws IOException {
-        write(exchange, status, Map.of("Content-Type", "application/json"), responseBody);
-        long durationMillis = (System.nanoTime() - startNanos) / 1_000_000;
-        try {
-            events.publishRequestEvent(new EventPublisher.RequestEvent(
-                    simulatorId.toString(), method, path, status,
-                    extractResponseCode(responseBody), durationMillis,
-                    requestHeaders, requestBody, responseBody));
-        } catch (Exception e) {
-            log.warn("Simulator {} gagal publikasi event: {}", simulatorId, e.toString());
         }
     }
 }

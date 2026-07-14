@@ -5,7 +5,6 @@ import id.behavio.core.domain.SignatureMode;
 import id.behavio.core.port.AccessTokenStore;
 import id.behavio.core.port.ConfigRepository;
 import id.behavio.core.port.SignatureVerifier;
-import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.util.Map;
@@ -16,8 +15,10 @@ import java.util.UUID;
  * Endpoint SNAP <b>Access Token B2B</b> (design.md Lampiran A.1):
  * POST /v1.0/access-token/b2b. Mode STRICT memverifikasi signature RSA asimetris
  * (clientId|timestamp) dengan public key partner; mode SIMULATED langsung terbit.
+ *
+ * Satu instance per PRODUK: bank & QRIS sama-sama menerbitkan token B2B, tapi dari
+ * partner & tabel token schema-nya masing-masing — token bank tak berlaku di QRIS.
  */
-@Service
 public class AccessTokenService {
 
     private final ConfigRepository config;

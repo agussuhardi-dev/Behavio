@@ -74,7 +74,7 @@
 
         @if (epuOpen()) {
           <div class="sim-epu">
-            <app-endpoint-url-panel [simulatorId]="selectedSimId()" [operations]="bankOperations" />
+            <app-endpoint-url-panel [api]="api" [simulatorId]="selectedSimId()" [operations]="bankOperations" />
           </div>
           <mat-divider />
         }
@@ -86,7 +86,7 @@
                 <mat-panel-title>
                   <span class="sim-ep__badge" [class.sim-ep__badge--post]="ep.method === 'POST'" [class.sim-ep__badge--del]="ep.method === 'DELETE'">{{ ep.method }}</span>
                   <span class="sim-ep__label">{{ ep.label }}</span>
-                  @if (ep.product) {
+                  @if (ep.operation) {
                     <span class="sim-ep__scenario-tag">{{ activeScenarioFor(ep.key) }}</span>
                   }
                 </mat-panel-title>
@@ -94,7 +94,7 @@
               </mat-expansion-panel-header>
 
               <div class="sim-ep__body">
-                @if (ep.product) {
+                @if (ep.operation) {
                   <div class="sim-ep__bar">
                     <mat-form-field appearance="outline" class="sim-ep__scenario">
                       <mat-label>Skenario</mat-label>

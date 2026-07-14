@@ -11,5 +11,7 @@ include(
     "adapter-web",
     "adapter-signature",
     "adapter-webhook",
+    "product-bank",
+    "product-qris",
     "app",
 )

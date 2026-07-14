@@ -3,6 +3,7 @@
     <div class="qris-hero__text">
       <h1><mat-icon class="qris-hero__icon">qr_code_2</mat-icon> QRIS MPM</h1>
       <p>Simulasikan semua endpoint QRIS SNAP BI — generate, query, refund, cancel, decode, payment, apply-ott. Setiap endpoint dapat di-custom dari dashboard.</p>
+      <p class="qris-hero__note">Profil di sini adalah <strong>PJP/acquirer</strong> — berdiri sendiri dengan port, partner, dan access-token sendiri, terpisah penuh dari profil di halaman Bank Simulator.</p>
     </div>
   </div>
 
@@ -12,8 +13,13 @@
     <mat-card class="qris-empty" appearance="outlined">
       <mat-card-content class="qris-empty__inner">
         <mat-icon class="qris-empty__icon">info</mat-icon>
-        <h3>Belum ada simulator</h3>
-        <p>Buat dulu profil bank di halaman Bank Simulator.</p>
+        <h3>Belum ada profil QRIS</h3>
+        <p>Profil PJP berdiri sendiri — profil di halaman Bank Simulator tidak dipakai di sini.</p>
+        <!-- Tombol ini WAJIB ada di empty state: sejak profil QRIS jadi entitas sendiri,
+             tanpa ini user tak punya jalan membuat profil pertamanya. -->
+        <button mat-flat-button color="primary" (click)="openCreate()">
+          <mat-icon>add</mat-icon> Tambah Profil PJP
+        </button>
       </mat-card-content>
     </mat-card>
   }
@@ -22,7 +28,7 @@
     <mat-card class="qris-bar" appearance="outlined">
       <div class="qris-bar__row">
         <mat-form-field appearance="outline" class="qris-bar__field">
-          <mat-label>Profil (bank/merchant)</mat-label>
+          <mat-label>Profil PJP</mat-label>
           <mat-select [value]="selectedSimId()" (valueChange)="onSelectSim($event)">
             @for (s of sims(); track s.id) {
               <mat-option [value]="s.id">{{ s.name }} — :{{ s.port }}</mat-option>
@@ -63,7 +69,7 @@
 
         @if (epuOpen()) {
           <div class="qris-epu">
-            <app-endpoint-url-panel [simulatorId]="selectedSimId()" [operations]="qrisOperations" />
+            <app-endpoint-url-panel [api]="api" [simulatorId]="selectedSimId()" [operations]="qrisOperations" />
           </div>
           <mat-divider />
         }

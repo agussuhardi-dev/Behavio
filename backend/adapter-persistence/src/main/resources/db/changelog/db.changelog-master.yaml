@@ -1,15 +1,15 @@
 databaseChangeLog:
+  # Pemisahan penuh bank vs QRIS (design.md §3.4). Urutan wajib: schema dibuat dulu
+  # di platform, baru tabel per-produk.
   - include:
-      file: db/changelog/changes/001-core-tables.sql
+      file: db/changelog/platform/001-platform.sql
   - include:
-      file: db/changelog/changes/002-webhook-outbox.sql
+      file: db/changelog/bank/001-bank.sql
   - include:
-      file: db/changelog/changes/003-scenario-definition.sql
+      file: db/changelog/qris/001-qris.sql
+  # Pembersihan tabel mati (audit 2026-07-14) — changeset baru, BUKAN mengedit yang lama:
+  # mengubah changeset yang sudah ter-apply akan memecahkan checksum Liquibase.
   - include:
-      file: db/changelog/changes/004-endpoint-operation.sql
+      file: db/changelog/bank/002-drop-unused.sql
   - include:
-      file: db/changelog/changes/005-qris-cancel.sql
-  - include:
-      file: db/changelog/changes/006-endpoint-headers.sql
-  - include:
-      file: db/changelog/changes/007-webhook-subscriptions.sql
+      file: db/changelog/qris/002-drop-unused.sql

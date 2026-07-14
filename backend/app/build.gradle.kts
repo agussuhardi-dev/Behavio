@@ -1,4 +1,4 @@
-// app: perakitan (wiring) + Spring Boot runtime. Merakit core + semua adapter.
+// app: perakitan (wiring) + Spring Boot runtime. Merakit core + mesin generik + produk.
 plugins {
     alias(libs.plugins.spring.boot)
     alias(libs.plugins.spring.dep.mgmt)
@@ -10,8 +10,11 @@ dependencies {
     implementation(project(":adapter-web"))
     implementation(project(":adapter-signature"))
     implementation(project(":adapter-webhook"))
+    implementation(project(":product-bank"))
+    implementation(project(":product-qris"))
 
     implementation(libs.spring.boot.starter.actuator)
+    implementation("org.springframework.boot:spring-boot-starter-jdbc")  // JdbcClient utk wiring worker outbox
     runtimeOnly(libs.postgresql)
 
     testImplementation(libs.spring.boot.starter.test)

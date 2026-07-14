@@ -1,20 +1,18 @@
 package id.behavio.core.rule;
 
-import id.behavio.core.domain.TransactionStatus;
-
 /**
- * Aksi mutasi state (bagian THEN). Dieksekusi berurutan di dalam satu unit atomik
- * (design.md §4.1) — adapter web membungkus pipeline dalam satu DB transaction.
+ * Aksi mutasi state (bagian THEN) — sengaja hanya PENANDA, tanpa anggota.
+ *
+ * Kosakata aksi milik PRODUK, bukan mesin: {@code debit/credit/createTransaction} hanya
+ * berarti bagi :product-bank (lihat {@code id.behavio.bank.rule.BankAction}); produk QRIS
+ * tak memutasi saldo sama sekali sehingga daftar aksinya selalu kosong. Sebelum
+ * pemisahan, record aksi bank tertanam di sini dan menyeret {@code TransactionStatus}
+ * (tipe milik bank) ikut masuk ke core.
+ *
+ * Mesin generik hanya membawa {@code List<Action>} tanpa menafsirkannya: yang
+ * mengeksekusi = engine produk, yang menyimpan/memuat ke JSON = {@code ActionCodec}
+ * produk (lihat {@code id.behavio.core.product.ActionCodec}). Dieksekusi berurutan di
+ * dalam satu unit atomik (design.md §4.1).
  */
-public sealed interface Action
-        permits Action.Debit, Action.Credit, Action.CreateTransaction {
-
-    /** Debit saldo account (nomor dari field). Jumlah dari field. Menjaga saldo ≥ 0. */
-    record Debit(String accountNoField, String amountField) implements Action {}
-
-    /** Credit saldo account bila account ditemukan (intrabank: rekening tujuan internal). */
-    record Credit(String accountNoField, String amountField) implements Action {}
-
-    /** Catat transaksi dengan status awal tertentu. */
-    record CreateTransaction(TransactionStatus status) implements Action {}
+public interface Action {
 }

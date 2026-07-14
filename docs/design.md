@@ -1,6 +1,6 @@
 # Dokumen Desain — API Behavior Platform (Bank & Payment Simulator)
 
-> Status: **Desain (hasil diskusi awal)** · Terakhir diperbarui: 2026-07-13
+> Status: **Desain + implementasi berjalan** · Terakhir diperbarui: 2026-07-14
 >
 > Dokumen ini merangkum keputusan desain hasil diskusi. Menjadi acuan sebelum
 > implementasi. Catatan: beberapa keputusan **merevisi** `readme.md` (lihat
@@ -142,14 +142,15 @@ Manfaat konkret:
 
 ### 3.1 Hirarki & Tenancy
 ```
-Workspace (opsional — pengelompokan)
-  └─ Simulator  (satu bank/PJP; punya port sendiri + lifecycle)
-       ├─ KONFIGURASI
-       │    Partner, Endpoint, Scenario, Rule, ResponseTemplate,
-       │    WebhookConfig, FaultConfig
-       └─ STATE  (selalu terikat partner_id — isolasi penuh per-partner)
-            accounts, transactions, access_tokens, idempotency,
-            entities (JSON), request_logs
+Produk  (bank | qris — schema DB sendiri; lihat §3.4)
+  └─ Workspace (opsional — pengelompokan)
+       └─ Simulator  (satu bank ATAU satu PJP; punya port sendiri + lifecycle)
+            ├─ KONFIGURASI
+            │    Partner, Endpoint, Scenario, Rule, ResponseTemplate,
+            │    WebhookConfig, FaultConfig
+            └─ STATE  (selalu terikat partner_id — isolasi penuh per-partner)
+                 accounts, transactions, access_tokens, idempotency,
+                 entities (JSON), request_logs
 ```
 
 - **Isolasi penuh per-partner:** tiap partner punya dunia rekening & transaksi
@@ -178,6 +179,78 @@ Workspace (opsional — pengelompokan)
 Simulator: id, name, port, status (RUNNING|STOPPED),
            signatureMode (STRICT|SIMULATED), base config, keys...
 ```
+
+### 3.4 Pemisahan penuh Bank ↔ QRIS (keputusan 2026-07-14)
+
+**Keputusan:** bank dan QRIS adalah **dua produk terpisah penuh** — modul Java sendiri
+dan schema PostgreSQL sendiri.
+
+**Alasan:** penerbit QRIS itu **PJP**, bukan bank yang sama. Sebelumnya QRIS bukan
+entitas apa pun — hanya 7 operasi yang menempel pada `Simulator` yang sama, sehingga
+satu port melayani transfer/VA **dan** QRIS sekaligus, dan `entities` menampung
+`virtual_account` bercampur `qris`. Halaman `/qris` di dashboard terlihat terpisah,
+padahal membaca baris `simulators` yang identik.
+
+#### Bentuk
+```
+Produk "bank"  → schema bank  → profil :9001  access-token, transfer(-interbank),
+                                              balance/account-inquiry, history, VA
+Produk "qris"  → schema qris  → profil :9101  access-token, qr-mpm-generate/query/
+                                              refund/cancel/decode/payment, apply-ott
+```
+- Tiap schema punya set tabel **lengkap & identik**: `simulators, partners, endpoints,
+  scenarios, access_tokens, idempotency, entities, request_logs, webhook_outbox`.
+  Hanya `bank` yang punya `accounts` & `transactions` — QRIS tak memindahkan saldo
+  rekening. (`rules` & `webhook_subscriptions` sempat ada lalu **dibuang** 2026-07-14
+  setelah terbukti tak pernah dipakai — lihat "Pembersihan tabel mati" di §14.)
+- Tiap produk punya **partner & access-token sendiri**: token bank tak berlaku di QRIS,
+  karena memang tabel yang berbeda.
+- `entities` tetap generik per-schema (§3.2): `bank.entities` = VA, `qris.entities` = QR.
+
+#### `platform.port_registry` — satu-satunya yang tetap bersama
+Satu proses OS = satu ruang port, tapi `bank.simulators.port` dan `qris.simulators.port`
+masing-masing UNIQUE **tanpa saling melihat**. Tanpa registry ini, profil bank & QRIS
+bisa sama-sama mengklaim 9001 dan baru gagal saat bind. Keunikan lintas produk ditegakkan
+DB lewat `PRIMARY KEY(port)`, bukan cek baca-lalu-tulis di aplikasi yang punya celah race.
+Baris di sana sengaja tanpa FK (menunjuk dua tabel berbeda tergantung `product`), jadi
+`ResetStatusOnBoot` yang membersihkan baris yatim.
+
+#### Prinsip: pisahkan PRODUK, jangan fork MESIN
+Mesin (rule engine, scenario/definisi, editor, outbox, server per-port, Admin API) tetap
+**satu salinan kode**, di-instansiasi **sekali per produk**:
+- `:adapter-persistence` → `SchemaTables` + `Schema*` (JdbcClient, schema jadi parameter)
+- `:adapter-web` → `SimulatorServerManager` per produk; Admin API generik `/{product}/`
+- `:core-engine` → SPI `ProductCatalog` (operasi + preset blueprint + `ActionCodec`)
+
+Konsekuensi yang disengaja: **`:adapter-persistence` tidak memakai JPA.** `@Table(schema=…)`
+itu statis, jadi JPA akan memaksa entity class diduplikasi per-schema dan mesin ikut jadi
+dua salinan yang harus dirawat paralel. JPA hanya dipakai di `:product-bank` untuk state
+uang (`accounts/transactions/idempotency`), tempat ia membayar dirinya sendiri dan memang
+tak perlu diduplikasi.
+
+Kosakata aksi (`debit/credit/createTransaction`) **milik bank, bukan mesin** —
+dipindah ke `id.behavio.bank.rule.BankAction`; `core.rule.Action` kini penanda kosong.
+`ScenarioCodec` menyimpan/memuatnya lewat SPI `ActionCodec` per produk, sehingga core
+tak lagi menyeret `TransactionStatus` (tipe bank) ke dalam mesin bersama.
+
+#### Struktur modul (Gradle)
+```
+:core-engine     domain murni + ports + SPI produk (ProductCatalog/ActionCodec/OperationHandler)
+:adapter-persistence  mesin konfigurasi generik (JdbcClient, ber-parameter schema) + Liquibase
+:adapter-web     server per-port generik + Admin API /{product}/ + SSE
+:adapter-signature / :adapter-webhook   dipakai bersama
+:product-bank    domain+blueprint+persistence(schema bank)+handler+Admin API bank
+:product-qris    domain+blueprint+persistence(schema qris)+handler+Admin API QRIS
+:app             perakitan dua ProductRuntime
+```
+> `:product-bank` dan `:product-qris` **tidak saling bergantung**. Menambah produk baru =
+> tambah satu modul + satu `ProductCatalog`; mesin tak perlu disentuh.
+
+#### Admin API
+Semua endpoint kini bersegmen produk: `/api/admin/v1/{bank|qris}/simulators/…`.
+Yang khusus produk: `…/bank/simulators/{id}/accounts`, `…/bank/simulators/{id}/virtual-accounts`,
+`…/qris/simulators/{id}/qris`. Operasi salah kamar (mis. `?operation=qris-generate` di bawah
+`/bank/`) ditolak `400` — dulu diam-diam jatuh ke transfer.
 
 ---
 
@@ -262,20 +335,27 @@ localhost:9002/openapi/v1.0/transfer-intrabank   → Bank Simulasi B
 
 ### 6.2 API Admin (statis)
 Port tetap `:8080`. **Tanpa auth dulu** (lokal). Dipakai dashboard.
+`{product}` = `bank` | `qris` (§3.4); produk tak dikenal → `404`.
 ```
-/api/admin/v1/
+/api/admin/v1/{product}/
   simulators                          GET, POST
-  simulators/{id}                     GET, PUT, DELETE
+  simulators/{id}                     GET, DELETE
+  simulators/{id}/clone               POST
   simulators/{id}/start | /stop       POST         ← buka/tutup port
-  simulators/{id}/partners            kelola partner + kunci
-  simulators/{id}/endpoints           kelola endpoint
-  endpoints/{ep}/scenarios            kelola scenario
-  endpoints/{ep}/active-scenario  PUT              ← sakelar utama testing
-  scenarios/{sc}/rules                kelola rule (hybrid)
-  simulators/{id}/accounts            seed & lihat saldo
-  simulators/{id}/transactions        telusuri transaksi
-  simulators/{id}/logs  +  /stream (SSE)           ← live view
-  simulators/{id}/webhooks/outbox     pantau callback
+  simulators/{id}/partners            kelola partner + kunci  (generik, dua produk)
+  simulators/{id}/endpoints           kelola endpoint (path dapat di-custom)
+  simulators/{id}/scenarios?operation=…            daftar scenario
+  simulators/{id}/scenarios/active?operation=…     scenario aktif
+  simulators/{id}/scenarios/{name}/definition      GET|PUT|DELETE  ← editor req/response
+  simulators/{id}/active-scenario  PUT             ← sakelar utama testing
+  simulators/{id}/logs/stream (SSE)                ← live view
+  simulators/{id}/webhooks/subscriptions | /outbox pantau callback
+
+khusus produk:
+/api/admin/v1/bank/simulators/{id}/accounts            seed & lihat saldo
+/api/admin/v1/bank/simulators/{id}/virtual-accounts    + /{vaNo}/pay
+/api/admin/v1/qris/simulators/{id}/qris                + /{referenceNo}/pay
+/api/admin/v1/webhook-sink                             test-sink (lintas produk)
 ```
 
 ### 6.3 Port/Server Manager (komponen baru)
@@ -432,6 +512,11 @@ Browser Account/Transaction (AG Grid). Sakelar scenario matang.
 Packaging Blueprint SNAP. Virtual Account. QRIS MPM (dynamic/static).
 OpenAPI import. Recorder/Replay, Monitoring, Audit trail.
 
+### Fase 5 — Pemisahan produk (§3.4) ✅
+Bank & QRIS jadi dua produk terpisah penuh: modul Gradle sendiri, schema PostgreSQL
+sendiri, port sendiri. Mesin tetap satu salinan, di-instansiasi per produk. Dashboard
+ikut dipisah (BankApi/QrisApi di atas ProductApi generik).
+
 ---
 
 ## 12. Perubahan terhadap README
@@ -450,8 +535,11 @@ OpenAPI import. Recorder/Replay, Monitoring, Audit trail.
 | Aspek | Keputusan |
 |---|---|
 | Produk | Tool developer self-hosted, domain finansial (SNAP BI + QRIS) |
+| Pemisahan bank/QRIS | **Terpisah penuh** (§3.4): modul Gradle sendiri + schema PG sendiri + port sendiri. Mesin dipakai bersama, bukan di-fork |
+| Alokasi port | `platform.port_registry` (satu-satunya tabel lintas produk) — DB yang menegakkan |
 | Mesin | Generik/modular, configuration over code |
 | Arsitektur | **Hexagonal (Ports & Adapters)**; core-engine bebas framework; MVC = adapter inbound |
+| Persistence | Mesin konfigurasi = JdbcClient ber-parameter schema (bukan JPA — `@Table(schema)` statis); JPA hanya untuk state uang di `:product-bank` |
 | Pola engine | Chain/Pipeline, Strategy, Interpreter, State, Outbox, Repository |
 | Request handling | Spring MVC |
 | Live view | SSE via Event Bus |
@@ -842,6 +930,147 @@ bersih; QRIS generate dengan path custom → sukses (bug #1 di atas, sebelum
 fix 404); reset QRIS ke default → sukses lagi; partner duplikat → 409 bersih
 (bukan 500, bug #2 di atas); regresi nol pada access-token & transfer path
 default setelah semua perubahan.
+
+---
+
+### Pemisahan penuh Bank ↔ QRIS ✅ (2026-07-14) — lihat §3.4 untuk desainnya
+
+Menutup temuan bahwa QRIS **belum pernah benar-benar terpisah**: ia hanya 7 operasi
+yang menempel pada `Simulator` yang sama (satu port melayani bank + QRIS), dengan
+`entities` mencampur VA & QR, dan tiga peta terpisah (`SnapOperations`, `Blueprints`,
+`ProductEndpoints`) yang sama-sama mencampur kedua produk dan harus dijaga sinkron.
+
+**Yang dibangun:**
+- **Schema**: `platform` (port_registry), `bank` (13 tabel), `qris` (11 tabel — tanpa
+  accounts/transactions). Changelog Liquibase ditulis ulang (clean cut, `down -v`).
+- **Modul**: `:product-bank` & `:product-qris` (irisan vertikal, saling tak bergantung);
+  `:core-engine` dibersihkan dari domain/blueprint produk + SPI `ProductCatalog`,
+  `ActionCodec`, `OperationHandler`.
+- **Mesin ber-parameter schema**: `SchemaTables` + `SchemaConfigRepository`,
+  `SchemaSimulatorAdmin`, `SchemaScenarioConfig`, `SchemaEndpointRegistry`,
+  `SchemaAccessTokenStore`, `SchemaPartnerAdmin`, `SchemaProvisioning`,
+  `SchemaRequestLogWriter` — menggantikan `Jpa*`/`*Jdbc` versi single-schema.
+- **Dispatch data-driven**: `switch` 16-cabang di `SimulatorServerManager` diganti map
+  handler yang didaftarkan tiap produk. Satu instance server manager per produk.
+- **Admin API** bersegmen `/{product}/`; controller tetap satu set (lihat §6.2).
+- **Port lintas produk**: `platform.port_registry` (§3.4).
+- `AccountAdmin` dipecah → `PartnerAdmin` (core, generik) + `AccountAdmin` (bank).
+
+**4 bug ditemukan & diperbaiki saat verifikasi:**
+1. **Bentrok port balas 500, bukan 409.** `PortRegistry.claim` menangkap
+   `DuplicateKeyException` lalu menjalankan `SELECT` untuk menyusun pesan error —
+   padahal unique violation membuat transaksi Postgres **aborted**, sehingga query itu
+   gagal `25P02` dan menutupi 409-nya. Diperbaiki memakai `ON CONFLICT (port) DO NOTHING`
+   + cek `updated == 0`, yang menjaga transaksi tetap hidup.
+2. **Bean ganda.** `@Repository`/`@Service` masih terpasang padahal bean kini dirakit
+   eksplisit per produk → Spring melihat dua bean bertipe sama. Dibuang; efek sampingnya
+   justru menghapus exception-translation AOP yang dulu jadi biang 500 (lihat catatan di
+   `ApiExceptionHandler`).
+3. **Handler access-token QRIS memanggil `issue()` dua kali** — menerbitkan dua token
+   dan membalas campuran status token pertama + body token kedua.
+4. **Admin API khusus produk masih di path lama** (`/simulators/{id}/qris`,
+   `/simulators/{id}/virtual-accounts`) sehingga "Tandai Dibayar" 404.
+
+**Ditemukan (pre-existing, diperbaiki sekalian):** `BehaviorEnginePipelineTest` sudah
+**tak bisa dikompilasi sejak sebelum refactor ini** — `FakeState` tak pernah
+mengimplementasikan `StateRepository.findTransactions` yang ditambahkan saat fitur
+transaction-history. Artinya `./gradlew test` memang sudah merah. Kini 14 tes lulus.
+
+**Perubahan perilaku yang disengaja:** emisi `RequestEvent` dipindah dari dalam engine ke
+`SimulatorServerManager` (satu jalur untuk semua operasi). Dulu hanya transfer yang emit
+dari dalam engine — **di dalam transaksi bisnis** — sehingga request yang transaksinya
+rollback tak pernah muncul di Live View, justru saat paling ingin dilihat. Efeknya
+`request_logs` kini ditulis pasca-commit.
+
+**Terverifikasi HTTP end-to-end**: bank :9001 (token→transfer, saldo 1.000.000→970.000,
+idempotensi X-EXTERNAL-ID tak memotong ulang, VA create→mark-paid→outbox bank) & QRIS
+:9101 (token→generate EMV→mark-paid→query `00`→webhook Payment Notify **SENT** di outbox
+qris) berjalan **simultan & terisolasi**; QRIS ke port bank → 404 dan sebaliknya;
+`bank.access_tokens`/`qris.access_tokens` terpisah; `request_logs` terpisah (8 vs 6);
+bentrok port lintas produk → 409 dengan pesan menyebut produk pemilik, tanpa baris yatim;
+operasi salah kamar → 400; produk tak dikenal → 404; override scenario dari dashboard
+(round-trip via `BankActionCodec`) & reset → preset; custom path gaya BRI → path lama 404,
+path baru sukses; clone & delete profil (port dilepas dari registry).
+
+---
+
+### Dashboard menyusul pemisahan produk ✅ (2026-07-14)
+
+Menutup utang dari bagian di atas (dashboard sempat putus karena Admin API pindah).
+Frontend ikut dipisah dengan pola yang sama seperti backend — **satu API generik,
+diturunkan per produk**, bukan dua salinan:
+
+```
+core/api/product-api.ts   ProductApi (abstract) — profil, partner, endpoint, scenario,
+                          live view; base URL = /api/admin/v1/{product}/simulators
+core/api/bank-api.ts      BankApi  extends ProductApi  + rekening & Virtual Account
+core/api/qris-api.ts      QrisApi  extends ProductApi  + daftar QR, pay, expire
+```
+`SimulatorService` lama (satu service untuk semua) dihapus. Halaman Simulators inject
+`BankApi`, halaman QRIS inject `QrisApi`. Param `?product=` → **`?operation=`** mengikuti
+Admin API baru; field `EpMeta.product` → `EpMeta.operation`.
+
+`EndpointUrlPanel` (dipakai ulang di kedua halaman) kini menerima API-nya lewat
+**input** `[api]`, bukan `inject()` — komponen itu melayani dua produk sekaligus,
+jadi tak boleh mengunci diri ke salah satunya.
+
+**4 masalah nyata ditemukan & diperbaiki saat menyesuaikan dashboard:**
+1. **Saran port halaman QRIS pasti bentrok.** `suggestedPort()` mulai dari 9001 dan
+   hanya melihat profil QRIS — tak sadar 9001 milik profil bank, jadi "Tambah Profil"
+   selalu berujung 409. Diperbaiki dengan **pita port terpisah**: bank 9001+, QRIS 9101+
+   (bentrok sisa tetap dijaga `platform.port_registry`).
+2. **Tak ada jalan membuat profil QRIS pertama.** Tombol "Tambah Profil" hanya dirender
+   di dalam `@if (sims().length > 0)`. Dulu tak terasa karena profil selalu datang dari
+   halaman bank; sejak profil QRIS berdiri sendiri, empty state jadi buntu. Tombol
+   ditambahkan di empty state.
+3. **Toast error tiap halaman QRIS dibuka.** `syncAllScenarios` menembak semua kartu
+   endpoint termasuk access-token yang tak punya scenario → `?operation=` kosong → 400 →
+   `errorInterceptor` menampilkan toast. Ditambah penjaga `if (!ep.operation) continue`
+   (halaman Simulators sudah punya penjaga itu).
+4. **Teks menyesatkan**: label "Profil (bank/merchant)" & "Buat dulu profil bank di
+   halaman Bank Simulator" → profil QRIS kini PJP tersendiri. Diperbaiki, plus kartu
+   **Access Token B2B** ditambahkan di halaman QRIS (PJP menerbitkan tokennya sendiri;
+   token profil bank tak berlaku).
+
+**Terverifikasi** (`ng build` hijau + seluruh URL yang dipanggil dashboard ditembak lewat
+proxy dev `:4200` yang sama dengan browser): semua rute baca 200; start/stop, sakelar
+scenario (tersimpan & terbaca balik), CRUD partner/rekening, editor definisi simpan+reset,
+panel URL endpoint custom+reset, Tandai Dibayar & expire QR, SSE Live View mengalirkan
+event lengkap; create profil PJP :9103 sukses sedangkan :9001 ditolak 409 dengan pesan
+"sudah dipakai profil bank"; path Admin API lama → 404. Alur pemakaian: bank :9001
+(token→transfer, saldo turun) & QRIS :9101 (token PJP sendiri→generate→muncul di daftar QR)
+berjalan bersamaan.
+
+> **Catatan verifikasi:** lingkungan ini tak punya browser headless, jadi rendering visual
+> halaman TIDAK diuji otomatis — yang diverifikasi adalah seluruh kontrak HTTP yang
+> dipanggil dashboard, lewat proxy yang sama. Perlu satu kali pemeriksaan mata di browser.
+
+---
+
+### Pembersihan tabel mati ✅ (2026-07-14)
+
+Audit saat menulis `docs/architecture.md` menemukan dua tabel yang **tak pernah dipakai
+sama sekali**. Dibuang lewat changeset baru (`bank/002-drop-unused.sql`,
+`qris/002-drop-unused.sql`) — **bukan** dengan mengedit changeset lama, karena itu
+memecahkan checksum Liquibase pada DB yang sudah ter-migrasi.
+
+- **`rules`** — peninggalan §8 yang membayangkan rule disimpan per-baris. Kenyataannya
+  rule disimpan sebagai JSONB di `scenarios.definition` (round-trip lewat `ScenarioCodec`).
+  Nol baris, nol kode; `SchemaTables` bahkan tak punya accessor untuk itu.
+- **`webhook_subscriptions`** + 5 endpoint CRUD-nya — hanya `WebhookAdminController` yang
+  menyentuhnya; **tak ada kode engine yang membacanya** saat mengirim webhook, dan
+  dashboard tak pernah memanggilnya. Pengiriman nyata memakai `X-CALLBACK-URL` per-request
+  (`WebhookSpec.urlHeader`). Fitur yang bisa didaftarkan tapi tak pernah berefek lebih
+  menyesatkan daripada tak ada.
+
+**Dipertahankan:** `webhook_outbox` (inti pengiriman, §9) dan endpoint
+`GET .../webhooks/outbox` + retry — belum dipakai dashboard, tapi itu satu-satunya cara
+melihat isi outbox tanpa psql; rencananya dipasang di dashboard, bukan dibuang.
+
+Hasil: `bank` 13→**11 tabel**, `qris` 11→**9 tabel**. **Terverifikasi**: migrasi jalan
+tanpa memecahkan checksum; `/webhooks/subscriptions` → 404, `/webhooks/outbox` → 200;
+regresi nol — Payment Notify QRIS tetap terkirim (outbox `SENT`), transfer bank `2001700`,
+editor scenario tetap memuat rule dari `scenarios.definition`.
 
 ---
 

@@ -4,7 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import id.behavio.core.domain.TransactionStatus;
+import id.behavio.core.product.ActionCodec;
 import id.behavio.core.rule.Action;
 import id.behavio.core.rule.CompareOp;
 import id.behavio.core.rule.Condition;
@@ -18,6 +18,7 @@ import id.behavio.core.rule.WebhookSpec;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -25,10 +26,18 @@ import java.util.Map;
  * Konversi dua arah JSON ↔ {@link Scenario}. Memungkinkan definisi scenario (kondisi
  * request + response + fault/webhook) di-edit dari dashboard (design.md §8). Format
  * cermin AST core agar round-trip presisi.
+ *
+ * Produk-agnostik: aksi (debit/credit/…) diserahkan ke {@link ActionCodec} milik produk,
+ * sehingga codec ini tak perlu mengenal tipe aksi bank maupun QRIS.
  */
 public final class ScenarioCodec {
 
     private final ObjectMapper mapper = new ObjectMapper();
+    private final ActionCodec actions;
+
+    public ScenarioCodec(ActionCodec actions) {
+        this.actions = actions == null ? ActionCodec.NONE : actions;
+    }
 
     // ---------------- JSON → Scenario ----------------
 
@@ -88,25 +97,29 @@ public final class ScenarioCodec {
         if (n == null || n.isNull()) {
             return Outcome.of(new ResponseSpec(200, "2001800", "Successful", Map.of()));
         }
-        List<Action> actions = new ArrayList<>();
+        List<Action> parsed = new ArrayList<>();
         JsonNode actionsNode = n.get("actions");
         if (actionsNode != null && actionsNode.isArray()) {
-            for (JsonNode a : actionsNode) actions.add(parseAction(a));
+            for (JsonNode a : actionsNode) parsed.add(parseAction(a));
         }
         ResponseSpec response = parseResponse(n.get("response"));
         FaultSpec fault = parseFault(n.get("fault"));
         WebhookSpec webhook = parseWebhook(n.get("webhook"));
-        return new Outcome(actions, response, fault, webhook);
+        return new Outcome(parsed, response, fault, webhook);
     }
 
+    /**
+     * Sebelumnya kind tak dikenal diam-diam jatuh ke {@code Debit} — salah ketik di editor
+     * dashboard bisa berujung memotong saldo. Kini ditolak eksplisit.
+     */
     private Action parseAction(JsonNode n) {
         String kind = text(n, "kind", "");
-        return switch (kind) {
-            case "credit" -> new Action.Credit(text(n, "accountNoField", ""), text(n, "amountField", ""));
-            case "createTransaction" -> new Action.CreateTransaction(
-                    TransactionStatus.valueOf(text(n, "status", "SUCCESS")));
-            default -> new Action.Debit(text(n, "accountNoField", ""), text(n, "amountField", ""));
-        };
+        Map<String, String> attrs = new LinkedHashMap<>();
+        n.fieldNames().forEachRemaining(field -> {
+            if (!"kind".equals(field)) attrs.put(field, text(n, field, ""));
+        });
+        return actions.parse(kind, attrs).orElseThrow(() ->
+                new IllegalArgumentException("Aksi '" + kind + "' tidak dikenal untuk produk ini"));
     }
 
     @SuppressWarnings("unchecked")
@@ -225,12 +238,11 @@ public final class ScenarioCodec {
     }
 
     private JsonNode action(Action a) {
+        ActionCodec.Encoded e = actions.encode(a).orElseThrow(() ->
+                new IllegalStateException("Aksi " + a.getClass().getName() + " bukan milik produk ini"));
         ObjectNode n = mapper.createObjectNode();
-        switch (a) {
-            case Action.Debit d -> { n.put("kind", "debit"); n.put("accountNoField", d.accountNoField()); n.put("amountField", d.amountField()); }
-            case Action.Credit c -> { n.put("kind", "credit"); n.put("accountNoField", c.accountNoField()); n.put("amountField", c.amountField()); }
-            case Action.CreateTransaction ct -> { n.put("kind", "createTransaction"); n.put("status", ct.status().name()); }
-        }
+        n.put("kind", e.kind());
+        e.attributes().forEach(n::put);
         return n;
     }
 

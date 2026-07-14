@@ -8,11 +8,11 @@ import java.util.Map;
  * tetap murni tanpa dependensi Jackson. Hanya dipakai untuk merender body response
  * (struktur dikendalikan sendiri oleh engine, bukan parsing input arbitrer).
  */
-final class Json {
+public final class Json {
 
     private Json() {}
 
-    static String write(Object value) {
+    public static String write(Object value) {
         StringBuilder sb = new StringBuilder();
         writeValue(sb, value);
         return sb.toString();

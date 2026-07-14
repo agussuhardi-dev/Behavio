@@ -1,8 +1,8 @@
 package id.behavio.web.admin;
 
-import id.behavio.core.port.SimulatorAdmin;
 import id.behavio.core.port.SimulatorAdmin.SimulatorView;
-import id.behavio.web.SimulatorServerManager;
+import id.behavio.web.ProductRegistry;
+import id.behavio.web.ProductRuntime;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -10,106 +10,123 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-/** Admin API untuk mengelola simulator: list, start/stop port, ganti scenario aktif. */
+/**
+ * Admin API mengelola simulator: list, create/clone/delete, start/stop port, ganti
+ * scenario aktif. Generik lintas produk lewat segmen {@code {product}} —
+ * {@code /api/admin/v1/bank/simulators} dan {@code /api/admin/v1/qris/simulators}
+ * dilayani kode yang sama, hanya runtime & schema-nya berbeda.
+ */
 @RestController
-@RequestMapping("/api/admin/v1/simulators")
+@RequestMapping("/api/admin/v1/{product}/simulators")
 public class SimulatorAdminController {
 
-    private final SimulatorAdmin admin;
-    private final SimulatorServerManager ports;
+    private final ProductRegistry products;
 
-    public SimulatorAdminController(SimulatorAdmin admin, SimulatorServerManager ports) {
-        this.admin = admin;
-        this.ports = ports;
+    public SimulatorAdminController(ProductRegistry products) {
+        this.products = products;
     }
 
     @GetMapping
-    public List<SimulatorView> list() {
-        return admin.list();
+    public List<SimulatorView> list(@PathVariable String product) {
+        return products.require(product).admin().list();
     }
 
-    /** Buat simulator (profil bank) baru — baseline SNAP lengkap (partner, akun, 8 scenario). */
+    @GetMapping("/{id}")
+    public ResponseEntity<SimulatorView> get(@PathVariable String product, @PathVariable UUID id) {
+        return products.require(product).admin().find(id)
+                .map(ResponseEntity::ok).orElse(ResponseEntity.notFound().build());
+    }
+
+    /** Buat profil baru — baseline lengkap (partner, endpoint, scenario katalog produk). */
     @PostMapping
-    public ResponseEntity<?> create(@RequestBody Map<String, Object> body) {
+    public ResponseEntity<?> create(@PathVariable String product, @RequestBody Map<String, Object> body) {
+        ProductRuntime rt = products.require(product);
         String name = str(body.get("name"));
         Integer port = num(body.get("port"));
         String sigMode = str(body.getOrDefault("signatureMode", "SIMULATED"));
         if (name == null || name.isBlank() || port == null) {
             return ResponseEntity.badRequest().body(Map.of("error", "field 'name' dan 'port' wajib"));
         }
-        if (portTaken(port)) {
-            return ResponseEntity.status(409).body(Map.of("error", "Port " + port + " sudah dipakai simulator lain"));
+        // Bentrok port dideteksi DB lewat platform.port_registry (lintas produk) — cek
+        // baca-lalu-tulis di sini hanya akan melihat produk ini sendiri.
+        try {
+            UUID id = rt.admin().create(name, port, sigMode);
+            return ResponseEntity.ok(rt.admin().find(id).orElseThrow());
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(409).body(Map.of("error", e.getMessage()));
         }
-        UUID id = admin.create(name, port, sigMode);
-        return ResponseEntity.ok(admin.find(id).orElseThrow());
     }
 
-    /** Duplikat profil bank: konfigurasi + override + akun disalin, port/nama baru. */
+    /** Duplikat profil: konfigurasi + override + state awal disalin, port/nama baru. */
     @PostMapping("/{id}/clone")
-    public ResponseEntity<?> clone(@PathVariable UUID id, @RequestBody Map<String, Object> body) {
-        if (admin.find(id).isEmpty()) return ResponseEntity.notFound().build();
+    public ResponseEntity<?> clone(@PathVariable String product, @PathVariable UUID id,
+                                   @RequestBody Map<String, Object> body) {
+        ProductRuntime rt = products.require(product);
+        if (rt.admin().find(id).isEmpty()) return ResponseEntity.notFound().build();
         String name = str(body.get("name"));
         Integer port = num(body.get("port"));
         if (name == null || name.isBlank() || port == null) {
             return ResponseEntity.badRequest().body(Map.of("error", "field 'name' dan 'port' wajib"));
         }
-        if (portTaken(port)) {
-            return ResponseEntity.status(409).body(Map.of("error", "Port " + port + " sudah dipakai simulator lain"));
+        try {
+            UUID newId = rt.admin().cloneSimulator(id, name, port);
+            return ResponseEntity.ok(rt.admin().find(newId).orElseThrow());
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(409).body(Map.of("error", e.getMessage()));
         }
-        UUID newId = admin.cloneSimulator(id, name, port);
-        return ResponseEntity.ok(admin.find(newId).orElseThrow());
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<?> delete(@PathVariable UUID id) {
-        if (admin.find(id).isEmpty()) return ResponseEntity.notFound().build();
-        ports.stop(id); // pastikan port ditutup sebelum config dihapus
-        admin.delete(id);
+    public ResponseEntity<?> delete(@PathVariable String product, @PathVariable UUID id) {
+        ProductRuntime rt = products.require(product);
+        if (rt.admin().find(id).isEmpty()) return ResponseEntity.notFound().build();
+        rt.servers().stop(id);   // pastikan port ditutup sebelum config dihapus
+        rt.admin().delete(id);
         return ResponseEntity.ok(Map.of("status", "deleted", "id", id));
     }
 
-    private boolean portTaken(int port) {
-        return admin.list().stream().anyMatch(s -> s.port() == port);
-    }
-
-    private static String str(Object v) { return v == null ? null : v.toString(); }
-    private static Integer num(Object v) {
-        if (v == null) return null;
-        if (v instanceof Number n) return n.intValue();
-        try { return Integer.parseInt(v.toString()); } catch (NumberFormatException e) { return null; }
-    }
-
-    @GetMapping("/{id}")
-    public ResponseEntity<SimulatorView> get(@PathVariable UUID id) {
-        return admin.find(id).map(ResponseEntity::ok).orElse(ResponseEntity.notFound().build());
-    }
-
     @PostMapping("/{id}/start")
-    public ResponseEntity<?> start(@PathVariable UUID id) {
-        SimulatorView v = admin.find(id).orElse(null);
+    public ResponseEntity<?> start(@PathVariable String product, @PathVariable UUID id) {
+        ProductRuntime rt = products.require(product);
+        SimulatorView v = rt.admin().find(id).orElse(null);
         if (v == null) return ResponseEntity.notFound().build();
-        ports.start(id, v.port());
-        admin.setStatus(id, "RUNNING");
+        rt.servers().start(id, v.port());
+        rt.admin().setStatus(id, "RUNNING");
         return ResponseEntity.ok(Map.of("id", id, "status", "RUNNING", "port", v.port()));
     }
 
     @PostMapping("/{id}/stop")
-    public ResponseEntity<?> stop(@PathVariable UUID id) {
-        if (admin.find(id).isEmpty()) return ResponseEntity.notFound().build();
-        ports.stop(id);
-        admin.setStatus(id, "STOPPED");
+    public ResponseEntity<?> stop(@PathVariable String product, @PathVariable UUID id) {
+        ProductRuntime rt = products.require(product);
+        if (rt.admin().find(id).isEmpty()) return ResponseEntity.notFound().build();
+        rt.servers().stop(id);
+        rt.admin().setStatus(id, "STOPPED");
         return ResponseEntity.ok(Map.of("id", id, "status", "STOPPED"));
     }
 
     @PutMapping("/{id}/active-scenario")
-    public ResponseEntity<?> setActiveScenario(@PathVariable UUID id,
-                                               @RequestParam(defaultValue = "transfer") String product,
+    public ResponseEntity<?> setActiveScenario(@PathVariable String product, @PathVariable UUID id,
+                                               @RequestParam(required = false) String operation,
                                                @RequestBody Map<String, String> body) {
         String name = body.get("name");
         if (name == null || name.isBlank()) {
             return ResponseEntity.badRequest().body(Map.of("error", "field 'name' wajib"));
         }
-        admin.setActiveScenario(id, product, name);
-        return ResponseEntity.ok(Map.of("id", id, "product", product, "activeScenario", name));
+        String op = operation == null ? defaultOperation(product) : operation;
+        products.require(product).admin().setActiveScenario(id, op, name);
+        return ResponseEntity.ok(Map.of("id", id, "operation", op, "activeScenario", name));
+    }
+
+    /** Operasi utama tiap produk — dipakai bila query param `operation` tak diberikan. */
+    private String defaultOperation(String product) {
+        return "qris".equals(products.require(product).key()) ? "qris-generate" : "transfer";
+    }
+
+    private static String str(Object v) { return v == null ? null : v.toString(); }
+
+    private static Integer num(Object v) {
+        if (v == null) return null;
+        if (v instanceof Number n) return n.intValue();
+        try { return Integer.parseInt(v.toString()); } catch (NumberFormatException e) { return null; }
     }
 }

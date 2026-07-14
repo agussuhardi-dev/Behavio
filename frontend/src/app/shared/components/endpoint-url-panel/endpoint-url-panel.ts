@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, OnChanges, inject, input, signal } from '@angular/core';
+import { Component, OnChanges, input, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatFormFieldModule } from '@angular/material/form-field';
@@ -9,7 +9,7 @@ import { MatOptionModule } from '@angular/material/core';
 import { MatSelectModule } from '@angular/material/select';
 import { MatTooltipModule } from '@angular/material/tooltip';
 
-import { EndpointConfig, SimulatorService } from '../../../routes/simulators/simulator.service';
+import { EndpointConfig, ProductApi } from '../../../core/api/product-api';
 
 @Component({
   selector: 'app-endpoint-url-panel',
@@ -20,7 +20,12 @@ import { EndpointConfig, SimulatorService } from '../../../routes/simulators/sim
   styleUrl: './endpoint-url-panel.scss',
 })
 export class EndpointUrlPanel implements OnChanges {
-  private readonly api = inject(SimulatorService);
+  /**
+   * API produk pemilik halaman (BankApi / QrisApi). Sengaja input, bukan inject:
+   * komponen ini dipakai ulang di dua halaman dengan DUA produk berbeda, sehingga
+   * tak boleh mengunci diri ke salah satunya (design.md §3.4).
+   */
+  readonly api = input.required<ProductApi>();
 
   readonly simulatorId = input.required<string>();
   readonly operations = input.required<string[]>();
@@ -45,7 +50,7 @@ export class EndpointUrlPanel implements OnChanges {
   reload() {
     if (!this.simulatorId()) return;
     this.loading.set(true);
-    this.api.listEndpoints(this.simulatorId()).subscribe({
+    this.api().listEndpoints(this.simulatorId()).subscribe({
       next: list => {
         const filtered = list.filter(e => this.operations().includes(e.operation));
         this.rows.set(filtered);
@@ -68,14 +73,14 @@ export class EndpointUrlPanel implements OnChanges {
 
   save(row: EndpointConfig) {
     const newPath = this.edits()[row.operation];
-    this.api.updateEndpointPath(this.simulatorId(), row.operation, newPath).subscribe({
+    this.api().updateEndpointPath(this.simulatorId(), row.operation, newPath).subscribe({
       next: () => { this.msg.set(`URL "${row.label}" diperbarui.`); this.reload(); },
       error: err => this.msg.set(err?.error?.error ?? 'Gagal menyimpan URL.'),
     });
   }
 
   reset(row: EndpointConfig) {
-    this.api.updateEndpointPath(this.simulatorId(), row.operation, row.defaultPath).subscribe({
+    this.api().updateEndpointPath(this.simulatorId(), row.operation, row.defaultPath).subscribe({
       next: () => { this.msg.set(`URL "${row.label}" dikembalikan ke default.`); this.reload(); },
       error: () => this.msg.set('Gagal reset URL.'),
     });
@@ -84,7 +89,7 @@ export class EndpointUrlPanel implements OnChanges {
   deleteEndpoint(row: EndpointConfig) {
     if (!row.operation) return;
     if (!confirm(`Hapus endpoint "${row.label}"?`)) return;
-    this.api.deleteEndpoint(this.simulatorId(), row.operation).subscribe({
+    this.api().deleteEndpoint(this.simulatorId(), row.operation).subscribe({
       next: () => { this.msg.set(`Endpoint "${row.label}" dihapus.`); this.reload(); },
       error: err => this.msg.set(err?.error?.error ?? 'Gagal menghapus endpoint.'),
     });
@@ -93,7 +98,7 @@ export class EndpointUrlPanel implements OnChanges {
   addEndpoint() {
     const path = this.newPath().trim();
     if (!path) return;
-    this.api.addEndpoint(this.simulatorId(), this.newMethod(), path).subscribe({
+    this.api().addEndpoint(this.simulatorId(), this.newMethod(), path).subscribe({
       next: () => { this.msg.set('Endpoint ditambahkan.'); this.newPath.set(''); this.reload(); },
       error: err => this.msg.set(err?.error?.error ?? 'Gagal menambah endpoint.'),
     });
@@ -158,7 +163,7 @@ export class EndpointUrlPanel implements OnChanges {
       obj[keys[k]] = vals[k] || '';
     });
     const json = Object.keys(obj).length > 0 ? JSON.stringify(obj) : '';
-    this.api.updateEndpointMeta(this.simulatorId(), row.operation, row.method, json).subscribe({
+    this.api().updateEndpointMeta(this.simulatorId(), row.operation, row.method, json).subscribe({
       next: () => {
         this.msg.set(`Headers "${row.label}" diperbarui.`);
         this.headersOpen.set(null);

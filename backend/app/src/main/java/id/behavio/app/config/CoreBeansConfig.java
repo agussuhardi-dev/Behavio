@@ -1,23 +1,19 @@
 package id.behavio.app.config;
 
-import id.behavio.core.engine.BehaviorEngine;
-import id.behavio.core.engine.DefaultBehaviorEngine;
-import id.behavio.core.port.AccessTokenStore;
-import id.behavio.core.port.ConfigRepository;
-import id.behavio.core.port.EventPublisher;
 import id.behavio.core.port.SignatureVerifier;
-import id.behavio.core.port.StateRepository;
-import id.behavio.core.port.WebhookSender;
+import id.behavio.persistence.SchemaTables;
 import id.behavio.signature.SnapSignatureVerifier;
+import id.behavio.webhook.WebhookWorker;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.jdbc.core.simple.JdbcClient;
 
 import java.util.List;
 
 /**
- * Perakitan Hexagonal: menyambung core-engine (murni) dengan adapter.
- * DefaultBehaviorEngine dirakit di sini dengan port dari adapter-persistence,
- * dan EventPublisher gabungan (log + RequestLog + SSE).
+ * Perakitan lintas-produk. Yang spesifik produk dirakit di modulnya masing-masing
+ * ({@code BankProductConfig}, {@code QrisProductConfig}); di sini hanya yang benar-benar
+ * dipakai bersama.
  */
 @Configuration
 public class CoreBeansConfig {
@@ -28,17 +24,12 @@ public class CoreBeansConfig {
     }
 
     /**
-     * Behavior Engine dirakit dari port. {@code publishers} = semua EventPublisher
-     * (LoggingEventPublisher, RequestLogWriter, SseBroadcaster) → fan-out.
+     * Satu worker outbox untuk semua schema produk. Daftar schema diambil dari bean
+     * SchemaTables yang didaftarkan tiap produk, jadi menambah produk baru tidak menuntut
+     * perubahan di sini.
      */
     @Bean
-    public BehaviorEngine behaviorEngine(StateRepository state,
-                                         ConfigRepository config,
-                                         SignatureVerifier signatureVerifier,
-                                         WebhookSender webhookSender,
-                                         AccessTokenStore accessTokenStore,
-                                         List<EventPublisher> publishers) {
-        EventPublisher composite = event -> publishers.forEach(p -> p.publishRequestEvent(event));
-        return new DefaultBehaviorEngine(state, config, composite, signatureVerifier, webhookSender, accessTokenStore);
+    public WebhookWorker webhookWorker(JdbcClient db, List<SchemaTables> schemas) {
+        return new WebhookWorker(db, schemas.stream().map(SchemaTables::schema).toList());
     }
 }
