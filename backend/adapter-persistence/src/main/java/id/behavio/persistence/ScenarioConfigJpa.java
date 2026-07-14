@@ -10,13 +10,12 @@ import java.util.UUID;
 
 /**
  * Implementasi ScenarioConfigPort: baca/tulis definisi scenario (JSON) untuk endpoint
- * transfer-intrabank. Definisi custom disimpan di kolom scenarios.definition; bila
- * kosong, dikembalikan serialisasi preset blueprint sebagai titik awal edit.
+ * mana pun (generik lewat {@code product} → method+path, lihat {@link ProductEndpoints}).
+ * Definisi custom disimpan di kolom scenarios.definition; bila kosong, dikembalikan
+ * serialisasi preset blueprint sebagai titik awal edit.
  */
 @Repository
 public class ScenarioConfigJpa implements ScenarioConfigPort {
-
-    private static final String PATH = "/v1.0/transfer-intrabank";
 
     private final JdbcClient db;
     private final ScenarioCodec codec = new ScenarioCodec();
@@ -26,40 +25,43 @@ public class ScenarioConfigJpa implements ScenarioConfigPort {
     }
 
     @Override
-    public List<String> scenarioNames(UUID simulatorId) {
+    public List<String> scenarioNames(UUID simulatorId, String product) {
+        ProductEndpoints.Endpoint ep = ProductEndpoints.resolve(product);
         return db.sql("""
                 SELECT s.name FROM scenarios s
                 JOIN endpoints e ON s.endpoint_id = e.id
                 WHERE e.simulator_id = ? AND e.path = ? ORDER BY s.name
                 """)
-                .param(simulatorId).param(PATH)
+                .param(simulatorId).param(ep.path())
                 .query(String.class).list();
     }
 
     @Override
-    public String effectiveDefinition(UUID simulatorId, String scenarioName) {
+    public String effectiveDefinition(UUID simulatorId, String product, String scenarioName) {
+        ProductEndpoints.Endpoint ep = ProductEndpoints.resolve(product);
         Optional<String> custom = db.sql("""
                 SELECT COALESCE(s.definition::text, '') FROM scenarios s
                 JOIN endpoints e ON s.endpoint_id = e.id
                 WHERE e.simulator_id = ? AND e.path = ? AND s.name = ?
                 """)
-                .param(simulatorId).param(PATH).param(scenarioName)
+                .param(simulatorId).param(ep.path()).param(scenarioName)
                 .query(String.class).optional();
         if (custom.isPresent() && !custom.get().isBlank()) {
             return custom.get();
         }
-        return codec.serialize(Blueprints.byName(scenarioName));
+        return codec.serialize(Blueprints.byName(product, scenarioName));
     }
 
     @Override
-    public void saveDefinition(UUID simulatorId, String scenarioName, String definitionJson) {
+    public void saveDefinition(UUID simulatorId, String product, String scenarioName, String definitionJson) {
         codec.parse(scenarioName, definitionJson); // validasi sebelum simpan
+        ProductEndpoints.Endpoint ep = ProductEndpoints.resolve(product);
         int updated = db.sql("""
                 UPDATE scenarios s SET definition = ?::jsonb
                 FROM endpoints e
                 WHERE s.endpoint_id = e.id AND e.simulator_id = ? AND e.path = ? AND s.name = ?
                 """)
-                .param(definitionJson).param(simulatorId).param(PATH).param(scenarioName)
+                .param(definitionJson).param(simulatorId).param(ep.path()).param(scenarioName)
                 .update();
         if (updated == 0) {
             throw new IllegalArgumentException("Scenario tidak ditemukan: " + scenarioName);
@@ -67,13 +69,14 @@ public class ScenarioConfigJpa implements ScenarioConfigPort {
     }
 
     @Override
-    public void resetDefinition(UUID simulatorId, String scenarioName) {
+    public void resetDefinition(UUID simulatorId, String product, String scenarioName) {
+        ProductEndpoints.Endpoint ep = ProductEndpoints.resolve(product);
         db.sql("""
                 UPDATE scenarios s SET definition = NULL
                 FROM endpoints e
                 WHERE s.endpoint_id = e.id AND e.simulator_id = ? AND e.path = ? AND s.name = ?
                 """)
-                .param(simulatorId).param(PATH).param(scenarioName)
+                .param(simulatorId).param(ep.path()).param(scenarioName)
                 .update();
     }
 }

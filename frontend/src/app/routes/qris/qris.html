@@ -1,0 +1,173 @@
+<div class="qris-page">
+  <div class="qris-hero">
+    <div class="qris-hero__text">
+      <h1>QRIS MPM</h1>
+      <p>
+        Simulasikan QR pembayaran (SNAP BI) — <b>dynamic</b> (nominal tertanam,
+        sekali pakai) maupun <b>static</b> (satu QR dipajang, nominal diisi
+        pelanggan). Generate, cek status, tandai dibayar, atau refund.
+      </p>
+    </div>
+  </div>
+
+  @if (loading()) {
+    <mat-progress-bar mode="indeterminate" />
+  }
+
+  @if (!loading() && sims().length === 0) {
+    <div class="qris-empty">
+      <mat-icon>info</mat-icon>
+      Belum ada simulator. Buat dulu di halaman <b>Simulators</b>.
+    </div>
+  }
+
+  @if (sims().length > 0) {
+    <mat-card class="qris-selector" appearance="outlined">
+      <mat-form-field appearance="outline" class="qris-selector__field">
+        <mat-label>Simulator (profil bank/merchant)</mat-label>
+        <mat-select [value]="selectedSimId()" (valueChange)="onSelectSim($event)">
+          @for (s of sims(); track s.id) {
+            <mat-option [value]="s.id">{{ s.name }} — :{{ s.port }}</mat-option>
+          }
+        </mat-select>
+      </mat-form-field>
+      @if (selectedSim; as s) {
+        <span class="chip" [class.chip--on]="s.status === 'RUNNING'">
+          <span class="dot"></span>{{ s.status === 'RUNNING' ? 'Menyala' : 'Mati — nyalakan di halaman Simulators' }}
+        </span>
+      }
+    </mat-card>
+
+    <div class="qris-grid">
+      <!-- Kolom kiri: scenario + editor -->
+      <mat-card class="qris-card" appearance="outlined">
+        <div class="qris-card__head"><mat-icon>tune</mat-icon> Skenario Generate QR</div>
+        <mat-divider />
+        <div class="qris-card__body">
+          <mat-form-field appearance="outline" class="qris-scenario">
+            <mat-label>Skenario aktif</mat-label>
+            <mat-select [value]="activeScenario()" (valueChange)="changeScenario($event)">
+              @for (sc of scenarios; track sc.name) {
+                <mat-option [value]="sc.name">
+                  <mat-icon class="opt-ico opt-ico--{{ sc.tone }}">{{ sc.icon }}</mat-icon>
+                  {{ sc.name }}
+                </mat-option>
+              }
+            </mat-select>
+          </mat-form-field>
+
+          @if (scenarioMeta(activeScenario()); as meta) {
+            <div class="qris-scenario__desc qris-scenario__desc--{{ meta.tone }}">
+              <mat-icon>{{ meta.icon }}</mat-icon>
+              <span>{{ meta.desc }}</span>
+            </div>
+          }
+
+          <button mat-stroked-button (click)="editing() ? closeEditor() : openEditor()">
+            <mat-icon>edit</mat-icon>
+            {{ editing() ? 'Tutup editor' : 'Edit request/response' }}
+          </button>
+
+          @if (editing()) {
+            <div class="editor">
+              <textarea
+                class="editor__area"
+                spellcheck="false"
+                [value]="editorText()"
+                (input)="onEditorInput($any($event.target).value)"
+              ></textarea>
+              @if (editorError()) {
+                <div class="editor__msg editor__msg--err"><mat-icon>error</mat-icon> {{ editorError() }}</div>
+              }
+              @if (editorSaved()) {
+                <div class="editor__msg editor__msg--ok">
+                  <mat-icon>check_circle</mat-icon> Tersimpan — response berikutnya memakai definisi ini.
+                </div>
+              }
+              <div class="editor__actions">
+                <button mat-flat-button color="primary" (click)="saveEditor()">
+                  <mat-icon>save</mat-icon> Simpan
+                </button>
+                <button mat-stroked-button (click)="resetEditor()">
+                  <mat-icon>restart_alt</mat-icon> Reset ke preset
+                </button>
+              </div>
+            </div>
+          }
+
+          <details class="qris-try">
+            <summary>Cara membuat QR uji (dynamic — nominal tertanam)</summary>
+            <pre>curl -X POST http://localhost:{{ selectedSim?.port }}/v1.0/qr/qr-mpm-generate \
+  -H "X-PARTNER-ID: PARTNER001" -H "X-CALLBACK-URL: http://localhost:8080/api/admin/v1/webhook-sink" \
+  -d '{{ '{' }}"partnerReferenceNo":"PR-001","merchantId":"MERCHANT01",
+       "amount":{{ '{' }}"value":"25000.00","currency":"IDR"{{ '}' }}{{ '}' }}'</pre>
+          </details>
+          <details class="qris-try">
+            <summary>Cara membuat QR uji (static — tanpa nominal)</summary>
+            <pre>curl -X POST http://localhost:{{ selectedSim?.port }}/v1.0/qr/qr-mpm-generate \
+  -H "X-PARTNER-ID: PARTNER001" -H "X-CALLBACK-URL: http://localhost:8080/api/admin/v1/webhook-sink" \
+  -d '{{ '{' }}"partnerReferenceNo":"PR-002","merchantId":"MERCHANT01"{{ '}' }}'</pre>
+          </details>
+          <details class="qris-try">
+            <summary>Cara refund (setelah QR dibayar)</summary>
+            <pre>curl -X POST http://localhost:{{ selectedSim?.port }}/v1.0/qr/qr-mpm-refund \
+  -H "X-PARTNER-ID: PARTNER001" \
+  -d '{{ '{' }}"originalReferenceNo":"&lt;referenceNo&gt;","partnerRefundNo":"RF-001",
+       "refundAmount":{{ '{' }}"value":"25000.00","currency":"IDR"{{ '}' }}{{ '}' }}'</pre>
+          </details>
+        </div>
+      </mat-card>
+
+      <!-- Kolom kanan: daftar QR -->
+      <mat-card class="qris-card" appearance="outlined">
+        <div class="qris-card__head">
+          <mat-icon>qr_code_2</mat-icon> QR Dibuat
+          <button mat-icon-button matTooltip="Muat ulang" (click)="reloadQr()">
+            <mat-icon>refresh</mat-icon>
+          </button>
+        </div>
+        <mat-divider />
+        <div class="qris-card__body">
+          @if (qrMsg()) {
+            <div class="qris-msg">{{ qrMsg() }}</div>
+          }
+          @if (!qrLoading() && qrList().length === 0) {
+            <div class="qris-list-empty">
+              Belum ada QR. Gunakan contoh curl di sebelah kiri untuk membuat QR uji.
+            </div>
+          }
+          @for (qr of qrList(); track qr.referenceNo) {
+            <div class="qr-row">
+              <div class="qr-row__top">
+                <span class="qr-row__ref">{{ qr.referenceNo }}</span>
+                <span class="tag" [class.tag--dynamic]="qr.qrType === 'DYNAMIC'">{{ qr.qrType }}</span>
+                <span class="chip chip--sm" [class.chip--on]="statusTone(qr.status) === 'ok'" [class.chip--warn]="statusTone(qr.status) === 'warn'">
+                  {{ qr.status }}
+                </span>
+              </div>
+              <div class="qr-row__sub">
+                {{ qr.merchantId || '—' }} · {{ qr.amount ? (qr.amount + ' ' + qr.currency) : 'nominal diisi saat bayar' }}
+              </div>
+              <div class="qr-row__actions">
+                @if (qr.status === 'ACTIVE') {
+                  @if (qr.qrType === 'STATIC') {
+                    <mat-form-field appearance="outline" class="qr-row__amount">
+                      <mat-label>Nominal bayar</mat-label>
+                      <input matInput type="number" (input)="onPayAmount(qr.referenceNo, $any($event.target).value)" />
+                    </mat-form-field>
+                  }
+                  <button mat-flat-button color="primary" (click)="pay(qr)">
+                    <mat-icon>payments</mat-icon> Tandai Dibayar
+                  </button>
+                }
+                @if (qr.status === 'PAID') {
+                  <span class="qr-row__hint">Gunakan curl refund di sebelah kiri untuk mengembalikan dana.</span>
+                }
+              </div>
+            </div>
+          }
+        </div>
+      </mat-card>
+    </div>
+  }
+</div>

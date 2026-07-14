@@ -1,5 +1,6 @@
 package id.behavio.persistence;
 
+import id.behavio.core.blueprint.QrisMpmBlueprint;
 import id.behavio.core.domain.Partner;
 import id.behavio.core.domain.SignatureMode;
 import id.behavio.core.port.ConfigRepository;
@@ -58,18 +59,19 @@ public class JpaConfigRepository implements ConfigRepository {
         if (sc == null) {
             return Optional.empty();
         }
-        return Optional.of(resolveScenario(sc.id, sc.name));
+        String product = QrisMpmBlueprint.PATH.equals(path) ? "qris" : "transfer";
+        return Optional.of(resolveScenario(sc.id, product, sc.name));
     }
 
     /** Definisi custom (JSON) bila ada, selain itu preset blueprint. */
-    private Scenario resolveScenario(UUID scenarioId, String name) {
+    private Scenario resolveScenario(UUID scenarioId, String product, String name) {
         Optional<String> custom = db.sql("SELECT COALESCE(definition::text, '') FROM scenarios WHERE id = ?")
                 .param(scenarioId)
                 .query(String.class).optional();
         if (custom.isPresent() && !custom.get().isBlank()) {
             return codec.parse(name, custom.get());
         }
-        return Blueprints.byName(name);
+        return Blueprints.byName(product, name);
     }
 
     @Override

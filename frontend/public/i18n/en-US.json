@@ -1,6 +1,7 @@
 {
   "menu": {
     "simulators": "Simulators",
+    "qris": "QRIS",
     "dashboard": "Dashboard",
     "design": "Design",
     "design.colors": "Color System",

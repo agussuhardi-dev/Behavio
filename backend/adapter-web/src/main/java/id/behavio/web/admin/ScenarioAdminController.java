@@ -12,6 +12,8 @@ import java.util.UUID;
 /**
  * Admin API: edit definisi scenario (kondisi request + response) dari dashboard.
  * Definisi berupa JSON (mirror AST engine); dapat di-override & di-reset ke preset.
+ * {@code product} (default "transfer") memilih endpoint mana yang diedit — generik
+ * lintas endpoint (mis. "qris").
  */
 @RestController
 @RequestMapping("/api/admin/v1/simulators/{id}/scenarios")
@@ -24,19 +26,22 @@ public class ScenarioAdminController {
     }
 
     @GetMapping
-    public List<String> list(@PathVariable UUID id) {
-        return scenarios.scenarioNames(id);
+    public List<String> list(@PathVariable UUID id, @RequestParam(defaultValue = "transfer") String product) {
+        return scenarios.scenarioNames(id, product);
     }
 
     @GetMapping(value = "/{name}/definition", produces = MediaType.TEXT_PLAIN_VALUE)
-    public String get(@PathVariable UUID id, @PathVariable String name) {
-        return scenarios.effectiveDefinition(id, name);
+    public String get(@PathVariable UUID id, @PathVariable String name,
+                      @RequestParam(defaultValue = "transfer") String product) {
+        return scenarios.effectiveDefinition(id, product, name);
     }
 
     @PutMapping(value = "/{name}/definition", consumes = MediaType.TEXT_PLAIN_VALUE)
-    public ResponseEntity<?> save(@PathVariable UUID id, @PathVariable String name, @RequestBody String json) {
+    public ResponseEntity<?> save(@PathVariable UUID id, @PathVariable String name,
+                                  @RequestParam(defaultValue = "transfer") String product,
+                                  @RequestBody String json) {
         try {
-            scenarios.saveDefinition(id, name, json);
+            scenarios.saveDefinition(id, product, name, json);
             return ResponseEntity.ok(Map.of("status", "saved", "scenario", name));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
@@ -44,8 +49,9 @@ public class ScenarioAdminController {
     }
 
     @DeleteMapping("/{name}/definition")
-    public ResponseEntity<?> reset(@PathVariable UUID id, @PathVariable String name) {
-        scenarios.resetDefinition(id, name);
+    public ResponseEntity<?> reset(@PathVariable UUID id, @PathVariable String name,
+                                   @RequestParam(defaultValue = "transfer") String product) {
+        scenarios.resetDefinition(id, product, name);
         return ResponseEntity.ok(Map.of("status", "reset", "scenario", name));
     }
 }

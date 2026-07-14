@@ -34,15 +34,18 @@ public class SimulatorServerManager {
     private final SnapRequestMapper mapper;
     private final AccessTokenService accessTokenService;
     private final VirtualAccountService virtualAccountService;
+    private final QrisService qrisService;
     private final Map<UUID, HttpServer> servers = new ConcurrentHashMap<>();
 
     public SimulatorServerManager(SimulationExecutor executor, SnapRequestMapper mapper,
                                   AccessTokenService accessTokenService,
-                                  VirtualAccountService virtualAccountService) {
+                                  VirtualAccountService virtualAccountService,
+                                  QrisService qrisService) {
         this.executor = executor;
         this.mapper = mapper;
         this.accessTokenService = accessTokenService;
         this.virtualAccountService = virtualAccountService;
+        this.qrisService = qrisService;
     }
 
     public synchronized void start(UUID simulatorId, int port) {
@@ -101,6 +104,24 @@ public class SimulatorServerManager {
             }
             if ("DELETE".equalsIgnoreCase(method) && path.endsWith("/transfer-va/delete-va")) {
                 VirtualAccountService.Result r = virtualAccountService.delete(simulatorId, method, path, headers, body);
+                write(exchange, r.status(), Map.of("Content-Type", "application/json"), r.body());
+                return;
+            }
+
+            // Endpoint khusus: QRIS MPM (design.md Lampiran A3) — evaluasi via
+            // Scenario/Rule yang sama dengan transfer (customizable dari dashboard).
+            if ("POST".equalsIgnoreCase(method) && path.endsWith("/qr/qr-mpm-generate")) {
+                QrisService.Result r = qrisService.generate(simulatorId, method, path, headers, body);
+                write(exchange, r.status(), Map.of("Content-Type", "application/json"), r.body());
+                return;
+            }
+            if ("POST".equalsIgnoreCase(method) && path.endsWith("/qr/qr-mpm-query")) {
+                QrisService.Result r = qrisService.query(simulatorId, method, path, headers, body);
+                write(exchange, r.status(), Map.of("Content-Type", "application/json"), r.body());
+                return;
+            }
+            if ("POST".equalsIgnoreCase(method) && path.endsWith("/qr/qr-mpm-refund")) {
+                QrisService.Result r = qrisService.refund(simulatorId, method, path, headers, body);
                 write(exchange, r.status(), Map.of("Content-Type", "application/json"), r.body());
                 return;
             }

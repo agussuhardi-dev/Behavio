@@ -1,5 +1,6 @@
 package id.behavio.persistence;
 
+import id.behavio.core.blueprint.QrisMpmBlueprint;
 import id.behavio.core.blueprint.TransferIntrabankBlueprint;
 import id.behavio.core.port.SimulatorAdmin;
 import jakarta.persistence.EntityManager;
@@ -48,15 +49,17 @@ public class JpaSimulatorAdmin implements SimulatorAdmin {
 
     @Override
     @Transactional
-    public void setActiveScenario(UUID simulatorId, String scenarioName) {
+    public void setActiveScenario(UUID simulatorId, String product, String scenarioName) {
+        String method = "qris".equalsIgnoreCase(product) ? QrisMpmBlueprint.METHOD : TransferIntrabankBlueprint.METHOD;
+        String path = "qris".equalsIgnoreCase(product) ? QrisMpmBlueprint.PATH : TransferIntrabankBlueprint.PATH;
         EndpointEntity ep = em.createQuery(
                         "select e from EndpointEntity e where e.simulatorId = :sim and e.method = :m and e.path = :p",
                         EndpointEntity.class)
                 .setParameter("sim", simulatorId)
-                .setParameter("m", TransferIntrabankBlueprint.METHOD)
-                .setParameter("p", TransferIntrabankBlueprint.PATH)
+                .setParameter("m", method)
+                .setParameter("p", path)
                 .getResultList().stream().findFirst()
-                .orElseThrow(() -> new IllegalArgumentException("endpoint transfer-intrabank tidak ada untuk simulator " + simulatorId));
+                .orElseThrow(() -> new IllegalArgumentException("endpoint '" + product + "' tidak ada untuk simulator " + simulatorId));
 
         ScenarioEntity sc = em.createQuery(
                         "select s from ScenarioEntity s where s.endpointId = :ep and lower(s.name) = :name",
@@ -73,6 +76,9 @@ public class JpaSimulatorAdmin implements SimulatorAdmin {
     private static final String[] SCENARIO_NAMES = {
             "Normal", "Saldo Kurang", "Limit", "Bank Down", "Timeout",
             "Commit Then Drop", "Malformed", "Async Callback"
+    };
+    private static final String[] QRIS_SCENARIO_NAMES = {
+            "Normal", "Merchant Diblokir", "Service Down"
     };
 
     @Override
@@ -177,6 +183,29 @@ public class JpaSimulatorAdmin implements SimulatorAdmin {
         }
         ep.activeScenarioId = normalId;
         em.merge(ep);
+
+        // Endpoint QRIS MPM Generate + scenario baseline (design.md Lampiran A3)
+        UUID qrisEndpointId = UUID.randomUUID();
+        EndpointEntity qrisEp = new EndpointEntity();
+        qrisEp.id = qrisEndpointId;
+        qrisEp.simulatorId = simId;
+        qrisEp.method = QrisMpmBlueprint.METHOD;
+        qrisEp.path = QrisMpmBlueprint.PATH;
+        em.persist(qrisEp);
+
+        UUID qrisNormalId = null;
+        for (String scName : QRIS_SCENARIO_NAMES) {
+            UUID scId = UUID.randomUUID();
+            if ("Normal".equals(scName)) qrisNormalId = scId;
+            ScenarioEntity sc = new ScenarioEntity();
+            sc.id = scId;
+            sc.endpointId = qrisEndpointId;
+            sc.name = scName;
+            em.persist(sc);
+        }
+        qrisEp.activeScenarioId = qrisNormalId;
+        em.merge(qrisEp);
+
         return simId;
     }
 

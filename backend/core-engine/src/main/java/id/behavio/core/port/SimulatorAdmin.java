@@ -16,8 +16,11 @@ public interface SimulatorAdmin {
 
     void setStatus(UUID simulatorId, String status);
 
-    /** Ganti scenario aktif untuk endpoint transfer-intrabank (sakelar utama testing). */
-    void setActiveScenario(UUID simulatorId, String scenarioName);
+    /**
+     * Ganti scenario aktif untuk endpoint {@code product} (mis. "transfer","qris")
+     * — sakelar utama testing.
+     */
+    void setActiveScenario(UUID simulatorId, String product, String scenarioName);
 
     /** Buat simulator (profil bank) baru dengan baseline SNAP (endpoint+scenario+partner+akun). */
     UUID create(String name, int port, String signatureMode);

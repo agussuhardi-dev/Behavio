@@ -1,5 +1,6 @@
 package id.behavio.persistence;
 
+import id.behavio.core.blueprint.QrisMpmBlueprint;
 import id.behavio.core.blueprint.TransferIntrabankBlueprint;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
@@ -78,8 +79,25 @@ public class DemoSeeder implements CommandLineRunner {
         ep.activeScenarioId = normalId;   // aktif default: Normal
         em.merge(ep);
 
+        // Endpoint QRIS MPM Generate + scenario baseline (design.md Lampiran A3)
+        UUID qrisEndpointId = UUID.randomUUID();
+        EndpointEntity qrisEp = new EndpointEntity();
+        qrisEp.id = qrisEndpointId;
+        qrisEp.simulatorId = simId;
+        qrisEp.method = QrisMpmBlueprint.METHOD;
+        qrisEp.path = QrisMpmBlueprint.PATH;
+        em.persist(qrisEp);
+
+        UUID qrisNormalId = UUID.randomUUID();
+        em.persist(scenario(qrisNormalId, qrisEndpointId, "Normal"));
+        em.persist(scenario(UUID.randomUUID(), qrisEndpointId, "Merchant Diblokir"));
+        em.persist(scenario(UUID.randomUUID(), qrisEndpointId, "Service Down"));
+        qrisEp.activeScenarioId = qrisNormalId;
+        em.merge(qrisEp);
+
         log.info("[seed] demo siap — simulator={} port={} partner=PARTNER001 " +
-                "source=1234567890(1.000.000) benef=9876543210(0). Scenario aktif: Normal.", simId, sim.port);
+                "source=1234567890(1.000.000) benef=9876543210(0). Scenario aktif: Normal. " +
+                "QRIS endpoint siap (scenario aktif: Normal).", simId, sim.port);
     }
 
     private static AccountEntity account(UUID sim, UUID partner, String no, String holder, String balance) {

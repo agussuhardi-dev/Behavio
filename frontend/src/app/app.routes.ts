@@ -21,6 +21,10 @@ export const routes: Routes = [
         path: 'simulators',
         loadChildren: () => import('./routes/simulators/simulators.routes').then(m => m.routes),
       },
+      {
+        path: 'qris',
+        loadChildren: () => import('./routes/qris/qris.routes').then(m => m.routes),
+      },
       { path: 'dashboard', component: Dashboard },
       { path: '403', component: Error403 },
       { path: '404', component: Error404 },

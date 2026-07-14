@@ -7,6 +7,12 @@
       "icon": "dns"
     },
     {
+      "route": "qris",
+      "name": "qris",
+      "type": "link",
+      "icon": "qr_code_2"
+    },
+    {
       "route": "dashboard",
       "name": "dashboard",
       "type": "link",

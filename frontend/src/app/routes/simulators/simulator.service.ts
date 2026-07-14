@@ -36,6 +36,17 @@ export interface VirtualAccountView {
   hasCallback: boolean;
 }
 
+export interface QrisView {
+  referenceNo: string;
+  partnerReferenceNo: string;
+  merchantId: string;
+  qrType: 'STATIC' | 'DYNAMIC';
+  amount: string | null;
+  currency: string;
+  status: 'ACTIVE' | 'PAID' | 'REFUNDED' | 'EXPIRED';
+  hasCallback: boolean;
+}
+
 export interface Scenario {
   name: string;
   desc: string;
@@ -43,7 +54,7 @@ export interface Scenario {
   tone: 'ok' | 'warn' | 'fault';
 }
 
-/** Scenario preset (Fase 1–2) beserta penjelasan ramah end-user. */
+/** Scenario preset Transfer Intrabank beserta penjelasan ramah end-user. */
 export const SCENARIOS: Scenario[] = [
   { name: 'Normal', desc: 'Transaksi berjalan normal — dana didebit & dikredit.', icon: 'check_circle', tone: 'ok' },
   { name: 'Saldo Kurang', desc: 'Selalu ditolak: dana tidak cukup (4001714).', icon: 'money_off', tone: 'warn' },
@@ -53,6 +64,13 @@ export const SCENARIOS: Scenario[] = [
   { name: 'Commit Then Drop', desc: 'Dana terpotong tapi respons hilang — menguji idempotensi/rekonsiliasi.', icon: 'flash_off', tone: 'fault' },
   { name: 'Malformed', desc: 'Transaksi sukses tapi body respons dibuat rusak.', icon: 'broken_image', tone: 'fault' },
   { name: 'Async Callback', desc: 'Respons PENDING dulu, lalu webhook status sukses dikirim 2 detik kemudian.', icon: 'webhook', tone: 'ok' },
+];
+
+/** Scenario preset QRIS MPM Generate (design.md Lampiran A3). */
+export const QRIS_SCENARIOS: Scenario[] = [
+  { name: 'Normal', desc: 'QR berhasil dibuat. Ditolak hanya bila nominal (dynamic) ≤ 0.', icon: 'check_circle', tone: 'ok' },
+  { name: 'Merchant Diblokir', desc: 'Selalu ditolak — merchant tidak terdaftar/nonaktif (4044712).', icon: 'block', tone: 'warn' },
+  { name: 'Service Down', desc: 'Layanan QRIS gangguan — HTTP 503.', icon: 'cloud_off', tone: 'fault' },
 ];
 
 @Injectable({ providedIn: 'root' })
@@ -86,27 +104,32 @@ export class SimulatorService {
     return this.http.delete(`${this.base}/${id}`);
   }
 
-  setScenario(id: string, name: string) {
-    return this.http.put(`${this.base}/${id}/active-scenario`, { name });
+  /** @param product Endpoint mana yang diedit: 'transfer' (default) atau 'qris'. */
+  setScenario(id: string, name: string, product: 'transfer' | 'qris' = 'transfer') {
+    return this.http.put(`${this.base}/${id}/active-scenario?product=${product}`, { name });
   }
 
   /** Ambil definisi JSON scenario (custom bila ada, selain itu preset blueprint). */
-  getDefinition(id: string, scenario: string) {
-    return this.http.get(`${this.base}/${id}/scenarios/${encodeURIComponent(scenario)}/definition`, {
+  getDefinition(id: string, scenario: string, product: 'transfer' | 'qris' = 'transfer') {
+    return this.http.get(`${this.base}/${id}/scenarios/${encodeURIComponent(scenario)}/definition?product=${product}`, {
       responseType: 'text',
     });
   }
 
   /** Simpan definisi custom (override request cond + response). */
-  saveDefinition(id: string, scenario: string, json: string) {
-    return this.http.put(`${this.base}/${id}/scenarios/${encodeURIComponent(scenario)}/definition`, json, {
-      headers: { 'Content-Type': 'text/plain' },
-    });
+  saveDefinition(id: string, scenario: string, json: string, product: 'transfer' | 'qris' = 'transfer') {
+    return this.http.put(
+      `${this.base}/${id}/scenarios/${encodeURIComponent(scenario)}/definition?product=${product}`,
+      json,
+      { headers: { 'Content-Type': 'text/plain' } }
+    );
   }
 
   /** Kembalikan scenario ke preset (hapus override). */
-  resetDefinition(id: string, scenario: string) {
-    return this.http.delete(`${this.base}/${id}/scenarios/${encodeURIComponent(scenario)}/definition`);
+  resetDefinition(id: string, scenario: string, product: 'transfer' | 'qris' = 'transfer') {
+    return this.http.delete(
+      `${this.base}/${id}/scenarios/${encodeURIComponent(scenario)}/definition?product=${product}`
+    );
   }
 
   /** URL SSE live view (dilewatkan proxy dev ke :8080). */
@@ -155,5 +178,23 @@ export class SimulatorService {
 
   deleteAccount(id: string, accountId: string) {
     return this.http.delete(`${this.base}/${id}/accounts/${accountId}`);
+  }
+
+  // ---- QRIS MPM ----
+
+  /** Daftar QR yang sudah dibuat partner (via qr-mpm-generate) di simulator ini. */
+  listQris(id: string) {
+    return this.http.get<QrisView[]>(`${this.base}/${id}/qris`);
+  }
+
+  /**
+   * Tandai QR sebagai dibayar (simulasi pelanggan scan & bayar) — memicu Payment
+   * Notify (webhook). `amount` WAJIB untuk QR static (nominal diisi saat bayar).
+   */
+  payQris(id: string, referenceNo: string, amount?: string) {
+    return this.http.post<{ webhookSent: boolean; note: string }>(
+      `${this.base}/${id}/qris/${encodeURIComponent(referenceNo)}/pay`,
+      amount ? { amount } : {}
+    );
   }
 }

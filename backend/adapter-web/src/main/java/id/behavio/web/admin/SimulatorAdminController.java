@@ -102,12 +102,18 @@ public class SimulatorAdminController {
     }
 
     @PutMapping("/{id}/active-scenario")
-    public ResponseEntity<?> setActiveScenario(@PathVariable UUID id, @RequestBody Map<String, String> body) {
+    public ResponseEntity<?> setActiveScenario(@PathVariable UUID id,
+                                               @RequestParam(defaultValue = "transfer") String product,
+                                               @RequestBody Map<String, String> body) {
         String name = body.get("name");
         if (name == null || name.isBlank()) {
             return ResponseEntity.badRequest().body(Map.of("error", "field 'name' wajib"));
         }
-        admin.setActiveScenario(id, name);
-        return ResponseEntity.ok(Map.of("id", id, "activeScenario", name));
+        try {
+            admin.setActiveScenario(id, product, name);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+        return ResponseEntity.ok(Map.of("id", id, "product", product, "activeScenario", name));
     }
 }
