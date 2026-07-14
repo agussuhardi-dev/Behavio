@@ -165,7 +165,7 @@ public class QrisService {
         vars.put("responseCode", "2004800");
         vars.put("responseMessage", "Successful");
         vars.put("referenceNo", "QR" + System.currentTimeMillis() + String.format("%03d", (int) (Math.random() * 1000)));
-        vars.put("partnerReferenceNo", text(n, "partnerReferenceNo"));
+        vars.put("partnerReferenceNo", strOrEmpty(text(n, "partnerReferenceNo")));
         vars.put("merchantName", "BEHAVIO MERCHANT");
         vars.put("merchantCategory", "Food & Beverage");
         vars.put("merchantLocation", "JAKARTA");
@@ -226,7 +226,7 @@ public class QrisService {
         vars.put("currency", amtNode.path("currency").asText("IDR"));
         JsonNode feeNode = n.get("feeAmount");
         vars.put("feeValue", feeNode != null && feeNode.hasNonNull("value") ? feeNode.get("value").asText() : "0.00");
-        vars.put("verificationId", text(n, "verificationId"));
+        vars.put("verificationId", strOrEmpty(text(n, "verificationId")));
 
         return renderScenario(simulatorId, method, path, vars);
     }
@@ -255,7 +255,7 @@ public class QrisService {
         vars.put("responseCode", "2005100");
         vars.put("responseMessage", "Successful");
         vars.put("originalReferenceNo", qr.referenceNo());
-        vars.put("originalPartnerReferenceNo", qr.partnerReferenceNo());
+        vars.put("originalPartnerReferenceNo", strOrEmpty(qr.partnerReferenceNo()));
         vars.put("originalExternalId", n.hasNonNull("originalExternalId") ? n.get("originalExternalId").asText() : "");
         vars.put("serviceCode", n.hasNonNull("serviceCode") ? n.get("serviceCode").asText() : "47");
         vars.put("latestTransactionStatus", statusCode(qr.status()));
@@ -301,7 +301,7 @@ public class QrisService {
         Map<String, Object> vars = new HashMap<>();
         vars.put("responseCode", "2007800");
         vars.put("responseMessage", "Successful");
-        vars.put("originalPartnerReferenceNo", text(n, "originalPartnerReferenceNo") != null ? text(n, "originalPartnerReferenceNo") : qr.partnerReferenceNo());
+        vars.put("originalPartnerReferenceNo", strOrEmpty(text(n, "originalPartnerReferenceNo") != null ? text(n, "originalPartnerReferenceNo") : qr.partnerReferenceNo()));
         vars.put("originalReferenceNo", qr.referenceNo());
         vars.put("originalExternalId", strOrEmpty(text(n, "originalExternalId")));
         vars.put("refundNo", "RFD" + UUID.randomUUID().toString().substring(0, 12).toUpperCase());
@@ -338,7 +338,7 @@ public class QrisService {
         Map<String, Object> vars = new HashMap<>();
         vars.put("responseCode", "2007700");
         vars.put("responseMessage", "Successful");
-        vars.put("originalPartnerReferenceNo", text(n, "originalPartnerReferenceNo") != null ? text(n, "originalPartnerReferenceNo") : qr.partnerReferenceNo());
+        vars.put("originalPartnerReferenceNo", strOrEmpty(text(n, "originalPartnerReferenceNo") != null ? text(n, "originalPartnerReferenceNo") : qr.partnerReferenceNo()));
         vars.put("originalReferenceNo", qr.referenceNo());
         vars.put("originalExternalId", strOrEmpty(text(n, "originalExternalId")));
         vars.put("cancelTime", ts(now));
@@ -388,11 +388,11 @@ public class QrisService {
         }
         Map<String, Object> notif = new LinkedHashMap<>();
         notif.put("originalReferenceNo", qr.referenceNo());
-        notif.put("originalPartnerReferenceNo", qr.partnerReferenceNo());
+        notif.put("originalPartnerReferenceNo", strOrEmpty(qr.partnerReferenceNo()));
         notif.put("latestTransactionStatus", "00");
         notif.put("transactionStatusDesc", "success");
         notif.put("amount", Map.of("value", paid.toPlainString(), "currency", qr.currency()));
-        notif.put("merchantId", qr.merchantId());
+        notif.put("merchantId", strOrEmpty(qr.merchantId()));
         notif.put("paidTime", ts(paidAt));
         webhookSender.schedule(simulatorId, qr.callbackUrl(), Map.of("Content-Type", "application/json"),
                 writeJson(notif), Duration.ZERO);

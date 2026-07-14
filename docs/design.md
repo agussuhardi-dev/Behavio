@@ -1115,6 +1115,37 @@ Merchant membalas `responseCode: 2002500` + echo `virtualAccountData`.
 > [QRIS MPM Dynamic — BRIAPI](https://developers.bri.co.id/en/docs/qris-merchant-presented-mode-mpm-dynamic),
 > [QRIS — DOKU](https://developers.doku.com/accept-payments/direct-api/snap/integration-guide/qris).
 
+### A3.7 Status kesesuaian response default vs ASPI
+Audit menyeluruh 2026-07-14 — **7/7 endpoint response default cocok field-per-field**
+dengan tabel ASPI, terverifikasi via HTTP nyata (bukan hanya baca kode):
+
+| Service | Endpoint | rc sukses | Status |
+|---|---|---|---|
+| 47 | `qr-mpm-generate` | `2004700` | ✅ + 18 scenario katalog error (A3.6) |
+| 48 | `qr-mpm-decode` | `2004800` | ✅ `merchantInfos[]`, `transactionAmount`/`feeAmount` bersarang |
+| 49 | `apply-ott` | `2004900` | ✅ `userResources[{resourceType,value}]` |
+| 50 | `qr-mpm-payment` | `2005000` | ✅ `amount`/`feeAmount` bersarang |
+| 51 | `qr-mpm-query` | `2005100` | ✅ `amount`/`feeAmount` bersarang, `latestTransactionStatus` |
+| 77 | `qr-mpm-cancel` | `2007700` | ✅ `cancelTime`/`transactionDate` ISO ber-offset |
+| 78 | `qr-mpm-refund` | `2007800` | ✅ `refundAmount` bersarang |
+
+`additionalInfo` bersifat **Optional** di ASPI untuk semua service di atas — tidak
+dikirim = tetap sesuai spec.
+
+**Invarian yang wajib dijaga** (pernah bocor & sudah ditutup — semua field opsional
+kosong dikirim sebagai `""`, TIDAK PERNAH `null`): `verificationId` (50),
+`partnerReferenceNo` (48), `originalPartnerReferenceNo` (51/77/78 + webhook),
+`merchantId` (webhook). Uji regresinya: kirim request **minimal** (semua field
+opsional dihilangkan) lalu pastikan tak ada `null` di JSON response mana pun.
+
+> **BELUM terverifikasi:** body webhook **Payment Notify (service 52)**. Field intinya
+> (`originalReferenceNo`, `originalPartnerReferenceNo`, `latestTransactionStatus`,
+> `transactionStatusDesc`, `amount` bersarang) cocok, tetapi daftar field ASPI yang
+> terbaca saat riset memuat field ber-rasa transfer (`customerNumber`, `bankCode`,
+> `destinationAccountName`) sehingga diduga tercampur bagian lain di halaman yang sama.
+> `merchantId`/`paidTime` yang kita kirim juga tak muncul di daftar itu.
+> **Perlu konfirmasi ke dokumen ASPI resmi sebelum diubah.**
+
 ---
 
 ## Lampiran B — Sumber
