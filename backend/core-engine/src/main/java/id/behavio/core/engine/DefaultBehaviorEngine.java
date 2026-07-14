@@ -23,6 +23,7 @@ import id.behavio.core.rule.WebhookSpec;
 
 import java.math.BigDecimal;
 import java.time.Clock;
+import java.time.ZoneId;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
@@ -60,20 +61,28 @@ public final class DefaultBehaviorEngine implements BehaviorEngine {
     private final Supplier<String> referenceNoGen;
     private final Clock clock;
 
+    /**
+     * Timestamp SNAP: ISO-8601 ber-offset presisi detik (mis. 2025-10-02T05:51:05+07:00).
+     * ISO_OFFSET_DATE_TIME + Clock.system(SNAP_ZONE) menghasilkan "…Z" berikut nanodetik —
+     * di luar format SNAP (25 char). Zona WIB dipakai sebagai default simulator.
+     */
+    private static final DateTimeFormatter SNAP_TS = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ssXXX");
+    private static final ZoneId SNAP_ZONE = ZoneId.of("Asia/Jakarta");
+
     public DefaultBehaviorEngine(StateRepository state, ConfigRepository config, EventPublisher events) {
-        this(state, config, events, null, null, null, defaultRefGen(), Clock.systemUTC());
+        this(state, config, events, null, null, null, defaultRefGen(), Clock.system(SNAP_ZONE));
     }
 
     public DefaultBehaviorEngine(StateRepository state, ConfigRepository config, EventPublisher events,
                                  SignatureVerifier signatureVerifier, WebhookSender webhookSender) {
-        this(state, config, events, signatureVerifier, webhookSender, null, defaultRefGen(), Clock.systemUTC());
+        this(state, config, events, signatureVerifier, webhookSender, null, defaultRefGen(), Clock.system(SNAP_ZONE));
     }
 
     public DefaultBehaviorEngine(StateRepository state, ConfigRepository config, EventPublisher events,
                                  SignatureVerifier signatureVerifier, WebhookSender webhookSender,
                                  AccessTokenStore accessTokenStore) {
         this(state, config, events, signatureVerifier, webhookSender, accessTokenStore,
-                defaultRefGen(), Clock.systemUTC());
+                defaultRefGen(), Clock.system(SNAP_ZONE));
     }
 
     public DefaultBehaviorEngine(StateRepository state, ConfigRepository config, EventPublisher events,
@@ -204,7 +213,7 @@ public final class DefaultBehaviorEngine implements BehaviorEngine {
         Object amount = request.fields().get("amount");
         vars.put("amountValue", amount == null ? "" : amount.toString());
         vars.putIfAbsent("currency", "IDR");
-        vars.put("transactionDate", OffsetDateTime.now(clock).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME));
+        vars.put("transactionDate", OffsetDateTime.now(clock).format(SNAP_TS));
         String body = renderer.render(spec.bodyTemplate(), vars);
         webhookSender.schedule(simulatorId, url, JSON_HEADERS, body, Duration.ofMillis(spec.delayMillis()));
     }
@@ -269,7 +278,7 @@ public final class DefaultBehaviorEngine implements BehaviorEngine {
         Object amount = request.fields().get("amount");
         vars.put("amountValue", amount == null ? "" : amount.toString());
         vars.putIfAbsent("currency", "IDR");
-        vars.put("transactionDate", OffsetDateTime.now(clock).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME));
+        vars.put("transactionDate", OffsetDateTime.now(clock).format(SNAP_TS));
         String body = renderer.render(spec.bodyTemplate(), vars);
         return new SimResponse(spec.httpStatus(), spec.responseCode(), JSON_HEADERS, body);
     }

@@ -19,5 +19,12 @@ public interface QrisRepository {
     /** Cari lintas partner (untuk Admin API/dashboard & refund yang identifikasi via referenceNo saja). */
     Optional<QrisTransaction> findAny(UUID simulatorId, String referenceNo);
 
-    List<QrisTransaction> list(UUID simulatorId);
+    /**
+     * Satu halaman QR, terbaru dulu. Paging di sisi DB karena dashboard memuat ulang
+     * daftar ini tiap ada request QRIS masuk (Live View) — jumlah QR bisa menumpuk.
+     */
+    List<QrisTransaction> list(UUID simulatorId, int limit, int offset);
+
+    /** Total QR di simulator (untuk paginator dashboard). */
+    int count(UUID simulatorId);
 }

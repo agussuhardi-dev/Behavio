@@ -8,11 +8,26 @@ final class Blueprints {
 
     private Blueprints() {}
 
+    /**
+     * Apakah product punya preset blueprint sendiri. Dipakai supaya endpoint tanpa baris
+     * scenario tetap memakai preset-nya (bukan jatuh ke {@code default} = transfer).
+     */
+    static boolean supports(String product) {
+        if (product == null) return false;
+        return switch (product.trim().toLowerCase()) {
+            case "transfer", "qris", "qris-generate", "qris-query", "qris-refund",
+                 "qris-cancel", "qris-decode", "qris-payment", "qris-apply-ott" -> true;
+            default -> false;
+        };
+    }
+
     static Scenario byName(String product, String name) {
         String key = name == null ? "" : name.trim().toLowerCase();
         String p = product == null ? "transfer" : product.trim().toLowerCase();
         return switch (p) {
-            case "qris" -> switch (key) {
+            // "qris-generate" = kunci operasi di tabel endpoints (SnapOperations);
+            // "qris" = nama product yang dipakai dashboard. Keduanya endpoint yang sama.
+            case "qris", "qris-generate" -> switch (key) {
                 case "merchant diblokir" -> QrisMpmBlueprint.merchantBlocked();
                 case "service down" -> QrisMpmBlueprint.serviceDown();
                 default -> QrisMpmBlueprint.normal();

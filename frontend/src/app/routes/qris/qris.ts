@@ -9,6 +9,7 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatIconModule } from '@angular/material/icon';
 import { MatInputModule } from '@angular/material/input';
 import { MatMenuModule } from '@angular/material/menu';
+import { MatPaginatorModule, PageEvent } from '@angular/material/paginator';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatSelectModule } from '@angular/material/select';
 import { MatTooltipModule } from '@angular/material/tooltip';
@@ -42,7 +43,7 @@ interface LiveEvent {
     FormsModule,
     MatButtonModule, MatCardModule, MatDialogModule, MatDividerModule,
     MatExpansionModule, MatFormFieldModule, MatIconModule, MatInputModule,
-    MatMenuModule, MatProgressBarModule, MatSelectModule, MatTooltipModule,
+    MatMenuModule, MatPaginatorModule, MatProgressBarModule, MatSelectModule, MatTooltipModule,
     EndpointUrlPanel,
   ],
   templateUrl: './qris.html',
@@ -64,6 +65,11 @@ export class Qris implements OnInit, OnDestroy {
   readonly qrLoading = signal(false);
   readonly qrMsg = signal('');
   readonly payAmounts = signal<Record<string, string>>({});
+
+  // paging daftar QR (server-side; terbaru selalu di halaman pertama)
+  readonly qrTotal = signal(0);
+  readonly qrPage = signal(0);
+  readonly qrSize = signal(10);
 
   // Live View (SSE) — request QRIS real-time
   readonly liveOpen = signal(false);
@@ -213,8 +219,8 @@ export class Qris implements OnInit, OnDestroy {
           responseBody: d.responseBody ?? '', open: false,
         };
         this.liveEvents.update(list => [ev, ...list].slice(0, 50));
-        // Request QRIS masuk → segarkan daftar QR + kedipkan card sebagai penanda.
-        this.reloadQr();
+        // Request QRIS masuk → segarkan halaman QR aktif + kedipkan card sebagai penanda.
+        this.reloadQr(true);
         this.qrFlash.set(true);
         setTimeout(() => this.qrFlash.set(false), 900);
       } catch { /* abaikan payload tak valid */ }
@@ -291,6 +297,7 @@ export class Qris implements OnInit, OnDestroy {
     this.selectedSimId.set(id);
     this.editingEp.set(null);
     this.liveEvents.set([]);
+    this.qrPage.set(0);
     this.reloadQr();
     this.syncAllScenarios();
     this.connectLive();
@@ -349,13 +356,25 @@ export class Qris implements OnInit, OnDestroy {
 
   // ---- QR list ----
 
-  reloadQr() {
+  reloadQr(keepMsg = false) {
     if (!this.selectedSimId()) return;
-    this.qrLoading.set(true); this.qrMsg.set('');
-    this.api.listQris(this.selectedSimId()).subscribe({
-      next: list => { this.qrList.set(list); this.qrLoading.set(false); },
+    this.qrLoading.set(true);
+    if (!keepMsg) this.qrMsg.set('');
+    this.api.listQris(this.selectedSimId(), this.qrPage(), this.qrSize()).subscribe({
+      next: p => {
+        this.qrList.set(p.items);
+        this.qrTotal.set(p.total);
+        this.qrPage.set(p.page); // server bisa mundurkan halaman bila di luar jangkauan
+        this.qrLoading.set(false);
+      },
       error: () => this.qrLoading.set(false),
     });
+  }
+
+  onQrPage(e: PageEvent) {
+    this.qrPage.set(e.pageIndex);
+    this.qrSize.set(e.pageSize);
+    this.reloadQr();
   }
 
   onPayAmount(refNo: string, value: string) { this.payAmounts.update(m => ({ ...m, [refNo]: value })); }
@@ -364,7 +383,7 @@ export class Qris implements OnInit, OnDestroy {
     const amount = qr.qrType === 'STATIC' ? this.payAmounts()[qr.referenceNo] : undefined;
     if (qr.qrType === 'STATIC' && !amount) { this.qrMsg.set('QR static butuh nominal.'); return; }
     this.api.payQris(this.selectedSimId(), qr.referenceNo, amount).subscribe({
-      next: r => { this.qrMsg.set(r.webhookSent ? 'Payment Notify terkirim.' : r.note); this.reloadQr(); },
+      next: r => { this.qrMsg.set(r.webhookSent ? 'Payment Notify terkirim.' : r.note); this.reloadQr(true); },
       error: () => this.qrMsg.set('Gagal.'),
     });
   }
@@ -372,7 +391,7 @@ export class Qris implements OnInit, OnDestroy {
   expireQr(qr: QrisView) {
     if (!confirm(`Kedaluwarsakan QR "${qr.referenceNo}"?`)) return;
     this.api.expireQris(this.selectedSimId(), qr.referenceNo).subscribe({
-      next: r => { this.qrMsg.set(r.note); this.reloadQr(); },
+      next: r => { this.qrMsg.set(r.note); this.reloadQr(true); },
       error: () => this.qrMsg.set('Gagal.'),
     });
   }

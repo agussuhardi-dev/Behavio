@@ -56,6 +56,14 @@ export interface QrisView {
   hasCallback: boolean;
 }
 
+/** Satu halaman QR + total, sesuai respons Admin API `GET .../qris?page=&size=`. */
+export interface QrisPage {
+  items: QrisView[];
+  total: number;
+  page: number;
+  size: number;
+}
+
 export interface Scenario {
   name: string;
   desc: string;
@@ -196,9 +204,9 @@ export class SimulatorService {
 
   // ---- QRIS MPM ----
 
-  /** Daftar QR yang sudah dibuat partner (via qr-mpm-generate) di simulator ini. */
-  listQris(id: string) {
-    return this.http.get<QrisView[]>(`${this.base}/${id}/qris`);
+  /** Satu halaman QR (terbaru dulu) yang dibuat partner via qr-mpm-generate di simulator ini. */
+  listQris(id: string, page = 0, size = 10) {
+    return this.http.get<QrisPage>(`${this.base}/${id}/qris?page=${page}&size=${size}`);
   }
 
   /**

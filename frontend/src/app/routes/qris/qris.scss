@@ -351,6 +351,15 @@
   100% { box-shadow: 0 0 0 8px rgba(91, 124, 250, 0); }
 }
 
+// paginator daftar QR (terbaru selalu di halaman pertama)
+.qr-paginator {
+  background: transparent;
+  margin: 0 -18px -8px;
+
+  .mat-mdc-paginator-container { min-height: 44px; padding: 0 8px; }
+  .mat-mdc-paginator-page-size { align-items: center; }
+}
+
 // ---- Live View ----
 .qris-live {
   margin-top: 18px;

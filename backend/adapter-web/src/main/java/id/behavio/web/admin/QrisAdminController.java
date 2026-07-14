@@ -24,10 +24,16 @@ public class QrisAdminController {
         this.service = service;
     }
 
+    /** Daftar QR terbaru-dulu, dipaginasi (dashboard memuat ulang tiap ada request QRIS masuk). */
     @GetMapping
-    public List<QrView> list(@PathVariable UUID id) {
-        return service.list(id).stream().map(QrView::from).toList();
+    public PageView list(@PathVariable UUID id,
+                         @RequestParam(defaultValue = "0") int page,
+                         @RequestParam(defaultValue = "10") int size) {
+        QrisService.QrisPage p = service.list(id, page, size);
+        return new PageView(p.items().stream().map(QrView::from).toList(), p.total(), p.page(), p.size());
     }
+
+    record PageView(List<QrView> items, int total, int page, int size) {}
 
     @PostMapping("/{referenceNo}/pay")
     public ResponseEntity<?> markPaid(@PathVariable UUID id, @PathVariable String referenceNo,

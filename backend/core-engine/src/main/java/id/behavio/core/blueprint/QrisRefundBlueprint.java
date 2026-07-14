@@ -26,7 +26,7 @@ public final class QrisRefundBlueprint {
         body.put("refundNo", "{{refundNo}}");
         body.put("partnerRefundNo", "{{partnerRefundNo}}");
         body.put("refundAmount", Map.of("value", "{{refundAmountValue}}", "currency", "{{currency}}"));
-        body.put("reason", "{{reason}}");
+        // `reason` adalah field REQUEST — tidak termasuk response refund ASPI.
         body.put("refundTime", "{{refundTime}}");
         return new Scenario("Normal", Collections.emptyList(),
                 Outcome.of(List.of(), new ResponseSpec(200, "2007800", "Successful", body)));

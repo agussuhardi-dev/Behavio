@@ -117,6 +117,7 @@
       <mat-card class="qris-card" appearance="outlined" [class.qris-card--flash]="qrFlash()">
         <div class="qris-card__head">
           <mat-icon>qr_code_2</mat-icon> QR Dibuat
+          @if (qrTotal() > 0) { <span class="qris-live__count">{{ qrTotal() }}</span> }
           <span class="qris-card__live" [class.qris-card__live--on]="!!selectedSim"><span class="dot"></span>auto</span>
           <span class="qris-selector__spacer"></span>
           <button mat-icon-button matTooltip="Muat ulang" (click)="reloadQr()"><mat-icon>refresh</mat-icon></button>
@@ -124,7 +125,7 @@
         <mat-divider />
         <div class="qris-card__body">
           @if (qrMsg()) { <div class="qris-msg">{{ qrMsg() }}</div> }
-          @if (!qrLoading() && qrList().length === 0) {
+          @if (!qrLoading() && qrTotal() === 0) {
             <div class="qris-list-empty">Belum ada QR. Gunakan endpoint Generate di sebelah kiri.</div>
           }
           @for (qr of qrList(); track qr.referenceNo) {
@@ -148,6 +149,17 @@
                 }
               </div>
             </div>
+          }
+
+          @if (qrTotal() > 0) {
+            <mat-paginator
+              class="qr-paginator"
+              [length]="qrTotal()"
+              [pageIndex]="qrPage()"
+              [pageSize]="qrSize()"
+              [pageSizeOptions]="[5, 10, 25, 50]"
+              (page)="onQrPage($event)"
+              showFirstLastButtons />
           }
         </div>
       </mat-card>

@@ -20,6 +20,12 @@ public class JpaSimulatorAdmin implements SimulatorAdmin {
     @PersistenceContext
     private EntityManager em;
 
+    private final ScenarioProvisioning provisioning;
+
+    JpaSimulatorAdmin(ScenarioProvisioning provisioning) {
+        this.provisioning = provisioning;
+    }
+
     @Override
     @Transactional(readOnly = true)
     public List<SimulatorView> list() {
@@ -50,8 +56,12 @@ public class JpaSimulatorAdmin implements SimulatorAdmin {
     @Override
     @Transactional
     public void setActiveScenario(UUID simulatorId, String product, String scenarioName) {
-        String method = "qris".equalsIgnoreCase(product) ? QrisMpmBlueprint.METHOD : TransferIntrabankBlueprint.METHOD;
-        String path = "qris".equalsIgnoreCase(product) ? QrisMpmBlueprint.PATH : TransferIntrabankBlueprint.PATH;
+        // Dulu ternary "qris" ? QRIS : TRANSFER — product qris-query/qris-refund dst.
+        // salah arah ke endpoint transfer. ProductEndpoints mengenal semua product.
+        ProductEndpoints.Endpoint target = ProductEndpoints.resolve(product);
+        provisioning.ensure(simulatorId, product); // simulator lama: lengkapi endpoint+scenario
+        String method = target.method();
+        String path = target.path();
         EndpointEntity ep = em.createQuery(
                         "select e from EndpointEntity e where e.simulatorId = :sim and e.method = :m and e.path = :p",
                         EndpointEntity.class)

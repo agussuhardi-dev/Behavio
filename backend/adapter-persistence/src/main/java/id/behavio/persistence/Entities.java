@@ -99,9 +99,11 @@ class EndpointEntity {
     @Column(name = "active_scenario_id") UUID activeScenarioId;
     /** Kunci operasi stabil (mis. "transfer","qris-generate") — path boleh di-custom, ini tidak. */
     String operation;
-    /** Custom headers JSON: {"X-Custom-Header": "value", ...} — null = pakai default SNAP. */
-    @Column(columnDefinition = "jsonb")
-    String headers;
+
+    // Kolom jsonb (endpoints.headers) sengaja TIDAK dipetakan di sini — Hibernate akan
+    // mengikatnya sebagai varchar dan setiap update entity gagal (jsonb <> varchar).
+    // Dikelola EndpointRegistryJdbc yang meng-cast eksplisit (?::jsonb / headers::text),
+    // sama seperti scenarios.definition pada ScenarioEntity.
 
     EndpointEntity() {}
 }

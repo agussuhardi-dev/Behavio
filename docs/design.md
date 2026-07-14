@@ -980,6 +980,15 @@ Merchant membalas `responseCode: 2002500` + echo `virtualAccountData`.
 | Refund Payment | POST | `/v1.0/qr/qr-mpm-refund` | 78 | `2007800` |
 
 ### A3.2 Generate QR — request/response
+> **Terverifikasi ke ASPI SNAP Developer Site (MPM) + BRIAPI, 2026-07-14.**
+> Aturan umum yang berlaku untuk SEMUA endpoint QRIS di bawah:
+> - Nominal **selalu objek bersarang** `{ "value": "…", "currency": "…" }` —
+>   `value` format `16.2` (2 desimal wajib untuk IDR, mis. `"25000.00"`),
+>   `currency` ISO-4217. **Bukan** field flat seperti `amountValue`.
+> - Timestamp = **ISO-8601 ber-offset** (25 char), mis. `2025-10-02T05:51:05+07:00`
+>   — bukan `Instant.toString()` UTC (`…Z` + nanodetik).
+> - Field opsional yang kosong dikirim sebagai **string kosong**, bukan `null`.
+
 ```jsonc
 // request
 {
@@ -989,14 +998,22 @@ Merchant membalas `responseCode: 2002500` + echo `virtualAccountData`.
   "validityPeriod": "ISO-8601",                  // masa berlaku QR
   "additionalInfo": { }
 }
-// response
+// response — service 47
 {
   "responseCode": "2004700", "responseMessage": "Successful",
-  "referenceNo": "…", "partnerReferenceNo": "…",
-  "qrContent": "<EMV QR string>", "qrUrl": "…",
-  "additionalInfo": { "nmid": "…", "merchantId": "…" }
+  "referenceNo": "…",            // ≤64, ID transaksi dari acquirer
+  "partnerReferenceNo": "…",     // ≤64, echo dari request
+  "qrContent": "<EMV QR string>",// ≤512 — INTI generate; wajib ada saat sukses
+  "qrUrl": "…",                  // ≤256, URL unduh gambar QR (opsional)
+  "redirectUrl": "…",            // ≤512 (opsional)
+  "merchantName": "…",           // ≤25
+  "storeId": "…",                // ≤64
+  "terminalId": "…",             // ≤16
+  "additionalInfo": { "merchantId": "…" }
 }
 ```
+> Catatan: `amount` TIDAK dikembalikan di response generate (hanya di request);
+> nominal sudah tertanam di `qrContent` untuk QR dynamic.
 
 ### A3.3 Dynamic vs Static
 - **Dynamic:** QR di-generate tiap transaksi, **nominal sudah tertanam**. Sekali
@@ -1006,14 +1023,46 @@ Merchant membalas `responseCode: 2002500` + echo `virtualAccountData`.
 ### A3.4 Query status & Payment Notify
 - `qr-mpm-query` (poll): request `originalReferenceNo`,
   `originalPartnerReferenceNo`, `serviceCode`; response `latestTransactionStatus`
-  (`00` success · `03` pending · `06` failed), `transactionStatusDesc`, `amount`.
+  (`00` success · `03` pending · `06` failed · `07` expired), `transactionStatusDesc`, `amount`.
 - `qr-mpm-notify` (acquirer memberi tahu merchant saat QR dibayar):
   `originalReferenceNo`, `originalPartnerReferenceNo`, `amount`,
   `latestTransactionStatus`, `merchantId`, `paidTime`. Di simulator = **Webhook**.
 
-> Catatan: detail field `qr-mpm-query`/`qr-mpm-notify` mengikuti pola standar
-> SNAP; **verifikasi final ke dokumen ASPI/bank** saat implementasi Blueprint
-> (sebagian portal memblok akses otomatis saat riset ini).
+```jsonc
+// response qr-mpm-query — service 51 (terverifikasi ASPI 2026-07-14)
+{
+  "responseCode": "2005100", "responseMessage": "Successful",
+  "originalReferenceNo": "…", "originalPartnerReferenceNo": "…",
+  "originalExternalId": "…",
+  "serviceCode": "47",                    // 2 char
+  "latestTransactionStatus": "00",        // 2 char, 00–07
+  "transactionStatusDesc": "…",           // ≤50
+  "paidTime": "2025-10-02T17:44:19+07:00",
+  "amount":    { "value": "25000.00", "currency": "IDR" },
+  "feeAmount": { "value": "0.00",     "currency": "IDR" },
+  "terminalId": "…"
+}
+```
+
+### A3.5 Refund — response (service 78)
+```jsonc
+// response qr-mpm-refund (terverifikasi ASPI 2026-07-14)
+{
+  "responseCode": "2007800", "responseMessage": "Successful",
+  "originalPartnerReferenceNo": "…", "originalReferenceNo": "…",
+  "originalExternalId": "…",
+  "refundNo": "…",                        // ≤64, dari acquirer
+  "partnerRefundNo": "…",                 // ≤64, echo dari request
+  "refundAmount": { "value": "25000.00", "currency": "IDR" },
+  "refundTime": "2025-10-02T05:51:05+07:00"
+}
+```
+> `reason` adalah field **request**, BUKAN bagian response refund.
+> Refund parsial didukung: status jadi `REFUNDED` hanya saat kumulatif = nominal dibayar.
+
+> Sumber verifikasi: [MPM — ASPI SNAP Developer Site](https://apidevportal.aspi-indonesia.or.id/api-services/transfer-kredit/mpm),
+> [QRIS MPM Dynamic — BRIAPI](https://developers.bri.co.id/en/docs/qris-merchant-presented-mode-mpm-dynamic),
+> [QRIS — DOKU](https://developers.doku.com/accept-payments/direct-api/snap/integration-guide/qris).
 
 ---
 

@@ -77,15 +77,26 @@ public class QrisRepositoryJdbc implements QrisRepository {
     }
 
     @Override
-    public List<QrisTransaction> list(UUID simulatorId) {
+    public List<QrisTransaction> list(UUID simulatorId, int limit, int offset) {
+        // Tie-break `id` menjaga urutan deterministik antar-halaman bila created_at kembar.
         return db.sql("""
                 SELECT partner_id, data::text AS data, status FROM entities
-                WHERE simulator_id = ? AND type = 'qris' ORDER BY created_at DESC
+                WHERE simulator_id = ? AND type = 'qris'
+                ORDER BY created_at DESC, id DESC
+                LIMIT ? OFFSET ?
                 """)
-                .param(simulatorId)
+                .param(simulatorId).param(limit).param(offset)
                 .query((rs, n) -> fromJson(simulatorId, rs.getObject("partner_id", UUID.class),
                         rs.getString("data"), rs.getString("status")))
                 .list();
+    }
+
+    @Override
+    public int count(UUID simulatorId) {
+        return db.sql("SELECT count(*) FROM entities WHERE simulator_id = ? AND type = 'qris'")
+                .param(simulatorId)
+                .query(Integer.class)
+                .single();
     }
 
     private String toJson(QrisTransaction qr) {

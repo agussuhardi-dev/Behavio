@@ -52,16 +52,23 @@ public class JpaConfigRepository implements ConfigRepository {
                 .setParameter("p", path)
                 .getResultList().stream().findFirst();
 
-        if (ep.isEmpty() || ep.get().activeScenarioId == null) {
-            return Optional.empty();
-        }
-        ScenarioEntity sc = em.find(ScenarioEntity.class, ep.get().activeScenarioId);
-        if (sc == null) {
+        if (ep.isEmpty()) {
             return Optional.empty();
         }
         String operation = ep.get().operation;
         String product = operation != null ? operation
                 : (QrisMpmBlueprint.PATH.equals(path) ? "qris" : "transfer");
+
+        // Endpoint QRIS selain generate di-provision tanpa baris scenario (query/refund/
+        // cancel/…). Tanpa ini mereka balik Optional.empty() dan QrisService merender vars
+        // mentah (JSON flat, bukan bentuk SNAP). Pakai preset blueprint-nya sebagai default.
+        ScenarioEntity sc = ep.get().activeScenarioId == null ? null
+                : em.find(ScenarioEntity.class, ep.get().activeScenarioId);
+        if (sc == null) {
+            return Blueprints.supports(product)
+                    ? Optional.of(Blueprints.byName(product, "Normal"))
+                    : Optional.empty();
+        }
         return Optional.of(resolveScenario(sc.id, product, sc.name));
     }
 

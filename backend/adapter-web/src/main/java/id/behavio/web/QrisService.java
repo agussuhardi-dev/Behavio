@@ -25,6 +25,8 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -57,6 +59,14 @@ public class QrisService {
     private final ObjectMapper mapper;
     private final ConditionEvaluator evaluator = new ConditionEvaluator();
     private final ResponseRenderer renderer = new ResponseRenderer();
+
+    /** Timestamp SNAP: ISO-8601 ber-offset WIB (mis. 2025-10-02T05:51:05+07:00), bukan Instant.toString(). */
+    private static final DateTimeFormatter SNAP_TS =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ssXXX").withZone(ZoneId.of("Asia/Jakarta"));
+
+    private static String ts(Instant at) {
+        return at == null ? "" : SNAP_TS.format(at);
+    }
 
     public QrisService(ConfigRepository config, SignatureVerifier verifier, AccessTokenStore accessTokenStore,
                        QrisRepository qrisRepo, WebhookSender webhookSender, ObjectMapper mapper) {
@@ -202,7 +212,7 @@ public class QrisService {
         vars.put("responseMessage", "Successful");
         vars.put("referenceNo", referenceNo);
         vars.put("partnerReferenceNo", partnerRefNo);
-        vars.put("transactionDate", Instant.now().toString());
+        vars.put("transactionDate", ts(Instant.now()));
         vars.put("amountValue", amtNode.get("value").asText());
         vars.put("currency", amtNode.path("currency").asText("IDR"));
         JsonNode feeNode = n.get("feeAmount");
@@ -241,7 +251,7 @@ public class QrisService {
         vars.put("serviceCode", n.hasNonNull("serviceCode") ? n.get("serviceCode").asText() : "47");
         vars.put("latestTransactionStatus", statusCode(qr.status()));
         vars.put("transactionStatusDesc", statusDesc(qr.status()));
-        vars.put("paidTime", qr.status() == QrisStatus.PAID && qr.paidAt() != null ? qr.paidAt().toString() : "");
+        vars.put("paidTime", qr.status() == QrisStatus.PAID ? ts(qr.paidAt()) : "");
         vars.put("amountValue", shownAmount == null ? "0.00" : shownAmount.toPlainString());
         vars.put("currency", qr.currency());
         vars.put("feeValue", "0.00");
@@ -284,13 +294,12 @@ public class QrisService {
         vars.put("responseMessage", "Successful");
         vars.put("originalPartnerReferenceNo", text(n, "originalPartnerReferenceNo") != null ? text(n, "originalPartnerReferenceNo") : qr.partnerReferenceNo());
         vars.put("originalReferenceNo", qr.referenceNo());
-        vars.put("originalExternalId", text(n, "originalExternalId"));
+        vars.put("originalExternalId", strOrEmpty(text(n, "originalExternalId")));
         vars.put("refundNo", "RFD" + UUID.randomUUID().toString().substring(0, 12).toUpperCase());
-        vars.put("partnerRefundNo", partnerRefundNo);
+        vars.put("partnerRefundNo", strOrEmpty(partnerRefundNo));
         vars.put("refundAmountValue", refundAmount.toPlainString());
         vars.put("currency", qr.currency());
-        vars.put("reason", text(n, "reason"));
-        vars.put("refundTime", Instant.now().toString());
+        vars.put("refundTime", ts(Instant.now()));
 
         return renderScenario(simulatorId, method, path, vars);
     }
@@ -322,18 +331,27 @@ public class QrisService {
         vars.put("responseMessage", "Successful");
         vars.put("originalPartnerReferenceNo", text(n, "originalPartnerReferenceNo") != null ? text(n, "originalPartnerReferenceNo") : qr.partnerReferenceNo());
         vars.put("originalReferenceNo", qr.referenceNo());
-        vars.put("originalExternalId", text(n, "originalExternalId"));
-        vars.put("cancelTime", now.toString());
-        vars.put("transactionDate", qr.createdAt().toString());
+        vars.put("originalExternalId", strOrEmpty(text(n, "originalExternalId")));
+        vars.put("cancelTime", ts(now));
+        vars.put("transactionDate", ts(qr.createdAt()));
 
         return renderScenario(simulatorId, method, path, vars);
     }
 
     // ==================== Admin: list, mark-paid, expire ====================
 
+    /** Satu halaman QR (terbaru dulu) + total, untuk paginator dashboard. */
+    public record QrisPage(java.util.List<QrisTransaction> items, int total, int page, int size) {}
+
     @Transactional(readOnly = true)
-    public java.util.List<QrisTransaction> list(UUID simulatorId) {
-        return qrisRepo.list(simulatorId);
+    public QrisPage list(UUID simulatorId, int page, int size) {
+        int safeSize = Math.min(Math.max(size, 1), 100);
+        int safePage = Math.max(page, 0);
+        int total = qrisRepo.count(simulatorId);
+        // Halaman di luar jangkauan (mis. QR terhapus) → mundur ke halaman terakhir yang ada.
+        int lastPage = total == 0 ? 0 : (total - 1) / safeSize;
+        if (safePage > lastPage) safePage = lastPage;
+        return new QrisPage(qrisRepo.list(simulatorId, safeSize, safePage * safeSize), total, safePage, safeSize);
     }
 
     public record PayResult(boolean found, boolean webhookSent, String reason) {}
@@ -366,7 +384,7 @@ public class QrisService {
         notif.put("transactionStatusDesc", "success");
         notif.put("amount", Map.of("value", paid.toPlainString(), "currency", qr.currency()));
         notif.put("merchantId", qr.merchantId());
-        notif.put("paidTime", paidAt.toString());
+        notif.put("paidTime", ts(paidAt));
         webhookSender.schedule(simulatorId, qr.callbackUrl(), Map.of("Content-Type", "application/json"),
                 writeJson(notif), Duration.ZERO);
         return new PayResult(true, true, "Payment Notify dijadwalkan");
@@ -515,6 +533,9 @@ public class QrisService {
     }
 
     private static String str(Object o) { return o == null ? null : o.toString(); }
+
+    /** SNAP mengirim string kosong, bukan null, untuk field opsional yang tak diisi. */
+    private static String strOrEmpty(String s) { return s == null ? "" : s; }
 
     private static String header(Map<String, String> headers, String name) {
         String v = headers.get(name);
