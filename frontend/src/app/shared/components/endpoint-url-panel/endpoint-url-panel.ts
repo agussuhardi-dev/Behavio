@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, OnChanges, input, signal } from '@angular/core';
+import { Component, OnChanges, input, output, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatFormFieldModule } from '@angular/material/form-field';
@@ -26,9 +26,10 @@ export class EndpointUrlPanel implements OnChanges {
    * tak boleh mengunci diri ke salah satunya (design.md §3.4).
    */
   readonly api = input.required<ProductApi>();
-
   readonly simulatorId = input.required<string>();
   readonly operations = input.required<string[]>();
+
+  readonly endpointAdded = output<void>();
 
   readonly rows = signal<EndpointConfig[]>([]);
   readonly edits = signal<Record<string, string>>({});
@@ -52,7 +53,7 @@ export class EndpointUrlPanel implements OnChanges {
     this.loading.set(true);
     this.api().listEndpoints(this.simulatorId()).subscribe({
       next: list => {
-        const filtered = list.filter(e => this.operations().includes(e.operation));
+        const filtered = list.filter(e => e.operation.startsWith('custom-') || this.operations().includes(e.operation));
         this.rows.set(filtered);
         const edits: Record<string, string> = {};
         filtered.forEach(e => (edits[e.operation] = e.path));
@@ -68,7 +69,7 @@ export class EndpointUrlPanel implements OnChanges {
   }
 
   isCustom(row: EndpointConfig): boolean {
-    return row.path !== row.defaultPath;
+    return row.operation.startsWith('custom-') || row.path !== row.defaultPath;
   }
 
   save(row: EndpointConfig) {
@@ -90,7 +91,7 @@ export class EndpointUrlPanel implements OnChanges {
     if (!row.operation) return;
     if (!confirm(`Hapus endpoint "${row.label}"?`)) return;
     this.api().deleteEndpoint(this.simulatorId(), row.operation).subscribe({
-      next: () => { this.msg.set(`Endpoint "${row.label}" dihapus.`); this.reload(); },
+      next: () => { this.msg.set(`Endpoint "${row.label}" dihapus.`); this.reload(); this.endpointAdded.emit(); },
       error: err => this.msg.set(err?.error?.error ?? 'Gagal menghapus endpoint.'),
     });
   }
@@ -99,7 +100,7 @@ export class EndpointUrlPanel implements OnChanges {
     const path = this.newPath().trim();
     if (!path) return;
     this.api().addEndpoint(this.simulatorId(), this.newMethod(), path).subscribe({
-      next: () => { this.msg.set('Endpoint ditambahkan.'); this.newPath.set(''); this.reload(); },
+      next: () => { this.msg.set('Endpoint ditambahkan.'); this.newPath.set(''); this.reload(); this.endpointAdded.emit(); },
       error: err => this.msg.set(err?.error?.error ?? 'Gagal menambah endpoint.'),
     });
   }

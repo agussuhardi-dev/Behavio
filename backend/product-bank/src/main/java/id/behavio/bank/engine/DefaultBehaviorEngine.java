@@ -182,7 +182,7 @@ public final class DefaultBehaviorEngine implements BehaviorEngine {
                 applyActions(simulatorId, partner.id(), outcome, request, referenceNo);
             }
             actionsSucceeded = true;
-            response = renderResponse(outcome.response(), request, referenceNo);
+            response = renderResponse(outcome.response(), request, referenceNo, simulatorId, partner.id());
         } catch (InsufficientFundsException e) {
             response = error(400, "4001714", "Insufficient Funds");
         } catch (AccountNotFoundException e) {
@@ -281,7 +281,8 @@ public final class DefaultBehaviorEngine implements BehaviorEngine {
         }
     }
 
-    private SimResponse renderResponse(ResponseSpec spec, SimRequest request, String referenceNo) {
+    private SimResponse renderResponse(ResponseSpec spec, SimRequest request, String referenceNo,
+                                        UUID simulatorId, UUID partnerId) {
         Map<String, Object> vars = new HashMap<>(request.fields());
         vars.put("referenceNo", referenceNo);
         vars.put("responseCode", spec.responseCode());
@@ -290,8 +291,25 @@ public final class DefaultBehaviorEngine implements BehaviorEngine {
         vars.put("amountValue", amount == null ? "" : amount.toString());
         vars.putIfAbsent("currency", "IDR");
         vars.put("transactionDate", OffsetDateTime.now(clock).format(SNAP_TS));
+        enrichAccountVars(simulatorId, partnerId, vars);
         String body = renderer.render(spec.bodyTemplate(), vars);
         return new SimResponse(spec.httpStatus(), spec.responseCode(), JSON_HEADERS, body);
+    }
+
+    private void enrichAccountVars(UUID simulatorId, UUID partnerId, Map<String, Object> vars) {
+        String accountNo = (String) vars.get("accountNo");
+        if (accountNo != null && !accountNo.isBlank()) {
+            state.findAccount(simulatorId, partnerId, accountNo).ifPresent(acc -> {
+                vars.putIfAbsent("holderName", acc.holderName());
+                vars.putIfAbsent("accountNo", acc.accountNo());
+            });
+        }
+        String source = (String) vars.get("sourceAccountNo");
+        if (source != null && !source.isBlank() && !source.equals(accountNo)) {
+            state.findAccount(simulatorId, partnerId, source).ifPresent(acc -> {
+                vars.putIfAbsent("holderName", acc.holderName());
+            });
+        }
     }
 
     private Account requireAccount(UUID simulatorId, UUID partnerId, String accountNo) {

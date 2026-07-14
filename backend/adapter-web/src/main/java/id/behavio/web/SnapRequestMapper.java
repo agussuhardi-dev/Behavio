@@ -6,11 +6,14 @@ import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.Map;
 
 /**
- * Normalisasi body JSON SNAP → field datar yang dipakai Behavior Engine. Parsing JSON
- * adalah tanggung jawab adapter (core tetap murni). Fase 1: field Transfer Intrabank.
+ * Normalisasi body JSON SNAP → field datar yang dipakai Behavior Engine.
+ * Semua field JSON diekstrak secara generik (rekursif untuk nested object)
+ * sehingga template variable seperti {@code {{accountNo}}} atau
+ * {@code {{virtualAccountNo}}} tersedia di engine tanpa perubahan mapper.
  */
 @Component
 public class SnapRequestMapper {
@@ -28,25 +31,39 @@ public class SnapRequestMapper {
         }
         try {
             JsonNode root = objectMapper.readTree(body);
-            putText(fields, root, "sourceAccountNo");
-            putText(fields, root, "beneficiaryAccountNo");
-            putText(fields, root, "partnerReferenceNo");
-            putText(fields, root, "remark");
-            JsonNode amount = root.get("amount");
-            if (amount != null && amount.hasNonNull("value")) {
-                fields.put("amount", new BigDecimal(amount.get("value").asText().trim()));
-                fields.put("currency", amount.path("currency").asText("IDR"));
-            }
+            flatten("", root, fields);
         } catch (Exception e) {
             // biarkan fields apa adanya; engine akan menolak bila field wajib hilang
         }
         return fields;
     }
 
-    private static void putText(Map<String, Object> fields, JsonNode root, String key) {
-        JsonNode n = root.get(key);
-        if (n != null && !n.isNull()) {
-            fields.put(key, n.asText());
+    private static void flatten(String prefix, JsonNode node, Map<String, Object> out) {
+        if (node.isObject()) {
+            boolean top = prefix.isEmpty();
+            Iterator<Map.Entry<String, JsonNode>> it = node.fields();
+            while (it.hasNext()) {
+                Map.Entry<String, JsonNode> e = it.next();
+                String key = top ? e.getKey() : prefix + "." + e.getKey();
+                JsonNode child = e.getValue();
+                if (child.isObject() || child.isArray()) {
+                    if (top && child.isObject()) {
+                        if ("amount".equals(e.getKey()) && child.hasNonNull("value")) {
+                            out.put("amount", new BigDecimal(child.get("value").asText()));
+                            out.put("currency", child.path("currency").asText("IDR"));
+                        }
+                        if ("totalAmount".equals(e.getKey()) && child.hasNonNull("value")) {
+                            out.put("totalAmount.value", child.get("value").asText());
+                            out.put("totalAmount.currency", child.path("currency").asText("IDR"));
+                        }
+                    }
+                    flatten(key, child, out);
+                } else if (child.isNumber()) {
+                    out.put(key, new BigDecimal(child.asText()));
+                } else {
+                    out.put(key, child.asText());
+                }
+            }
         }
     }
 }

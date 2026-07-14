@@ -28,6 +28,8 @@ import id.behavio.core.port.WebhookSender;
 import id.behavio.core.product.FaultSpecs;
 import id.behavio.core.product.OperationHandler;
 import id.behavio.core.product.ProductCatalog;
+import id.behavio.core.rule.FaultSpec;
+import id.behavio.core.rule.Scenario;
 import id.behavio.persistence.PortRegistry;
 import id.behavio.persistence.SchemaAccessTokenStore;
 import id.behavio.persistence.SchemaConfigRepository;
@@ -176,6 +178,7 @@ public class BankProductConfig {
     @Bean
     public ProductRuntime bankRuntime(PortRegistry ports, SignatureVerifier verifier, ObjectMapper mapper,
                                       SnapRequestMapper snapMapper, List<EventPublisher> sharedPublishers) {
+        ConfigRepository config = bankConfigRepository();
         AccessTokenService tokens = bankAccessTokenService(verifier);
         SimulationExecutor executor = bankSimulationExecutor(verifier);
         AccountService accounts = bankAccountService(verifier, mapper);
@@ -183,26 +186,45 @@ public class BankProductConfig {
         VirtualAccountService va = bankVirtualAccountService(verifier, mapper);
 
         Map<String, OperationHandler> handlers = new LinkedHashMap<>();
-        handlers.put("access-token", r -> result(tokens.issue(r.simulatorId(), r.headers(), r.body())));
+        handlers.put("access-token", withScenario(config, r ->
+                result(tokens.issue(r.simulatorId(), r.headers(), r.body()))));
         handlers.put("transfer", r -> transfer(executor, snapMapper, r));
         handlers.put("transfer-interbank", r -> transfer(executor, snapMapper, r));
-        handlers.put("balance-inquiry", r -> result(accounts.balanceInquiry(
-                r.simulatorId(), r.method(), r.path(), r.headers(), r.body())));
-        handlers.put("account-inquiry-internal", r -> result(accounts.internalInquiry(
-                r.simulatorId(), r.method(), r.path(), r.headers(), r.body())));
-        handlers.put("transaction-history-list", r -> result(history.historyList(
-                r.simulatorId(), r.method(), r.path(), r.headers(), r.body())));
-        handlers.put("va-create", r -> result(va.create(
-                r.simulatorId(), r.method(), r.path(), r.headers(), r.body())));
-        handlers.put("va-status", r -> result(va.inquiry(
-                r.simulatorId(), r.method(), r.path(), r.headers(), r.body())));
-        handlers.put("va-delete", r -> result(va.delete(
-                r.simulatorId(), r.method(), r.path(), r.headers(), r.body())));
+        handlers.put("balance-inquiry", r -> transfer(executor, snapMapper, r));
+        handlers.put("account-inquiry-internal", r -> transfer(executor, snapMapper, r));
+        handlers.put("transaction-history-list", r -> transfer(executor, snapMapper, r));
+        handlers.put("va-create", withScenario(config, r ->
+                result(va.create(r.simulatorId(), r.method(), r.path(), r.headers(), r.body()))));
+        handlers.put("va-status", withScenario(config, r ->
+                result(va.inquiry(r.simulatorId(), r.method(), r.path(), r.headers(), r.body()))));
+        handlers.put("va-delete", withScenario(config, r ->
+                result(va.delete(r.simulatorId(), r.method(), r.path(), r.headers(), r.body()))));
 
         SimulatorServerManager servers = new SimulatorServerManager(
                 SCHEMA, bankEndpointRegistry(), handlers, eventPublishers(sharedPublishers));
         return new ProductRuntime(bankCatalog(), bankSimulatorAdmin(ports), bankScenarioConfig(),
                 bankEndpointRegistry(), bankPartnerAdmin(), servers, handlers);
+    }
+
+    /**
+     * Bungkus handler non-engine dengan logika scenario: Bank Down langsung balas 503,
+     * Timeout tambah delay 5 detik setelah handler selesai. Scenario Normal dan lainnya
+     * (termasuk custom definition) diferuskan ke handler asli.
+     */
+    private static OperationHandler withScenario(ConfigRepository config, OperationHandler handler) {
+        return r -> {
+            Scenario active = config.findActiveScenario(r.simulatorId(), r.method(), r.path()).orElse(null);
+            if (active != null && "Bank Down".equalsIgnoreCase(active.name())) {
+                return new OperationHandler.Result(503,
+                        "{\"responseCode\":\"5030000\",\"responseMessage\":\"Service Unavailable\"}");
+            }
+            OperationHandler.Result result = handler.handle(r);
+            if (active != null && "Timeout".equalsIgnoreCase(active.name())) {
+                return new OperationHandler.Result(result.status(), result.body(), result.headers(),
+                        FaultSpec.delayAfter(5000));
+            }
+            return result;
+        };
     }
 
     /**

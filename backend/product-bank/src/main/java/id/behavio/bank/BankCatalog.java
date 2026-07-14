@@ -1,10 +1,14 @@
 package id.behavio.bank;
 
 import id.behavio.bank.blueprint.AccountInquiryInternalBlueprint;
+import id.behavio.bank.blueprint.AccessTokenBlueprint;
 import id.behavio.bank.blueprint.BalanceInquiryBlueprint;
 import id.behavio.bank.blueprint.InterbankTransferBlueprint;
 import id.behavio.bank.blueprint.TransactionHistoryListBlueprint;
 import id.behavio.bank.blueprint.TransferIntrabankBlueprint;
+import id.behavio.bank.blueprint.VirtualAccountCreateBlueprint;
+import id.behavio.bank.blueprint.VirtualAccountDeleteBlueprint;
+import id.behavio.bank.blueprint.VirtualAccountStatusBlueprint;
 import id.behavio.bank.rule.BankActionCodec;
 import id.behavio.core.product.ActionCodec;
 import id.behavio.core.product.Operation;
@@ -31,25 +35,30 @@ public final class BankCatalog implements ProductCatalog {
             "Normal", "Saldo Kurang", "Limit", "Bank Down", "Timeout",
             "Commit Then Drop", "Malformed", "Async Callback");
 
-    private static final List<String> INTERBANK_SCENARIOS = List.of("Normal", "Saldo Kurang", "Limit");
+    private static final List<String> INTERBANK_SCENARIOS = List.of(
+            "Normal", "Saldo Kurang", "Limit", "Bank Down", "Timeout");
 
-    private static final List<String> ONLY_NORMAL = List.of("Normal");
+    private static final List<String> INQUIRY_SCENARIOS = List.of("Normal", "Bank Down", "Timeout");
 
     private static final List<Operation> OPERATIONS = List.of(
-            Operation.plain("access-token", "POST", "/v1.0/access-token/b2b", "Access Token B2B"),
+            new Operation("access-token", AccessTokenBlueprint.METHOD, AccessTokenBlueprint.PATH,
+                    "Access Token B2B", INQUIRY_SCENARIOS),
             new Operation("balance-inquiry", BalanceInquiryBlueprint.METHOD, BalanceInquiryBlueprint.PATH,
-                    "Balance Inquiry", ONLY_NORMAL),
+                    "Balance Inquiry", INQUIRY_SCENARIOS),
             new Operation("account-inquiry-internal", AccountInquiryInternalBlueprint.METHOD,
-                    AccountInquiryInternalBlueprint.PATH, "Internal Account Inquiry", ONLY_NORMAL),
+                    AccountInquiryInternalBlueprint.PATH, "Internal Account Inquiry", INQUIRY_SCENARIOS),
             new Operation("transaction-history-list", TransactionHistoryListBlueprint.METHOD,
-                    TransactionHistoryListBlueprint.PATH, "Transaction History List", ONLY_NORMAL),
+                    TransactionHistoryListBlueprint.PATH, "Transaction History List", INQUIRY_SCENARIOS),
             new Operation("transfer", TransferIntrabankBlueprint.METHOD, TransferIntrabankBlueprint.PATH,
                     "Transfer Intrabank", TRANSFER_SCENARIOS),
             new Operation("transfer-interbank", InterbankTransferBlueprint.METHOD, InterbankTransferBlueprint.PATH,
                     "Transfer Interbank", INTERBANK_SCENARIOS),
-            Operation.plain("va-create", "POST", "/v1.0/transfer-va/create-va", "Virtual Account — Create"),
-            Operation.plain("va-status", "POST", "/v1.0/transfer-va/status", "Virtual Account — Inquiry Status"),
-            Operation.plain("va-delete", "DELETE", "/v1.0/transfer-va/delete-va", "Virtual Account — Delete"));
+            new Operation("va-create", VirtualAccountCreateBlueprint.METHOD, VirtualAccountCreateBlueprint.PATH,
+                    "Virtual Account — Create", INQUIRY_SCENARIOS),
+            new Operation("va-status", VirtualAccountStatusBlueprint.METHOD, VirtualAccountStatusBlueprint.PATH,
+                    "Virtual Account — Inquiry Status", INQUIRY_SCENARIOS),
+            new Operation("va-delete", VirtualAccountDeleteBlueprint.METHOD, VirtualAccountDeleteBlueprint.PATH,
+                    "Virtual Account — Delete", INQUIRY_SCENARIOS));
 
     @Override
     public String key() {
@@ -71,12 +80,31 @@ public final class BankCatalog implements ProductCatalog {
         String op = operationKey == null ? "" : operationKey.trim().toLowerCase();
         String sc = scenarioName == null ? "" : scenarioName.trim().toLowerCase();
         return switch (op) {
-            case "balance-inquiry" -> Optional.of(BalanceInquiryBlueprint.normal());
-            case "account-inquiry-internal" -> Optional.of(AccountInquiryInternalBlueprint.normal());
-            case "transaction-history-list" -> Optional.of(TransactionHistoryListBlueprint.normal());
+            case "access-token" -> Optional.of(switch (sc) {
+                case "bank down" -> AccessTokenBlueprint.bankDown();
+                case "timeout" -> AccessTokenBlueprint.timeout();
+                default -> AccessTokenBlueprint.normal();
+            });
+            case "balance-inquiry" -> Optional.of(switch (sc) {
+                case "bank down" -> BalanceInquiryBlueprint.bankDown();
+                case "timeout" -> BalanceInquiryBlueprint.timeout();
+                default -> BalanceInquiryBlueprint.normal();
+            });
+            case "account-inquiry-internal" -> Optional.of(switch (sc) {
+                case "bank down" -> AccountInquiryInternalBlueprint.bankDown();
+                case "timeout" -> AccountInquiryInternalBlueprint.timeout();
+                default -> AccountInquiryInternalBlueprint.normal();
+            });
+            case "transaction-history-list" -> Optional.of(switch (sc) {
+                case "bank down" -> TransactionHistoryListBlueprint.bankDown();
+                case "timeout" -> TransactionHistoryListBlueprint.timeout();
+                default -> TransactionHistoryListBlueprint.normal();
+            });
             case "transfer-interbank" -> Optional.of(switch (sc) {
                 case "saldo kurang" -> InterbankTransferBlueprint.forcedInsufficient();
                 case "limit" -> InterbankTransferBlueprint.limit();
+                case "bank down" -> InterbankTransferBlueprint.bankDown();
+                case "timeout" -> InterbankTransferBlueprint.timeout();
                 default -> InterbankTransferBlueprint.normal();
             });
             case "transfer" -> Optional.of(switch (sc) {
@@ -89,7 +117,21 @@ public final class BankCatalog implements ProductCatalog {
                 case "async callback" -> TransferIntrabankBlueprint.asyncCallback();
                 default -> TransferIntrabankBlueprint.normal();
             });
-            // access-token & VA berlogika tetap — responsnya tidak lewat scenario/rule.
+            case "va-create" -> Optional.of(switch (sc) {
+                case "bank down" -> VirtualAccountCreateBlueprint.bankDown();
+                case "timeout" -> VirtualAccountCreateBlueprint.timeout();
+                default -> VirtualAccountCreateBlueprint.normal();
+            });
+            case "va-status" -> Optional.of(switch (sc) {
+                case "bank down" -> VirtualAccountStatusBlueprint.bankDown();
+                case "timeout" -> VirtualAccountStatusBlueprint.timeout();
+                default -> VirtualAccountStatusBlueprint.normal();
+            });
+            case "va-delete" -> Optional.of(switch (sc) {
+                case "bank down" -> VirtualAccountDeleteBlueprint.bankDown();
+                case "timeout" -> VirtualAccountDeleteBlueprint.timeout();
+                default -> VirtualAccountDeleteBlueprint.normal();
+            });
             default -> Optional.empty();
         };
     }

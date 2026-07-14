@@ -1,4 +1,4 @@
-import { Component, OnDestroy, OnInit, inject, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
@@ -15,7 +15,7 @@ import { MatSelectModule } from '@angular/material/select';
 import { MatTooltipModule } from '@angular/material/tooltip';
 
 import { AccountView, BankApi, SCENARIOS, VirtualAccountView } from '../../core/api/bank-api';
-import { PartnerView, Scenario, Simulator } from '../../core/api/product-api';
+import { EndpointConfig, PartnerView, Scenario, Simulator } from '../../core/api/product-api';
 import { SimulatorFormDialog, SimulatorFormResult } from './simulator-form-dialog';
 import { EndpointUrlPanel } from '../../shared/components/endpoint-url-panel/endpoint-url-panel';
 import { ConfirmDialog } from '../../shared/components/confirm-dialog/confirm-dialog';
@@ -88,6 +88,23 @@ export class Simulators implements OnInit, OnDestroy {
   readonly epuOpen = signal(false);
   readonly copiedKey = signal<string | null>(null);
   readonly simMsg = signal('');
+  readonly customEps = signal<EndpointConfig[]>([]);
+
+  /** Merged endpoint list: built-in SNAP BI + custom endpoints from the database. */
+  readonly allEndpointMeta = computed<EpMeta[]>(() => {
+    const builtIn = this.buildMeta();
+    const customs = this.customEps().map(cfg => ({
+      key: cfg.operation,
+      label: cfg.label,
+      method: cfg.method,
+      desc: `Custom endpoint — ${cfg.method} ${cfg.path}`,
+      operation: cfg.operation,
+      curl: `curl -X ${cfg.method} http://localhost:${this.port()}${cfg.path}`,
+      curlKey: `cust-${cfg.operation}`,
+      scenarioList: [{ name: 'Normal', desc: 'Response HTTP 200 OK default.', icon: 'check_circle', tone: 'ok' as const }],
+    }));
+    return [...builtIn, ...customs];
+  });
 
   // Live View (SSE)
   readonly liveOpen = signal(false);
@@ -124,26 +141,30 @@ export class Simulators implements OnInit, OnDestroy {
 
   get selectedSim(): Simulator | undefined { return this.sims().find(s => s.id === this.selectedSimId()); }
 
-  readonly endpointMeta = (): EpMeta[] => [
+  private buildMeta(): EpMeta[] { return [
     {
       key: 'balance-inquiry', label: 'Balance Inquiry', method: 'POST',
       desc: 'Cek saldo rekening — Info Saldo (service 11). Mengembalikan saldo available, ledger, float, hold.',
-      curl: this.curlBalance(), curlKey: 'bal', scenarioList: [],
+      operation: 'balance-inquiry', curl: this.curlBalance(), curlKey: 'bal',
+      scenarioList: SCENARIOS.filter(s => ['Normal', 'Bank Down', 'Timeout'].includes(s.name)),
     },
     {
       key: 'account-inquiry-internal', label: 'Internal Account Inquiry', method: 'POST',
       desc: 'Validasi nomor & nama rekening internal sebelum transfer (service 15).',
-      curl: this.curlAccountInquiry(), curlKey: 'aci', scenarioList: [],
+      operation: 'account-inquiry-internal', curl: this.curlAccountInquiry(), curlKey: 'aci',
+      scenarioList: SCENARIOS.filter(s => ['Normal', 'Bank Down', 'Timeout'].includes(s.name)),
     },
     {
       key: 'transaction-history-list', label: 'Transaction History List', method: 'POST',
       desc: 'Mini statement — riwayat transaksi per-partner (service 12). Mendukung paginasi & rentang tanggal.',
-      curl: this.curlTxHistory(), curlKey: 'txh', scenarioList: [],
+      operation: 'transaction-history-list', curl: this.curlTxHistory(), curlKey: 'txh',
+      scenarioList: SCENARIOS.filter(s => ['Normal', 'Bank Down', 'Timeout'].includes(s.name)),
     },
     {
       key: 'access-token', label: 'Access Token B2B', method: 'POST',
       desc: 'Terbitkan token Bearer B2B — dipakai semua endpoint lain saat mode STRICT.',
-      curl: this.curlToken(), curlKey: 'tok', scenarioList: [],
+      operation: 'access-token', curl: this.curlToken(), curlKey: 'tok',
+      scenarioList: SCENARIOS.filter(s => ['Normal', 'Bank Down', 'Timeout'].includes(s.name)),
     },
     {
       key: 'transfer', label: 'Transfer Intrabank', method: 'POST',
@@ -154,24 +175,27 @@ export class Simulators implements OnInit, OnDestroy {
       key: 'transfer-interbank', label: 'Transfer Interbank', method: 'POST',
       desc: 'Transfer ke bank lain (service 18). Hanya debit sumber — rekening tujuan di bank berbeda.',
       operation: 'transfer-interbank', curl: this.curlInterbank(), curlKey: 'ibi',
-      scenarioList: SCENARIOS.filter(s => ['Normal', 'Saldo Kurang', 'Limit'].includes(s.name)),
+      scenarioList: SCENARIOS.filter(s => ['Normal', 'Saldo Kurang', 'Limit', 'Bank Down', 'Timeout'].includes(s.name)),
     },
     {
       key: 'va-create', label: 'Virtual Account — Create', method: 'POST',
       desc: 'Buat VA. Tandai dibayar dari panel kanan untuk memicu Payment Notification.',
-      curl: this.curlVaCreate(), curlKey: 'vac', scenarioList: [],
+      operation: 'va-create', curl: this.curlVaCreate(), curlKey: 'vac',
+      scenarioList: SCENARIOS.filter(s => ['Normal', 'Bank Down', 'Timeout'].includes(s.name)),
     },
     {
       key: 'va-status', label: 'Virtual Account — Inquiry Status', method: 'POST',
       desc: 'Cek status VA — ACTIVE/PAID/EXPIRED.',
-      curl: this.curlVaStatus(), curlKey: 'vas', scenarioList: [],
+      operation: 'va-status', curl: this.curlVaStatus(), curlKey: 'vas',
+      scenarioList: SCENARIOS.filter(s => ['Normal', 'Bank Down', 'Timeout'].includes(s.name)),
     },
     {
       key: 'va-delete', label: 'Virtual Account — Delete', method: 'DELETE',
       desc: 'Hapus VA yang sudah dibuat.',
-      curl: this.curlVaDelete(), curlKey: 'vad', scenarioList: [],
+      operation: 'va-delete', curl: this.curlVaDelete(), curlKey: 'vad',
+      scenarioList: SCENARIOS.filter(s => ['Normal', 'Bank Down', 'Timeout'].includes(s.name)),
     },
-  ];
+  ]; }
 
   copy(text: string, key: string) {
     navigator.clipboard?.writeText(text).then(() => {
@@ -264,11 +288,11 @@ export class Simulators implements OnInit, OnDestroy {
           const remembered = sims.find(s => s.id === this.rememberedSimId())?.id;
           this.selectedSimId.set(remembered ?? sims[0]?.id ?? '');
         }
-        if (this.selectedSimId()) {
-          this.syncAllScenarios();
-          this.reloadVa();
-          this.reloadBank();
-          this.connectLive();
+          if (this.selectedSimId()) {
+            this.loadCustomEndpoints();
+            this.reloadVa();
+            this.reloadBank();
+            this.connectLive();
         } else {
           this.disconnectLive();
         }
@@ -284,7 +308,7 @@ export class Simulators implements OnInit, OnDestroy {
     this.editingEp.set(null);
     this.liveEvents.set([]);
     this.newAccPartnerRowId.set('');
-    this.syncAllScenarios();
+    this.loadCustomEndpoints();
     this.reloadVa();
     this.reloadBank();
     this.connectLive();
@@ -411,8 +435,27 @@ export class Simulators implements OnInit, OnDestroy {
 
   // ---- scenario per-endpoint ----
 
+  /** Reload custom endpoints from backend — public for template binding. */
+  loadCustomEndpoints() {
+    if (!this.selectedSimId()) {
+      this.customEps.set([]);
+      this.syncAllScenarios();
+      return;
+    }
+    this.api.listEndpoints(this.selectedSimId()).subscribe({
+      next: list => {
+        this.customEps.set(list.filter(e => e.operation.startsWith('custom-')));
+        this.syncAllScenarios();
+      },
+      error: () => {
+        this.customEps.set([]);
+        this.syncAllScenarios();
+      },
+    });
+  }
+
   private syncAllScenarios() {
-    for (const ep of this.endpointMeta()) {
+    for (const ep of this.allEndpointMeta()) {
       if (!ep.operation) continue;
       this.api.getActiveScenario(this.selectedSimId(), ep.operation).subscribe({
         next: r => this.activeScenarios.update(m => ({ ...m, [ep.key]: r.name })),

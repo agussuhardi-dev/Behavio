@@ -434,3 +434,92 @@ menyentuh rekening yang sama).
 `DefaultBehaviorEngine.process()` sebenarnya method lurus dengan early-return, bukan
 rantai objek handler; *State* — `QrisTransaction` itu enum + guard, bukan objek state
 polimorfik.
+
+---
+
+## 6. Pipeline Scenario Engine & Handler Wiring
+
+### 6.1 Dua jalur eksekusi
+
+Operasi bank dijalankan lewat salah satu dari dua jalur:
+
+| Jalur | Endpoint | Mekanisme |
+|---|---|---|
+| **Engine penuh** | transfer, transfer-interbank, balance-inquiry, account-inquiry-internal, transaction-history-list | `SimulationExecutor` → `DefaultBehaviorEngine.process()` — auth, scenario, rule, actions, response rendering |
+| **Handler + wrapper** | access-token, va-create, va-status, va-delete | Handler khusus + `withScenario()` — handler jalan seperti biasa, wrapper cek scenario untuk Bank Down / Timeout |
+
+### 6.2 Engine penuh (`DefaultBehaviorEngine.process`)
+
+Pipeline lengkap (urutan persis sesuai kode):
+1. Partner resolution (`X-PARTNER-ID`)
+2. STRICT mode: validasi Bearer token + HMAC-SHA512 transactional signature
+3. Idempotensi (`X-EXTERNAL-ID`) — balas respons tersimpan bila ada
+4. Scenario lookup dari `ConfigRepository.findActiveScenario(sim, method, path)`
+5. Rule evaluation (first-match dari `scenario.rules()`)
+6. Aplikasi actions (Debit/Credit/CreateTransaction) — read-only endpoint punya actions kosong
+7. Render response dari template `ResponseSpec.bodyTemplate`
+8. Simpan untuk idempotensi
+9. Webhook scheduling (bila ada `WebhookSpec`)
+10. Fault effects (delay/drop/corrupt — diterapkan adapter pasca-commit)
+
+### 6.3 Handler wrapping (`withScenario`)
+
+Semua operasi non-engine dipasangi wrapper `withScenario()` di `BankProductConfig`:
+
+```
+request masuk
+  → ConfigRepository.findActiveScenario(sim, method, path)
+  → jika scenario.name == "Bank Down" → balas 503 {"responseCode":"5030000",...}
+  → panggil handler asli
+  → jika scenario.name == "Timeout" → bungkus hasil dengan FaultSpec.delayAfter(5000)
+  → kembalikan hasil ke adapter
+```
+
+**Catatan:** `access-token` tidak bisa masuk engine karena flow auth-nya berbeda — ia pakai `X-CLIENT-KEY` + RSA asymmetric signature, bukan `X-PARTNER-ID` + HMAC-SHA512.
+
+### 6.4 Custom response definition
+
+| Endpoint | Custom definition dipakai runtime? | Mekanisme |
+|---|---|---|
+| transfer | **Ya** — engine render dari `scenarios.definition` | `ResponseRenderer.render(template, vars)` |
+| transfer-interbank | **Ya** | Sama |
+| balance-inquiry | **Ya** | Sama + `enrichAccountVars()` tambah `holderName` dari DB |
+| account-inquiry-internal | **Ya** | Sama |
+| transaction-history-list | **Ya** | Sama |
+| access-token | **Tidak** — hanya nama scenario (Bank Down/Timeout) | `withScenario()` wrapper |
+| va-create | **Tidak** — sama | `withScenario()` wrapper |
+| va-status | **Tidak** — sama | `withScenario()` wrapper |
+| va-delete | **Tidak** — sama | `withScenario()` wrapper |
+
+### 6.5 Blueprint default per endpoint
+
+Setiap endpoint punya blueprint Java yang mendefinisikan 3 scenario standar:
+
+| Blueprint Class | Scenario | Template variables |
+|---|---|---|
+| `TransferIntrabankBlueprint` | Normal, Saldo Kurang, Limit, Bank Down, Timeout, Commit Then Drop, Malformed, Async Callback | `{{sourceAccountNo}}`, `{{amount}}`, `{{amountValue}}`, `{{currency}}`, ... |
+| `InterbankTransferBlueprint` | Normal, Saldo Kurang, Limit, Bank Down, Timeout | Sama + `{{beneficiaryBankCode}}`, `{{traceNo}}` |
+| `BalanceInquiryBlueprint` | Normal, Bank Down, Timeout | `{{accountNo}}`, `{{holderName}}`, `{{amountValue}}`, `{{currency}}` |
+| `AccountInquiryInternalBlueprint` | Normal, Bank Down, Timeout | `{{accountNo}}`, `{{holderName}}`, `{{currency}}` |
+| `TransactionHistoryListBlueprint` | Normal, Bank Down, Timeout | `{{amountValue}}`, `{{currency}}`, `{{txnStatus}}`, `{{txnType}}` |
+| `AccessTokenBlueprint` | Normal, Bank Down, Timeout | `{{accessToken}}`, `{{expiresIn}}` |
+| `VirtualAccountCreateBlueprint` | Normal, Bank Down, Timeout | `{{virtualAccountNo}}`, `{{virtualAccountName}}`, `{{amountValue}}` |
+| `VirtualAccountStatusBlueprint` | Normal, Bank Down, Timeout | `{{virtualAccountNo}}`, `{{vaStatus}}` |
+| `VirtualAccountDeleteBlueprint` | Normal, Bank Down, Timeout | — (response sederhana) |
+
+Blueprint disimpan di kode Java (`BankCatalog.blueprint()`), **bukan di database**.
+Database (`scenarios.definition`) hanya menyimpan **override custom** dari user.
+Alur resolusi: `definition` tidak NULL/blank → pakai isinya; NULL → pakai blueprint Java.
+
+### 6.6 SnapRequestMapper (generic field extraction)
+
+`SnapRequestMapper.toFields()` mengekstrak **semua** field JSON body secara rekursif ke
+flat `Map<String, Object>`. Special handling:
+
+- `amount: { value, currency }` → `amount` (BigDecimal) + `currency` (String) — backward compat
+- `totalAmount: { value, currency }` → `totalAmount.value` + `totalAmount.currency`
+- Nested objects diekstrak dengan dot notation (`nested.field`)
+- Numbers dikonversi ke `BigDecimal`
+
+Field-flat ini jadi input ke `EvalContext` (evaluasi rule) dan `renderResponse` (substitusi
+template variable).

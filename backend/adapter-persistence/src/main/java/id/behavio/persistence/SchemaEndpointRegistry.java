@@ -6,7 +6,6 @@ import id.behavio.core.product.ProductCatalog;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.simple.JdbcClient;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -65,8 +64,7 @@ public class SchemaEndpointRegistry implements EndpointRegistry {
         for (Operation op : catalog.operations()) {
             ensureRow(simulatorId, op);
         }
-        List<EndpointConfig> result = new ArrayList<>(db.sql("SELECT operation, method, path, "
-                        + "COALESCE(headers::text, '') AS h FROM " + t.endpoints()
+        return db.sql("SELECT operation, method, path, COALESCE(headers::text, '') AS h FROM " + t.endpoints()
                         + " WHERE simulator_id = ? AND operation IS NOT NULL ORDER BY operation")
                 .param(simulatorId)
                 .query((rs, n) -> {
@@ -74,44 +72,54 @@ public class SchemaEndpointRegistry implements EndpointRegistry {
                     Operation def = catalog.byKey(opKey).orElse(null);
                     return new EndpointConfig(opKey, rs.getString("method"), rs.getString("path"),
                             def == null ? rs.getString("path") : def.defaultPath(),
-                            def == null ? opKey : def.label(),
+                            def == null ? ("Custom: " + rs.getString("path")) : def.label(),
                             rs.getString("h"));
                 })
-                .list());
-        result.addAll(db.sql("SELECT method, path, COALESCE(headers::text, '') AS h FROM " + t.endpoints()
-                        + " WHERE simulator_id = ? AND operation IS NULL ORDER BY path")
-                .param(simulatorId)
-                .query((rs, n) -> new EndpointConfig("", rs.getString("method"), rs.getString("path"),
-                        rs.getString("path"), "Custom: " + rs.getString("path"), rs.getString("h")))
-                .list());
-        return result;
+                .list();
     }
 
     @Override
     public Optional<EndpointDetail> getDetail(UUID simulatorId, String operation) {
         Optional<Operation> def = catalog.byKey(operation);
-        if (def.isEmpty()) return Optional.empty();
+        boolean isCatalog = def.isPresent();
+        String defaultPath = def.map(Operation::defaultPath).orElse(null);
+        String label = def.map(Operation::label).orElse(null);
         return db.sql("SELECT method, path, COALESCE(headers::text, '') AS h FROM " + t.endpoints()
                         + " WHERE simulator_id = ? AND operation = ?")
                 .param(simulatorId).param(operation)
-                .query((rs, n) -> new EndpointDetail(operation, rs.getString("method"), rs.getString("path"),
-                        def.get().defaultPath(), def.get().label(), rs.getString("h"), true))
+                .query((rs, n) -> {
+                    String path = rs.getString("path");
+                    return new EndpointDetail(operation, rs.getString("method"), path,
+                            isCatalog ? defaultPath : path,
+                            isCatalog ? label : ("Custom: " + path),
+                            rs.getString("h"), isCatalog);
+                })
                 .optional();
     }
 
     @Override
     public EndpointDetail addEndpoint(UUID simulatorId, String method, String path, String headers, String label) {
         requirePath(path);
+        String operationKey = "custom-" + UUID.randomUUID().toString().substring(0, 8);
+        UUID endpointId = UUID.randomUUID();
         try {
             db.sql("INSERT INTO " + t.endpoints()
-                            + " (id, simulator_id, method, path, headers, operation) VALUES (?, ?, ?, ?, ?::jsonb, NULL)")
-                    .param(UUID.randomUUID()).param(simulatorId).param(method.toUpperCase()).param(path)
-                    .param(blankToNull(headers))
+                            + " (id, simulator_id, method, path, headers, operation) VALUES (?, ?, ?, ?, ?::jsonb, ?)")
+                    .param(endpointId).param(simulatorId).param(method.toUpperCase()).param(path)
+                    .param(blankToNull(headers)).param(operationKey)
                     .update();
         } catch (DataIntegrityViolationException e) {
             throw new IllegalArgumentException("Path '" + path + "' sudah dipakai di simulator ini");
         }
-        return new EndpointDetail("", method.toUpperCase(), path, path, label != null ? label : path, headers, false);
+        String defaultDef = "{\n  \"fallback\": {\n    \"actions\": [],\n    \"response\": {\n      \"httpStatus\": 200,\n      \"responseCode\": \"2005700\",\n      \"responseMessage\": \"Successful\",\n      \"body\": {}\n    }\n  }\n}";
+        UUID scenarioId = UUID.randomUUID();
+        db.sql("INSERT INTO " + t.scenarios() + " (id, endpoint_id, name, definition) VALUES (?, ?, ?, ?::jsonb)")
+                .param(scenarioId).param(endpointId).param("Normal").param(defaultDef)
+                .update();
+        db.sql("UPDATE " + t.endpoints() + " SET active_scenario_id = ? WHERE id = ?")
+                .param(scenarioId).param(endpointId).update();
+        return new EndpointDetail(operationKey, method.toUpperCase(), path, path,
+                label != null ? label : path, headers, false);
     }
 
     @Override
@@ -119,8 +127,11 @@ public class SchemaEndpointRegistry implements EndpointRegistry {
         if (operation == null || operation.isBlank()) {
             throw new IllegalArgumentException("Operation tidak boleh kosong");
         }
-        db.sql("DELETE FROM " + t.endpoints() + " WHERE simulator_id = ? AND operation = ?")
+        int deleted = db.sql("DELETE FROM " + t.endpoints() + " WHERE simulator_id = ? AND operation = ?")
                 .param(simulatorId).param(operation).update();
+        if (deleted == 0) {
+            throw new IllegalArgumentException("Endpoint tidak ditemukan: " + operation);
+        }
     }
 
     @Override
@@ -136,13 +147,16 @@ public class SchemaEndpointRegistry implements EndpointRegistry {
 
     @Override
     public void updatePath(UUID simulatorId, String operation, String newPath) {
-        Operation op = require(operation);
         requirePath(newPath);
         try {
             int updated = db.sql("UPDATE " + t.endpoints() + " SET path = ? WHERE simulator_id = ? AND operation = ?")
                     .param(newPath).param(simulatorId).param(operation)
                     .update();
             if (updated == 0) {
+                Operation op = catalog.byKey(operation).orElse(null);
+                if (op == null) {
+                    throw new IllegalArgumentException("Endpoint tidak ditemukan: " + operation);
+                }
                 db.sql("INSERT INTO " + t.endpoints()
                                 + " (id, simulator_id, method, path, operation) VALUES (?, ?, ?, ?, ?)")
                         .param(UUID.randomUUID()).param(simulatorId).param(op.method()).param(newPath).param(operation)
@@ -155,7 +169,11 @@ public class SchemaEndpointRegistry implements EndpointRegistry {
 
     @Override
     public void resetPath(UUID simulatorId, String operation) {
-        updatePath(simulatorId, operation, require(operation).defaultPath());
+        Operation op = catalog.byKey(operation).orElse(null);
+        if (op == null) {
+            throw new IllegalArgumentException("Reset path hanya untuk operasi katalog: " + operation);
+        }
+        updatePath(simulatorId, operation, op.defaultPath());
     }
 
     private void ensureRow(UUID simulatorId, Operation op) {
@@ -166,11 +184,6 @@ public class SchemaEndpointRegistry implements EndpointRegistry {
         db.sql("INSERT INTO " + t.endpoints() + " (id, simulator_id, method, path, operation) VALUES (?, ?, ?, ?, ?)")
                 .param(UUID.randomUUID()).param(simulatorId).param(op.method()).param(op.defaultPath()).param(op.key())
                 .update();
-    }
-
-    private Operation require(String operation) {
-        return catalog.byKey(operation).orElseThrow(() -> new IllegalArgumentException(
-                "Operasi '" + operation + "' bukan milik produk " + catalog.key()));
     }
 
     private static void requirePath(String path) {

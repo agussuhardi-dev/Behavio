@@ -56,10 +56,8 @@ public class SchemaConfigRepository implements ConfigRepository {
         }
         String operation = ep.get().operation();
 
-        // Endpoint tanpa baris scenario (operasi berlogika tetap) tetap memakai preset-nya
-        // bila punya — tanpa ini pemanggil merender vars mentah, bukan bentuk SNAP.
         if (ep.get().activeScenarioId() == null) {
-            return catalog.blueprint(operation, "Normal");
+            return customOrDefaultBlueprint(operation, "Normal");
         }
 
         Optional<ActiveScenario> active = db.sql("SELECT name, COALESCE(definition::text, '') AS def FROM "
@@ -68,13 +66,22 @@ public class SchemaConfigRepository implements ConfigRepository {
                 .query((rs, n) -> new ActiveScenario(rs.getString("name"), rs.getString("def")))
                 .optional();
         if (active.isEmpty()) {
-            return catalog.blueprint(operation, "Normal");
+            return customOrDefaultBlueprint(operation, "Normal");
         }
-        // Definisi custom (hasil editor dashboard) menang atas preset blueprint.
         ActiveScenario sc = active.get();
         return sc.definition().isBlank()
-                ? catalog.blueprint(operation, sc.name())
+                ? customOrDefaultBlueprint(operation, sc.name())
                 : Optional.of(codec.parse(sc.name(), sc.definition()));
+    }
+
+    private Optional<Scenario> customOrDefaultBlueprint(String operation, String scenarioName) {
+        Optional<Scenario> bp = catalog.blueprint(operation, scenarioName);
+        if (bp.isPresent()) return bp;
+        if (operation.startsWith("custom-")) {
+            return Optional.of(codec.parse("Normal",
+                    "{\"fallback\":{\"actions\":[],\"response\":{\"httpStatus\":200,\"responseCode\":\"2005700\",\"responseMessage\":\"Successful\",\"body\":{}}}}"));
+        }
+        return Optional.empty();
     }
 
     @Override

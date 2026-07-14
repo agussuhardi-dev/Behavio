@@ -31,6 +31,7 @@ public final class InterbankTransferBlueprint {
     public static final String RC_SUCCESS = "2001800";
     public static final String RC_INSUFFICIENT = "4001814";
     public static final String RC_LIMIT = "4031800";
+    public static final String RC_SERVICE_DOWN = "5030000";
 
     private InterbankTransferBlueprint() {}
 
@@ -64,6 +65,20 @@ public final class InterbankTransferBlueprint {
                         new Operand.Num(threshold)),
                 Outcome.of(errorResponse(403, RC_LIMIT, "Exceeds Transaction Limit")));
         return new Scenario("Limit", List.of(overLimit), successOutcome());
+    }
+
+    public static Scenario bankDown() {
+        return new Scenario("Bank Down", List.of(),
+                Outcome.of(errorResponse(503, RC_SERVICE_DOWN, "Service Unavailable")));
+    }
+
+    public static Scenario timeout() {
+        return timeout(5000);
+    }
+
+    public static Scenario timeout(long delayMillis) {
+        return new Scenario("Timeout", List.of(),
+                Outcome.withFault(successActions(), successResponse(), FaultSpec.delayAfter(delayMillis)));
     }
 
     private static Outcome successOutcome() {

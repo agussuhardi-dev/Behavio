@@ -5,27 +5,29 @@ import id.behavio.core.rule.Outcome;
 import id.behavio.core.rule.ResponseSpec;
 import id.behavio.core.rule.Scenario;
 
-import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 /**
- * Blueprint SNAP BI untuk endpoint Internal Account Inquiry (service 15).
+ * Blueprint untuk endpoint Virtual Account — Delete.
  * Tiga scenario: Normal, Bank Down (503), Timeout (delay 5 detik).
  */
-public final class AccountInquiryInternalBlueprint {
+public final class VirtualAccountDeleteBlueprint {
 
-    public static final String METHOD = "POST";
-    public static final String PATH = "/v1.0/account-inquiry-internal";
-    public static final String RC_SUCCESS = "2001500";
+    public static final String METHOD = "DELETE";
+    public static final String PATH = "/v1.0/transfer-va/delete-va";
+    public static final String RC_SUCCESS = "2002500";
     public static final String RC_SERVICE_DOWN = "5030000";
 
-    private AccountInquiryInternalBlueprint() {}
+    private VirtualAccountDeleteBlueprint() {}
 
     public static Scenario normal() {
-        return new Scenario("Normal", Collections.emptyList(),
-                Outcome.of(List.of(), normalResponse()));
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("responseCode", "{{responseCode}}");
+        body.put("responseMessage", "{{responseMessage}}");
+        return new Scenario("Normal", List.of(),
+                Outcome.of(new ResponseSpec(200, RC_SUCCESS, "Successful", body)));
     }
 
     public static Scenario bankDown() {
@@ -38,23 +40,13 @@ public final class AccountInquiryInternalBlueprint {
     }
 
     public static Scenario timeout(long delayMillis) {
-        return new Scenario("Timeout", List.of(),
-                Outcome.withFault(List.of(), normalResponse(), FaultSpec.delayAfter(delayMillis)));
-    }
-
-    private static ResponseSpec normalResponse() {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("responseCode", "{{responseCode}}");
         body.put("responseMessage", "{{responseMessage}}");
-        body.put("referenceNo", "{{referenceNo}}");
-        body.put("partnerReferenceNo", "{{partnerReferenceNo}}");
-        body.put("beneficiaryAccountName", "{{holderName}}");
-        body.put("beneficiaryAccountNo", "{{accountNo}}");
-        body.put("beneficiaryAccountStatus", "Rekening aktif");
-        body.put("beneficiaryAccountType", "S");
-        body.put("currency", "{{currency}}");
-
-        return new ResponseSpec(200, RC_SUCCESS, "Successful", body);
+        return new Scenario("Timeout", List.of(),
+                Outcome.withFault(List.of(),
+                        new ResponseSpec(200, RC_SUCCESS, "Successful", body),
+                        FaultSpec.delayAfter(delayMillis)));
     }
 
     private static ResponseSpec errorResponse(int status, String code, String message) {

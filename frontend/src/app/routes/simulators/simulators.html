@@ -74,13 +74,13 @@
 
         @if (epuOpen()) {
           <div class="sim-epu">
-            <app-endpoint-url-panel [api]="api" [simulatorId]="selectedSimId()" [operations]="bankOperations" />
+            <app-endpoint-url-panel [api]="api" [simulatorId]="selectedSimId()" [operations]="bankOperations" (endpointAdded)="loadCustomEndpoints()" />
           </div>
           <mat-divider />
         }
 
         <div class="sim-card__body">
-          @for (ep of endpointMeta(); track ep.key) {
+          @for (ep of allEndpointMeta(); track ep.key) {
             <mat-expansion-panel class="sim-ep" [expanded]="editingEp() === ep.key" hideToggle>
               <mat-expansion-panel-header>
                 <mat-panel-title>

@@ -594,7 +594,17 @@ max_attempts, next_attempt_at, last_error, created_at, sent_at`.
 
 ### Fase 3 (parsial) — Editor request/response dari dashboard ✅
 Prinsip **"request & response dapat di-modify dari dashboard"** (§2 override, §8)
-kini **diimplementasikan** untuk Transfer Intrabank:
+kini **diimplementasikan** untuk Transfer Intrabank **dan diperluas ke semua endpoint**
+yang dijalankan lewat engine:
+
+- **Engine penuh (custom definition + rendering):** transfer, transfer-interbank,
+  balance-inquiry, account-inquiry-internal, transaction-history-list.
+- **Handler + wrapper (hanya Bank Down / Timeout):** access-token, va-create,
+  va-status, va-delete — handler khusus (AccessTokenService, VirtualAccountService)
+  tetap jalan; wrapper `withScenario()` di `BankProductConfig` membaca scenario aktif
+  dan menerapkan Bank Down (503) atau Timeout (delay 5s) bila skenario itu yang aktif.
+
+Detail arsitektur: lihat [architecture.md §6](architecture.md#6-pipeline-scenario-engine--handler-wiring).
 - Kolom `scenarios.definition JSONB` — NULL = pakai preset blueprint; berisi JSON =
   definisi custom.
 - `ScenarioCodec` (adapter-persistence): round-trip **JSON ↔ Scenario** (condition

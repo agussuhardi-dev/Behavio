@@ -1,6 +1,7 @@
 package id.behavio.persistence;
 
 import id.behavio.core.port.SimulatorAdmin;
+import id.behavio.core.product.Operation;
 import id.behavio.core.product.ProductCatalog;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.transaction.annotation.Transactional;
@@ -73,7 +74,7 @@ public class SchemaSimulatorAdmin implements SimulatorAdmin {
         provisioning.ensure(simulatorId, operationKey); // self-healing untuk profil lama
 
         UUID endpointId = db.sql("SELECT id FROM " + t.endpoints() + " WHERE simulator_id = ? AND operation = ?")
-                .param(simulatorId).param(resolveOperation(operationKey))
+                .param(simulatorId).param(resolveOperation(simulatorId, operationKey))
                 .query(UUID.class).optional()
                 .orElseThrow(() -> new IllegalArgumentException(
                         "Operasi '" + operationKey + "' tidak ada untuk simulator " + simulatorId));
@@ -172,9 +173,15 @@ public class SchemaSimulatorAdmin implements SimulatorAdmin {
     }
 
     /** Terima alias lama ("qris" → "qris-generate") agar URL dashboard yang beredar tak putus. */
-    private String resolveOperation(String operationKey) {
+    private String resolveOperation(UUID simulatorId, String operationKey) {
         return catalog.byKey(operationKey)
-                .map(id.behavio.core.product.Operation::key)
-                .orElseThrow(() -> new IllegalArgumentException("Operasi tak dikenal: " + operationKey));
+                .map(Operation::key)
+                .orElseGet(() -> {
+                    Long count = db.sql("SELECT count(*) FROM " + t.endpoints()
+                                    + " WHERE simulator_id = ? AND operation = ?")
+                            .param(simulatorId).param(operationKey).query(Long.class).single();
+                    if (count != null && count > 0) return operationKey;
+                    throw new IllegalArgumentException("Operasi tak dikenal: " + operationKey);
+                });
     }
 }
