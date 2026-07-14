@@ -23,6 +23,8 @@ import {
 } from '../simulators/simulator.service';
 import { SimulatorFormDialog, SimulatorFormResult } from '../simulators/simulator-form-dialog';
 import { EndpointUrlPanel } from '../../shared/components/endpoint-url-panel/endpoint-url-panel';
+import { ConfirmDialog } from '../../shared/components/confirm-dialog/confirm-dialog';
+import { LocalStorageService } from '../../shared/services/storage.service';
 
 interface EpMeta {
   key: string; label: string; desc: string; product: string;
@@ -52,6 +54,10 @@ interface LiveEvent {
 export class Qris implements OnInit, OnDestroy {
   private readonly api = inject(SimulatorService);
   private readonly dialog = inject(MatDialog);
+  private readonly storage = inject(LocalStorageService);
+
+  /** Profil terakhir yang dipilih user — dipulihkan saat halaman dibuka lagi. */
+  private static readonly LAST_SIM_KEY = 'behavio.qris.lastSimId';
 
   readonly qrisOperations = ['qris-generate', 'qris-query', 'qris-refund', 'qris-cancel', 'qris-decode', 'qris-payment', 'qris-apply-ott'];
 
@@ -183,14 +189,27 @@ export class Qris implements OnInit, OnDestroy {
 
   ngOnDestroy() { this.disconnectLive(); }
 
+  private rememberSim(id: string) {
+    if (id) this.storage.set(Qris.LAST_SIM_KEY, id);
+  }
+
+  /** LocalStorageService.get() balikin {} bila key belum ada — jadi cek tipenya. */
+  private rememberedSimId(): string {
+    const v = this.storage.get(Qris.LAST_SIM_KEY);
+    return typeof v === 'string' ? v : '';
+  }
+
   reload() {
     this.loading.set(true);
     this.api.list().subscribe({
       next: sims => {
         this.sims.set(sims);
         const keep = sims.some(s => s.id === this.selectedSimId());
-        if (!keep && sims.length > 0) this.selectedSimId.set(sims[0].id);
-        if (sims.length === 0) this.selectedSimId.set('');
+        if (!keep) {
+          // Pulihkan profil terakhir yang dipilih; bila sudah dihapus → profil pertama.
+          const remembered = sims.find(s => s.id === this.rememberedSimId())?.id;
+          this.selectedSimId.set(remembered ?? sims[0]?.id ?? '');
+        }
         if (this.selectedSimId()) { this.reloadQr(); this.syncAllScenarios(); this.connectLive(); }
         else this.disconnectLive();
         this.loading.set(false);
@@ -259,13 +278,15 @@ export class Qris implements OnInit, OnDestroy {
 
   // ---- profile management ----
 
+  // Error HTTP tidak di-alert lagi: errorInterceptor sudah menampilkan toast berisi
+  // pesan dari Admin API (mis. "port 9001 sudah dipakai") untuk semua request.
+
   openCreate() {
     const ref = this.dialog.open(SimulatorFormDialog, { data: { mode: 'create', suggestedPort: this.suggestedPort() } });
     ref.afterClosed().subscribe((r?: SimulatorFormResult) => {
       if (!r) return;
       this.api.create(r.name, r.port, r.signatureMode).subscribe({
-        next: c => { this.selectedSimId.set(c.id); this.reload(); },
-        error: err => alert(err?.error?.error ?? 'Gagal membuat profil.'),
+        next: c => { this.selectedSimId.set(c.id); this.rememberSim(c.id); this.reload(); },
       });
     });
   }
@@ -276,16 +297,30 @@ export class Qris implements OnInit, OnDestroy {
     ref.afterClosed().subscribe((r?: SimulatorFormResult) => {
       if (!r) return;
       this.api.clone(s.id, r.name, r.port).subscribe({
-        next: c => { this.selectedSimId.set(c.id); this.reload(); },
-        error: err => alert(err?.error?.error ?? 'Gagal menduplikat profil.'),
+        next: c => { this.selectedSimId.set(c.id); this.rememberSim(c.id); this.reload(); },
       });
     });
   }
 
   removeSelected() {
     const s = this.selectedSim; if (!s) return;
-    if (!confirm(`Hapus profil "${s.name}"?`)) return;
-    this.api.delete(s.id).subscribe(() => { this.selectedSimId.set(''); this.reload(); });
+    this.confirmDialog({
+      title: 'Hapus profil?',
+      message: `Profil "${s.name}" (port ${s.port}) akan dihapus permanen beserta QR, partner, dan rekeningnya. Tindakan ini tidak bisa dibatalkan.`,
+      confirmText: 'Hapus',
+      danger: true,
+    }).subscribe(ok => {
+      if (!ok) return;
+      this.api.delete(s.id).subscribe(() => {
+        this.storage.remove(Qris.LAST_SIM_KEY);
+        this.selectedSimId.set('');
+        this.reload();
+      });
+    });
+  }
+
+  private confirmDialog(data: { title: string; message: string; confirmText?: string; danger?: boolean }) {
+    return this.dialog.open(ConfirmDialog, { data, width: '420px', autoFocus: false }).afterClosed();
   }
 
   toggleRunning() {
@@ -295,6 +330,7 @@ export class Qris implements OnInit, OnDestroy {
 
   onSelectSim(id: string) {
     this.selectedSimId.set(id);
+    this.rememberSim(id);
     this.editingEp.set(null);
     this.liveEvents.set([]);
     this.qrPage.set(0);
@@ -382,17 +418,33 @@ export class Qris implements OnInit, OnDestroy {
   pay(qr: QrisView) {
     const amount = qr.qrType === 'STATIC' ? this.payAmounts()[qr.referenceNo] : undefined;
     if (qr.qrType === 'STATIC' && !amount) { this.qrMsg.set('QR static butuh nominal.'); return; }
-    this.api.payQris(this.selectedSimId(), qr.referenceNo, amount).subscribe({
-      next: r => { this.qrMsg.set(r.webhookSent ? 'Payment Notify terkirim.' : r.note); this.reloadQr(true); },
-      error: () => this.qrMsg.set('Gagal.'),
+    const nominal = qr.qrType === 'STATIC' ? `${amount} ${qr.currency}` : `${qr.amount} ${qr.currency}`;
+    this.confirmDialog({
+      title: 'Tandai QR sebagai dibayar?',
+      message: `QR "${qr.referenceNo}" akan berstatus PAID sebesar ${nominal}`
+        + (qr.hasCallback ? ', dan Payment Notify (webhook) dikirim ke callback URL-nya.' : '. Tidak ada callback URL tersimpan, jadi webhook tidak dikirim.'),
+      confirmText: 'Tandai Dibayar',
+    }).subscribe(ok => {
+      if (!ok) return;
+      this.api.payQris(this.selectedSimId(), qr.referenceNo, amount).subscribe({
+        next: r => { this.qrMsg.set(r.webhookSent ? 'Payment Notify terkirim.' : r.note); this.reloadQr(true); },
+        error: () => this.qrMsg.set('Gagal.'),
+      });
     });
   }
 
   expireQr(qr: QrisView) {
-    if (!confirm(`Kedaluwarsakan QR "${qr.referenceNo}"?`)) return;
-    this.api.expireQris(this.selectedSimId(), qr.referenceNo).subscribe({
-      next: r => { this.qrMsg.set(r.note); this.reloadQr(true); },
-      error: () => this.qrMsg.set('Gagal.'),
+    this.confirmDialog({
+      title: 'Kedaluwarsakan QR?',
+      message: `QR "${qr.referenceNo}" akan berstatus EXPIRED dan tidak bisa dibayar lagi.`,
+      confirmText: 'Kedaluwarsakan',
+      danger: true,
+    }).subscribe(ok => {
+      if (!ok) return;
+      this.api.expireQris(this.selectedSimId(), qr.referenceNo).subscribe({
+        next: r => { this.qrMsg.set(r.note); this.reloadQr(true); },
+        error: () => this.qrMsg.set('Gagal.'),
+      });
     });
   }
 

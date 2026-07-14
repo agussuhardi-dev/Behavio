@@ -1,9 +1,16 @@
+/*
+ * Material Icons v145 (self-hosted — tanpa CDN, tetap jalan offline).
+ * Build sebelumnya sudah usang (1278 ligatur) dan TIDAK punya icon `qr_*` sama sekali,
+ * juga `api`/`payments`/`restart_alt`/`webhook` — icon-icon itu tampil sebagai teks
+ * mentah. v145 (2234 ligatur) memuat semuanya, tanpa menghilangkan satu pun icon lama.
+ * Perbarui dengan mengunduh ulang dari https://fonts.googleapis.com/icon?family=Material+Icons
+ */
 @font-face {
   font-family: 'Material Icons';
   font-style: normal;
   font-weight: 400;
   font-display: block;
-  src: url(./flUhRq6tzZclQEJ-Vdg-IuiaDsNcIhQ8tQ.woff2) format('woff2');
+  src: url(./material-icons-v145.woff2) format('woff2');
 }
 
 .material-icons {

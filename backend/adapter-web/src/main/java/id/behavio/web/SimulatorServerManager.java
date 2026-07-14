@@ -6,6 +6,7 @@ import id.behavio.core.engine.SimRequest;
 import id.behavio.core.engine.SimResponse;
 import id.behavio.core.port.EndpointRegistry;
 import id.behavio.core.port.EventPublisher;
+import id.behavio.core.rule.FaultSpec;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -157,13 +158,33 @@ public class SimulatorServerManager {
     private void writeQris(UUID simulatorId, String method, String path,
                            Map<String, String> requestHeaders, String requestBody,
                            HttpExchange exchange, QrisService.Result r, long startNanos) throws IOException {
-        write(exchange, r.status(), Map.of("Content-Type", "application/json"), r.body());
+        // Efek fisik fault diterapkan PASCA-commit (design.md §4.2) — sama seperti transfer.
+        FaultSpec fault = r.fault();
+        if (fault != null && fault.delayMillis() > 0) {
+            try {
+                Thread.sleep(fault.delayMillis());
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+            }
+        }
+        String outBody = r.body();
+        boolean dropped = fault != null && fault.drop();
+        if (!dropped) {
+            if (fault != null && fault.corrupt()) {
+                outBody = corrupt(outBody);
+            }
+            write(exchange, r.status(), Map.of("Content-Type", "application/json"), outBody);
+        } else {
+            // commit-then-drop: state sudah berubah, respons TIDAK dikirim (koneksi ditutup)
+            log.info("Simulator {} FAULT commit-then-drop (QRIS) — respons di-drop", simulatorId);
+        }
+
         long durationMillis = (System.nanoTime() - startNanos) / 1_000_000;
         try {
             events.publishRequestEvent(new EventPublisher.RequestEvent(
                     simulatorId.toString(), method, path, r.status(),
                     extractResponseCode(r.body()), durationMillis,
-                    requestHeaders, requestBody, r.body()));
+                    requestHeaders, requestBody, dropped ? "" : outBody));
         } catch (Exception e) {
             log.warn("Simulator {} gagal publikasi event QRIS: {}", simulatorId, e.toString());
         }

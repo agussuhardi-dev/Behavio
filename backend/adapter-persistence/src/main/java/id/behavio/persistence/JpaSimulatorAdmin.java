@@ -87,9 +87,8 @@ public class JpaSimulatorAdmin implements SimulatorAdmin {
             "Normal", "Saldo Kurang", "Limit", "Bank Down", "Timeout",
             "Commit Then Drop", "Malformed", "Async Callback"
     };
-    private static final String[] QRIS_SCENARIO_NAMES = {
-            "Normal", "Merchant Diblokir", "Service Down"
-    };
+    /** Katalog ASPI dipegang blueprint — jangan disalin, nanti menyimpang dari Blueprints.byName. */
+    private static final List<String> QRIS_SCENARIO_NAMES = QrisMpmBlueprint.SCENARIO_NAMES;
 
     @Override
     @Transactional

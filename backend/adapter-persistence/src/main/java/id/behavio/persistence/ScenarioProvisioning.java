@@ -18,19 +18,19 @@ import java.util.UUID;
 @Repository
 class ScenarioProvisioning {
 
-    private static final String[] QRIS_GENERATE_SCENARIOS = {"Normal", "Merchant Diblokir", "Service Down"};
-
     private final JdbcClient db;
 
     ScenarioProvisioning(JdbcClient db) {
         this.db = db;
     }
 
-    /** Nama scenario preset untuk sebuah product. */
-    static String[] scenarioNamesFor(String product) {
+    /** Nama scenario preset untuk sebuah product — ikut katalog blueprint, jangan disalin. */
+    static List<String> scenarioNamesFor(String product) {
         String p = product == null ? "" : product.trim().toLowerCase();
-        // Hanya generate yang punya beberapa skenario; endpoint QRIS lain cuma "Normal".
-        return p.equals("qris") || p.equals("qris-generate") ? QRIS_GENERATE_SCENARIOS : new String[]{"Normal"};
+        // Hanya generate yang punya banyak skenario (katalog ASPI); endpoint QRIS lain cuma "Normal".
+        return p.equals("qris") || p.equals("qris-generate")
+                ? id.behavio.core.blueprint.QrisMpmBlueprint.SCENARIO_NAMES
+                : List.of("Normal");
     }
 
     /**

@@ -16,6 +16,7 @@ import id.behavio.core.port.ConfigRepository;
 import id.behavio.core.port.QrisRepository;
 import id.behavio.core.port.SignatureVerifier;
 import id.behavio.core.port.WebhookSender;
+import id.behavio.core.rule.FaultSpec;
 import id.behavio.core.rule.Outcome;
 import id.behavio.core.rule.Rule;
 import id.behavio.core.rule.Scenario;
@@ -78,7 +79,15 @@ public class QrisService {
         this.mapper = mapper;
     }
 
-    public record Result(int status, String body) {}
+    /**
+     * @param fault efek fisik (delay/drop/corrupt) yang diterapkan adapter web PASCA-commit
+     *              (design.md §4.2), sama seperti jalur transfer. null = tanpa fault.
+     */
+    public record Result(int status, String body, FaultSpec fault) {
+        public Result(int status, String body) {
+            this(status, body, null);
+        }
+    }
 
     private record AuthResult(Partner partner, Result error) {
         boolean failed() { return partner == null; }
@@ -136,7 +145,7 @@ public class QrisService {
         }
 
         String responseBody = renderer.render(outcome.response().bodyTemplate(), vars);
-        return new Result(outcome.response().httpStatus(), responseBody);
+        return new Result(outcome.response().httpStatus(), responseBody, outcome.fault());
     }
 
     // ==================== Decode QR (service 48) ====================
@@ -419,7 +428,7 @@ public class QrisService {
         }
         Outcome outcome = scenarioOpt.get().fallback();
         String responseBody = renderer.render(outcome.response().bodyTemplate(), vars);
-        return new Result(outcome.response().httpStatus(), responseBody);
+        return new Result(outcome.response().httpStatus(), responseBody, outcome.fault());
     }
 
     private Outcome pickOutcome(Scenario scenario, EvalContext ctx) {

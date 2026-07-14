@@ -27,11 +27,8 @@ final class Blueprints {
         return switch (p) {
             // "qris-generate" = kunci operasi di tabel endpoints (SnapOperations);
             // "qris" = nama product yang dipakai dashboard. Keduanya endpoint yang sama.
-            case "qris", "qris-generate" -> switch (key) {
-                case "merchant diblokir" -> QrisMpmBlueprint.merchantBlocked();
-                case "service down" -> QrisMpmBlueprint.serviceDown();
-                default -> QrisMpmBlueprint.normal();
-            };
+            // Katalog nama→preset dipegang blueprint sendiri (lihat SCENARIO_NAMES).
+            case "qris", "qris-generate" -> QrisMpmBlueprint.byName(key);
             case "qris-query" -> QrisQueryBlueprint.normal();
             case "qris-refund" -> QrisRefundBlueprint.normal();
             case "qris-cancel" -> QrisCancelBlueprint.normal();

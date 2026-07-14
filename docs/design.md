@@ -312,6 +312,26 @@ navigasi, komponen). Shell Angular dasar (Fase 0) akan diganti/di-adopsi ke
 ng-matero. Integrasi ke Admin API: list & start/stop simulator, sakelar scenario,
 Live View SSE, browser Account/Transaction (AG Grid), editor rule/response (Monaco).
 
+**Aturan: full Angular Material — JANGAN pakai UI bawaan browser.**
+`alert()` / `confirm()` / `prompt()` native dilarang (tampilannya di luar kendali
+tema & memblokir tab). Gantinya:
+- **Konfirmasi aksi** → `ConfirmDialog` (`shared/components/confirm-dialog`,
+  MatDialog; punya flag `danger` untuk aksi merusak). Dipakai hapus profil,
+  kedaluwarsakan QR, tandai dibayar.
+- **Notifikasi error** → **jangan** tambah alert/dialog sendiri: `errorInterceptor`
+  sudah menampilkan toast (HotToast) untuk SETIAP error HTTP. Menambah notifikasi
+  di komponen = pesan dobel. Interceptor membaca pesan dari
+  `error.message` / `error.msg` / `error.error` (bentuk Admin API Behavio).
+
+**Icon: Material Icons self-hosted** (`public/fonts/Material_Icons.css` +
+`material-icons-v145.woff2`) — sengaja tanpa CDN agar jalan offline.
+**Konsekuensi:** icon di luar build itu TIDAK tampil (muncul sebagai teks mentah,
+gagal diam-diam). Font lama (1278 ligatur) tak punya `qr_*`, `api`, `payments`,
+`restart_alt`, `webhook` dll; sudah diperbarui ke **v145** (2234 ligatur).
+Sebelum memakai icon baru, pastikan ligaturnya ada di font — atau perbarui font
+dari `https://fonts.googleapis.com/icon?family=Material+Icons` (kirim User-Agent
+browser modern agar dapat woff2, bukan ttf).
+
 ---
 
 ## 8. Model Konfigurasi Rule (jantung engine)
@@ -1059,6 +1079,37 @@ Merchant membalas `responseCode: 2002500` + echo `virtualAccountData`.
 ```
 > `reason` adalah field **request**, BUKAN bagian response refund.
 > Refund parsial didukung: status jadi `REFUNDED` hanya saat kumulatif = nominal dibayar.
+
+### A3.6 Katalog responseCode Generate QR (service 47)
+> **Terverifikasi ke [tabel ASPI](https://apidevportal.aspi-indonesia.or.id/api-services/transfer-kredit/mpm)
+> + silang-cek eztrans, 2026-07-14.** Ini sumber kebenaran daftar Scenario preset
+> `QrisMpmBlueprint.SCENARIO_NAMES` — tiap kode = satu scenario yang bisa dipilih
+> dari dashboard, dan tetap dapat di-override (§2, §8).
+
+| responseCode | HTTP | responseMessage | Nama Scenario |
+|---|---|---|---|
+| `2004700` | 200 | Successful | Normal |
+| `4004700` | 400 | Bad Request | Bad Request |
+| `4004701` | 400 | Invalid Field Format {field} | Format Field Salah *(juga dipakai rule `amount ≤ 0` di Normal)* |
+| `4004702` | 400 | Invalid Mandatory Field {field} | Field Wajib Kosong |
+| `4014700` | 401 | Unauthorized. [reason] | Unauthorized |
+| `4014701` | 401 | Invalid Token (B2B) | Token Tidak Valid |
+| `4034700` | 403 | Transaction Expired | Transaksi Kedaluwarsa |
+| `4034701` | 403 | Feature Not Allowed | Fitur Tidak Diizinkan |
+| `4034702` | 403 | Exceeds Transaction Amount Limit | Melebihi Limit *(rule: > 10 jt)* |
+| `4034703` | 403 | Suspected Fraud | Suspected Fraud |
+| `4034704` | 403 | Activity Count Limit Exceeded | Batas Aktivitas Terlampaui |
+| `4034705` | 403 | Do Not Honor | Do Not Honor |
+| `4044708` | 404 | Invalid Merchant | Merchant Diblokir |
+| `4044717` | 404 | Invalid Terminal | Terminal Tidak Valid |
+| `4294700` | 429 | Too Many Requests | Terlalu Banyak Request |
+| `5004700` | 500 | General Error | General Error |
+| `5004701` | 500 | Internal Server Error | Service Down |
+| `5044700` | 504 | Timeout | Timeout *(+ delay 5 dtk)* |
+
+> **Koreksi dari implementasi awal:** `4044712` (dipakai untuk "Merchant Diblokir")
+> dan `5034700` (503, "Service Down") **tidak ada di tabel ASPI mana pun** — masing-masing
+> dikoreksi ke `4044708` dan `5004701`. ASPI service 47 tidak punya kode HTTP 503.
 
 > Sumber verifikasi: [MPM — ASPI SNAP Developer Site](https://apidevportal.aspi-indonesia.or.id/api-services/transfer-kredit/mpm),
 > [QRIS MPM Dynamic — BRIAPI](https://developers.bri.co.id/en/docs/qris-merchant-presented-mode-mpm-dynamic),
