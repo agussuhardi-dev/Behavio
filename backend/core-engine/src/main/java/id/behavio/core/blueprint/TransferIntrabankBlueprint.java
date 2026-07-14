@@ -27,17 +27,18 @@ public final class TransferIntrabankBlueprint {
     public static final String METHOD = "POST";
     public static final String PATH = "/v1.0/transfer-intrabank";
 
-    // responseCode SNAP = [HTTP 3][service 2][case 2] (service transfer intrabank = 18)
-    public static final String RC_SUCCESS = "2001800";
+    // responseCode SNAP = [HTTP 3][service 2][case 2] (service transfer intrabank = 17;
+    // service 18 = transfer INTERbank, endpoint yang berbeda)
+    public static final String RC_SUCCESS = "2001700";
     public static final String RC_INSUFFICIENT = "4001714";
-    public static final String RC_LIMIT = "4031800";
+    public static final String RC_LIMIT = "4031700";
 
     /** Batas nominal default untuk scenario "Limit". */
     public static final BigDecimal DEFAULT_LIMIT = new BigDecimal("25000000");
 
     private TransferIntrabankBlueprint() {}
 
-    /** Normal: tolak bila saldo < amount (4001714), selain itu transfer sukses (2001800). */
+    /** Normal: tolak bila saldo < amount (4001714), selain itu transfer sukses (2001700). */
     public static Scenario normal() {
         Rule insufficient = new Rule(
                 "Saldo tidak cukup",
@@ -55,7 +56,7 @@ public final class TransferIntrabankBlueprint {
                 Outcome.of(errorResponse(400, RC_INSUFFICIENT, "Insufficient Funds")));
     }
 
-    /** Limit: bila amount > limit → 4031800, selain itu transfer sukses. */
+    /** Limit: bila amount > limit → 4031700, selain itu transfer sukses. */
     public static Scenario limit() {
         return limit(DEFAULT_LIMIT);
     }

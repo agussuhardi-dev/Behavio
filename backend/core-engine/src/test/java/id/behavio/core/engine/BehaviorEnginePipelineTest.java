@@ -72,8 +72,8 @@ class BehaviorEnginePipelineTest {
         SimResponse res = engine.handle(SIM, transfer("EXT-1", "111", "222", "30000"));
 
         assertEquals(200, res.httpStatus());
-        assertEquals("2001800", res.responseCode());
-        assertTrue(res.body().contains("2001800"));
+        assertEquals("2001700", res.responseCode());
+        assertTrue(res.body().contains("2001700"));
         assertTrue(res.body().contains("referenceNo"));
         assertEquals(0, state.accounts.get(key("111")).balance().compareTo(new BigDecimal("70000")));
         assertEquals(0, state.accounts.get(key("222")).balance().compareTo(new BigDecimal("30000")));
@@ -135,12 +135,12 @@ class BehaviorEnginePipelineTest {
 
         SimResponse over = engine.handle(SIM, transfer("EXT-OVER", "111", "222", "30000000"));
         assertEquals(403, over.httpStatus());
-        assertEquals("4031800", over.responseCode());
+        assertEquals("4031700", over.responseCode());
         assertEquals(0, state.accounts.get(key("111")).balance().compareTo(new BigDecimal("100000000")));
 
         SimResponse under = engine.handle(SIM, transfer("EXT-UNDER", "111", "222", "1000000"));
         assertEquals(200, under.httpStatus());
-        assertEquals("2001800", under.responseCode());
+        assertEquals("2001700", under.responseCode());
         assertEquals(0, state.accounts.get(key("111")).balance().compareTo(new BigDecimal("99000000")));
     }
 

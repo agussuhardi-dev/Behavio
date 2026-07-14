@@ -238,7 +238,9 @@ Dua mode:
 `Partner` menyimpan **public key** (verifikasi RSA) & **client secret** (HMAC).
 
 **responseCode SNAP** = 7 digit `[HTTP status 3][service code 2][case code 2]`,
-mis. `2001800` sukses, `4031800` insufficient/limit, `4017300` invalid signature.
+mis. `2001700` sukses, `4031700` limit, `4001714` insufficient, `4017300` invalid
+signature. Service code transfer intrabank = **17** (`18` = transfer *inter*bank,
+endpoint lain) — diverifikasi di portal ASPI & dokumentasi BRI.
 
 ---
 
@@ -297,8 +299,8 @@ per port, semua mengarah ke satu mesin eksekusi). Menangani:
 │ Partners │   • Account/Transaction browser (AG Grid)         │
 │ Accounts ├──────────────────────────────────────────────────┤
 │ Trans.   │  LIVE VIEW (SSE) — request mengalir real-time:    │
-│ Webhooks │  10:00:01 POST /transfer 200 2001800 ✔ 45ms       │
-│ Logs ●   │  10:00:03 POST /transfer 403 4031800 ✖ 12ms       │
+│ Webhooks │  10:00:01 POST /transfer 200 2001700 ✔ 45ms       │
+│ Logs ●   │  10:00:03 POST /transfer 403 4031700 ✖ 12ms       │
 │ Settings │                                                    │
 └──────────┴──────────────────────────────────────────────────┘
 ```
@@ -909,11 +911,13 @@ Response: + beneficiaryAccountName, beneficiaryAccountStatus,
 ### A.4 Format responseCode = `[HTTP status 3][service code 2][case code 2]`
 | Code | Arti |
 |---|---|
-| `2001800` | Transfer sukses |
-| `2001500` | Account inquiry sukses |
+| `2001700` | Transfer intrabank sukses (service 17) |
+| `2001800` | Transfer **inter**bank sukses (service 18 — endpoint berbeda) |
+| `2001500` | Account inquiry internal sukses |
 | `4001701` | Invalid Field Format |
 | `4001702` | Invalid Mandatory Field |
 | `4001714` | Insufficient Funds |
+| `4031700` | Exceeds Transaction Limit |
 | `4011700` | Unauthorized |
 
 ### A.5 Catatan variasi antar bank (alasan override wajib)

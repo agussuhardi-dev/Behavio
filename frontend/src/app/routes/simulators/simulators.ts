@@ -5,6 +5,7 @@ import { MatCardModule } from '@angular/material/card';
 import { MatChipsModule } from '@angular/material/chips';
 import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import { MatDividerModule } from '@angular/material/divider';
+import { MatExpansionModule } from '@angular/material/expansion';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatIconModule } from '@angular/material/icon';
 import { MatInputModule } from '@angular/material/input';
@@ -13,9 +14,38 @@ import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatSelectModule } from '@angular/material/select';
 import { MatTooltipModule } from '@angular/material/tooltip';
 
-import { AccountView, PartnerView, SCENARIOS, Scenario, Simulator, SimulatorService, VirtualAccountView } from './simulator.service';
+import {
+  AccountView,
+  PartnerView,
+  SCENARIOS,
+  Scenario,
+  Simulator,
+  SimulatorService,
+  VirtualAccountView,
+} from './simulator.service';
 import { SimulatorFormDialog, SimulatorFormResult } from './simulator-form-dialog';
 import { EndpointUrlPanel } from '../../shared/components/endpoint-url-panel/endpoint-url-panel';
+import { ConfirmDialog } from '../../shared/components/confirm-dialog/confirm-dialog';
+import { LocalStorageService } from '../../shared/services/storage.service';
+
+/**
+ * Satu kartu endpoint bank. `product` menentukan endpoint mana yang di-edit di
+ * Admin API — HANYA diisi untuk endpoint yang punya preset Blueprint di backend.
+ *
+ * Endpoint berlogika tetap (access-token, VA) sengaja TIDAK punya product: memanggil
+ * Admin API dengan product tak dikenal akan jatuh ke `default` = transfer
+ * (ProductEndpoints.resolve), sehingga malah mengubah scenario transfer.
+ */
+interface EpMeta {
+  key: string;
+  label: string;
+  method: string;
+  desc: string;
+  product?: string;
+  curl: string;
+  curlKey: string;
+  scenarioList: Scenario[];
+}
 
 interface LiveEvent {
   method: string;
@@ -24,6 +54,10 @@ interface LiveEvent {
   responseCode: string;
   durationMillis: number;
   at: string;
+  requestHeaders: Record<string, string>;
+  requestBody: string;
+  responseBody: string;
+  open: boolean;
 }
 
 @Component({
@@ -31,18 +65,9 @@ interface LiveEvent {
   standalone: true,
   imports: [
     FormsModule,
-    MatButtonModule,
-    MatCardModule,
-    MatChipsModule,
-    MatDialogModule,
-    MatDividerModule,
-    MatFormFieldModule,
-    MatIconModule,
-    MatInputModule,
-    MatMenuModule,
-    MatProgressBarModule,
-    MatSelectModule,
-    MatTooltipModule,
+    MatButtonModule, MatCardModule, MatChipsModule, MatDialogModule, MatDividerModule,
+    MatExpansionModule, MatFormFieldModule, MatIconModule, MatInputModule,
+    MatMenuModule, MatProgressBarModule, MatSelectModule, MatTooltipModule,
     EndpointUrlPanel,
   ],
   templateUrl: './simulators.html',
@@ -51,52 +76,45 @@ interface LiveEvent {
 export class Simulators implements OnInit, OnDestroy {
   private readonly api = inject(SimulatorService);
   private readonly dialog = inject(MatDialog);
+  private readonly storage = inject(LocalStorageService);
 
-  readonly scenarios = SCENARIOS;
+  /** Profil terakhir yang dipilih user — dipulihkan saat halaman dibuka lagi. */
+  private static readonly LAST_SIM_KEY = 'behavio.bank.lastSimId';
+
+  readonly bankOperations = ['access-token', 'transfer', 'va-create', 'va-status', 'va-delete'];
+
+  /** Dipakai kartu "Panduan Skenario" — penjelasan lengkap tiap scenario transfer. */
+  readonly transferScenarios = SCENARIOS;
+
   readonly sims = signal<Simulator[]>([]);
   readonly loading = signal(true);
-  readonly selected = signal<Record<string, string>>({});
-  readonly liveOpen = signal<string | null>(null);
-  readonly events = signal<LiveEvent[]>([]);
+  readonly selectedSimId = signal<string>('');
+  readonly epuOpen = signal(false);
+  readonly copiedKey = signal<string | null>(null);
+
+  // Live View (SSE)
+  readonly liveOpen = signal(false);
+  readonly liveEvents = signal<LiveEvent[]>([]);
   private es?: EventSource;
 
-  // editor request/response
-  readonly editing = signal<string | null>(null);
-  readonly editorScenario = signal<string>('');
-  readonly editorText = signal<string>('');
-  readonly editorError = signal<string>('');
-  readonly editorSaved = signal<boolean>(false);
-  readonly editorLoading = signal<boolean>(false);
-
-  /** Contoh request agar user paham field apa yang dipakai kondisi scenario. */
-  editorExample(): string {
-    return `POST /v1.0/transfer-intrabank
-Header: X-PARTNER-ID: PARTNER001
-Header: X-EXTERNAL-ID: TRX-001
-
-{
-  "partnerReferenceNo": "PREF-001",
-  "amount": { "value": "50000.00", "currency": "IDR" },
-  "sourceAccountNo": "1234567890",
-  "beneficiaryAccountNo": "9876543210"
-}`;
-  }
+  // per-endpoint scenario editing
+  readonly activeScenarios = signal<Record<string, string>>({});
+  readonly editingEp = signal<string | null>(null);
+  readonly editorScenario = signal('');
+  readonly editorText = signal('');
+  readonly editorError = signal('');
+  readonly editorSaved = signal(false);
+  readonly editorLoading = signal(false);
 
   // panel Virtual Account
-  readonly vaOpen = signal<string | null>(null);
   readonly vaList = signal<VirtualAccountView[]>([]);
   readonly vaLoading = signal(false);
-  readonly vaMsg = signal<string>('');
+  readonly vaMsg = signal('');
 
   // panel Partner & Rekening
-  readonly bankOpen = signal<string | null>(null);
   readonly partnerList = signal<PartnerView[]>([]);
-
-  // panel URL Endpoint (operasi terkait bank — beda dari panel QRIS di halaman lain)
-  readonly epuOpen = signal<string | null>(null);
-  readonly bankOperations = ['access-token', 'transfer', 'va-create', 'va-status', 'va-delete'];
   readonly accountList = signal<AccountView[]>([]);
-  readonly bankMsg = signal<string>('');
+  readonly bankMsg = signal('');
   readonly newPartnerId = signal('');
   readonly newPartnerSecret = signal('');
   readonly newAccPartnerRowId = signal('');
@@ -105,12 +123,91 @@ Header: X-EXTERNAL-ID: TRX-001
   readonly newAccBalance = signal('0');
   readonly balanceEdits = signal<Record<string, string>>({});
 
-  ngOnInit() {
-    this.reload();
+  private port(): number | string { return this.selectedSim?.port ?? '<port>'; }
+
+  get selectedSim(): Simulator | undefined { return this.sims().find(s => s.id === this.selectedSimId()); }
+
+  readonly endpointMeta = (): EpMeta[] => [
+    {
+      key: 'access-token', label: 'Access Token B2B', method: 'POST',
+      desc: 'Terbitkan token Bearer B2B — dipakai semua endpoint lain saat mode STRICT.',
+      curl: this.curlToken(), curlKey: 'tok', scenarioList: [],
+    },
+    {
+      key: 'transfer', label: 'Transfer Intrabank', method: 'POST',
+      desc: 'Transfer antar rekening internal (service 17). Saldo benar-benar didebit & dikredit.',
+      product: 'transfer', curl: this.curlTransfer(), curlKey: 'trf', scenarioList: SCENARIOS,
+    },
+    {
+      key: 'va-create', label: 'Virtual Account — Create', method: 'POST',
+      desc: 'Buat VA. Tandai dibayar dari panel kanan untuk memicu Payment Notification.',
+      curl: this.curlVaCreate(), curlKey: 'vac', scenarioList: [],
+    },
+    {
+      key: 'va-status', label: 'Virtual Account — Inquiry Status', method: 'POST',
+      desc: 'Cek status VA — ACTIVE/PAID/EXPIRED.',
+      curl: this.curlVaStatus(), curlKey: 'vas', scenarioList: [],
+    },
+    {
+      key: 'va-delete', label: 'Virtual Account — Delete', method: 'DELETE',
+      desc: 'Hapus VA yang sudah dibuat.',
+      curl: this.curlVaDelete(), curlKey: 'vad', scenarioList: [],
+    },
+  ];
+
+  copy(text: string, key: string) {
+    navigator.clipboard?.writeText(text).then(() => {
+      this.copiedKey.set(key);
+      setTimeout(() => this.copiedKey.set(null), 1500);
+    });
   }
 
-  ngOnDestroy() {
-    this.closeLive();
+  curlToken(): string {
+    return `curl -X POST http://localhost:${this.port()}/v1.0/access-token/b2b \\
+  -H "X-CLIENT-KEY: PARTNER001" -H "X-TIMESTAMP: 2026-01-01T00:00:00+07:00" \\
+  -d '{"grantType":"client_credentials"}'`;
+  }
+
+  curlTransfer(): string {
+    return `curl -X POST http://localhost:${this.port()}/v1.0/transfer-intrabank \\
+  -H "X-PARTNER-ID: PARTNER001" -H "X-EXTERNAL-ID: TRX-001" \\
+  -d '{"partnerReferenceNo":"PREF-001","amount":{"value":"50000.00","currency":"IDR"},
+       "sourceAccountNo":"1234567890","beneficiaryAccountNo":"9876543210"}'`;
+  }
+
+  curlVaCreate(): string {
+    return `curl -X POST http://localhost:${this.port()}/v1.0/transfer-va/create-va \\
+  -H "X-PARTNER-ID: PARTNER001" -H "X-CALLBACK-URL: http://localhost:8080/api/admin/v1/webhook-sink" \\
+  -d '{"partnerServiceId":"12345","customerNo":"001","virtualAccountNo":"12345001",
+       "virtualAccountName":"Budi","totalAmount":{"value":"150000.00","currency":"IDR"},"trxId":"INV-001"}'`;
+  }
+
+  curlVaStatus(): string {
+    return `curl -X POST http://localhost:${this.port()}/v1.0/transfer-va/status \\
+  -H "X-PARTNER-ID: PARTNER001" \\
+  -d '{"partnerServiceId":"12345","customerNo":"001","virtualAccountNo":"12345001","inquiryRequestId":"INQ-001"}'`;
+  }
+
+  curlVaDelete(): string {
+    return `curl -X DELETE http://localhost:${this.port()}/v1.0/transfer-va/delete-va \\
+  -H "X-PARTNER-ID: PARTNER001" \\
+  -d '{"partnerServiceId":"12345","customerNo":"001","virtualAccountNo":"12345001","trxId":"INV-001"}'`;
+  }
+
+  // ---- lifecycle ----
+
+  ngOnInit() { this.reload(); }
+
+  ngOnDestroy() { this.disconnectLive(); }
+
+  private rememberSim(id: string) {
+    if (id) this.storage.set(Simulators.LAST_SIM_KEY, id);
+  }
+
+  /** LocalStorageService.get() balikin {} bila key belum ada — jadi cek tipenya. */
+  private rememberedSimId(): string {
+    const v = this.storage.get(Simulators.LAST_SIM_KEY);
+    return typeof v === 'string' ? v : '';
   }
 
   reload() {
@@ -118,220 +215,240 @@ Header: X-EXTERNAL-ID: TRX-001
     this.api.list().subscribe({
       next: sims => {
         this.sims.set(sims);
-        // default pilihan scenario = Normal jika belum dipilih
-        const sel = { ...this.selected() };
-        sims.forEach(s => (sel[s.id] ??= 'Normal'));
-        this.selected.set(sel);
+        const keep = sims.some(s => s.id === this.selectedSimId());
+        if (!keep) {
+          const remembered = sims.find(s => s.id === this.rememberedSimId())?.id;
+          this.selectedSimId.set(remembered ?? sims[0]?.id ?? '');
+        }
+        if (this.selectedSimId()) {
+          this.syncAllScenarios();
+          this.reloadVa();
+          this.reloadBank();
+          this.connectLive();
+        } else {
+          this.disconnectLive();
+        }
         this.loading.set(false);
       },
       error: () => this.loading.set(false),
     });
   }
 
-  scenarioFor(id: string): string {
-    return this.selected()[id] ?? 'Normal';
+  onSelectSim(id: string) {
+    this.selectedSimId.set(id);
+    this.rememberSim(id);
+    this.editingEp.set(null);
+    this.liveEvents.set([]);
+    this.newAccPartnerRowId.set('');
+    this.syncAllScenarios();
+    this.reloadVa();
+    this.reloadBank();
+    this.connectLive();
   }
 
-  scenarioMeta(name: string): Scenario | undefined {
-    return this.scenarios.find(s => s.name === name);
-  }
+  // ---- Live View (SSE) ----
 
-  start(s: Simulator) {
-    this.api.start(s.id).subscribe(() => this.reload());
-  }
-
-  stop(s: Simulator) {
-    this.api.stop(s.id).subscribe(() => {
-      if (this.liveOpen() === s.id) {
-        this.closeLive();
-      }
-      this.reload();
-    });
-  }
-
-  changeScenario(s: Simulator, name: string) {
-    this.selected.update(m => ({ ...m, [s.id]: name }));
-    this.api.setScenario(s.id, name).subscribe();
-  }
-
-  toggleLive(s: Simulator) {
-    if (this.liveOpen() === s.id) {
-      this.closeLive();
-      return;
-    }
-    this.closeLive();
-    this.events.set([]);
-    this.liveOpen.set(s.id);
-    this.es = new EventSource(this.api.streamUrl(s.id));
+  private connectLive() {
+    const id = this.selectedSimId();
+    if (!id) return;
+    this.disconnectLive();
+    this.es = new EventSource(this.api.streamUrl(id));
     this.es.addEventListener('request', (e: MessageEvent) => {
       try {
         const d = JSON.parse(e.data);
         const ev: LiveEvent = {
-          method: d.method,
-          path: d.path,
-          httpStatus: d.httpStatus,
-          responseCode: d.responseCode,
-          durationMillis: d.durationMillis,
+          method: d.method, path: d.path, httpStatus: d.httpStatus,
+          responseCode: d.responseCode, durationMillis: d.durationMillis,
           at: new Date().toLocaleTimeString(),
+          requestHeaders: d.requestHeaders ?? {}, requestBody: d.requestBody ?? '',
+          responseBody: d.responseBody ?? '', open: false,
         };
-        this.events.update(list => [ev, ...list].slice(0, 50));
-      } catch {
-        /* abaikan payload tak valid */
-      }
+        this.liveEvents.update(list => [ev, ...list].slice(0, 50));
+        // Request masuk bisa mengubah saldo (transfer) atau membuat VA — segarkan panel.
+        this.reloadVa(true);
+        this.reloadBank(true);
+      } catch { /* abaikan payload tak valid */ }
     });
   }
 
-  closeLive() {
-    this.es?.close();
-    this.es = undefined;
-    this.liveOpen.set(null);
+  private disconnectLive() { this.es?.close(); this.es = undefined; }
+
+  toggleLive() { this.liveOpen.set(!this.liveOpen()); }
+
+  clearLive() { this.liveEvents.set([]); }
+
+  isLiveSuccess(code: string): boolean { return !!code && code.startsWith('2'); }
+
+  toggleEvent(ev: LiveEvent) {
+    this.liveEvents.update(list => list.map(e => e === ev ? { ...e, open: !e.open } : e));
   }
 
-  openEditor(s: Simulator) {
-    const scenario = this.scenarioFor(s.id);
-    this.editorError.set('');
-    this.editorSaved.set(false);
-    this.editorScenario.set(scenario);
-    this.editorLoading.set(true);
-    this.api.getDefinition(s.id, scenario).subscribe({
+  /** Rapikan JSON agar mudah dibaca saat debugging; biarkan apa adanya bila bukan JSON. */
+  prettyJson(text: string): string {
+    if (!text) return '(kosong)';
+    try { return JSON.stringify(JSON.parse(text), null, 2); } catch { return text; }
+  }
+
+  headerLines(h: Record<string, string>): string {
+    const keys = Object.keys(h ?? {});
+    if (keys.length === 0) return '(tidak ada header)';
+    return keys.sort().map(k => `${k}: ${h[k]}`).join('\n');
+  }
+
+  private suggestedPort(): number {
+    const used = new Set(this.sims().map(s => s.port));
+    let p = 9001; while (used.has(p)) p++;
+    return p;
+  }
+
+  // ---- profile management ----
+
+  openCreate() {
+    const ref = this.dialog.open(SimulatorFormDialog, { data: { mode: 'create', suggestedPort: this.suggestedPort() } });
+    ref.afterClosed().subscribe((r?: SimulatorFormResult) => {
+      if (!r) return;
+      this.api.create(r.name, r.port, r.signatureMode).subscribe({
+        next: c => { this.selectedSimId.set(c.id); this.rememberSim(c.id); this.reload(); },
+      });
+    });
+  }
+
+  openClone() {
+    const s = this.selectedSim; if (!s) return;
+    const ref = this.dialog.open(SimulatorFormDialog, { data: { mode: 'clone', sourceName: s.name, suggestedPort: this.suggestedPort() } });
+    ref.afterClosed().subscribe((r?: SimulatorFormResult) => {
+      if (!r) return;
+      this.api.clone(s.id, r.name, r.port).subscribe({
+        next: c => { this.selectedSimId.set(c.id); this.rememberSim(c.id); this.reload(); },
+      });
+    });
+  }
+
+  removeSelected() {
+    const s = this.selectedSim; if (!s) return;
+    this.confirmDialog({
+      title: 'Hapus profil?',
+      message: `Profil "${s.name}" (port ${s.port}) akan dihapus permanen beserta partner, rekening, dan VA-nya. Tindakan ini tidak bisa dibatalkan.`,
+      confirmText: 'Hapus',
+      danger: true,
+    }).subscribe(ok => {
+      if (!ok) return;
+      this.api.delete(s.id).subscribe(() => {
+        this.storage.remove(Simulators.LAST_SIM_KEY);
+        this.selectedSimId.set('');
+        this.reload();
+      });
+    });
+  }
+
+  private confirmDialog(data: { title: string; message: string; confirmText?: string; danger?: boolean }) {
+    return this.dialog.open(ConfirmDialog, { data, width: '420px', autoFocus: false }).afterClosed();
+  }
+
+  toggleRunning() {
+    const s = this.selectedSim; if (!s) return;
+    (s.status === 'RUNNING' ? this.api.stop(s.id) : this.api.start(s.id)).subscribe(() => this.reload());
+  }
+
+  // ---- scenario per-endpoint ----
+
+  private syncAllScenarios() {
+    for (const ep of this.endpointMeta()) {
+      if (!ep.product) continue;
+      this.api.getActiveScenario(this.selectedSimId(), ep.product).subscribe({
+        next: r => this.activeScenarios.update(m => ({ ...m, [ep.key]: r.name })),
+        error: () => this.activeScenarios.update(m => ({ ...m, [ep.key]: 'Normal' })),
+      });
+    }
+  }
+
+  activeScenarioFor(key: string): string { return this.activeScenarios()[key] ?? 'Normal'; }
+
+  scenarioMeta(list: Scenario[], name: string): Scenario | undefined { return list.find(s => s.name === name); }
+
+  changeScenario(ep: EpMeta, name: string) {
+    if (!ep.product) return;
+    this.activeScenarios.update(m => ({ ...m, [ep.key]: name }));
+    this.api.setScenario(this.selectedSimId(), name, ep.product).subscribe();
+  }
+
+  openEditor(ep: EpMeta) {
+    if (!ep.product) return;
+    const scenario = this.activeScenarioFor(ep.key);
+    this.editorError.set(''); this.editorSaved.set(false); this.editorLoading.set(true);
+    this.api.getDefinition(this.selectedSimId(), scenario, ep.product).subscribe({
       next: text => {
-        this.editorText.set(text);
-        this.editing.set(s.id);
-        this.editorLoading.set(false);
+        this.editorText.set(text); this.editorScenario.set(scenario);
+        this.editingEp.set(ep.key); this.editorLoading.set(false);
       },
       error: err => {
         this.editorLoading.set(false);
-        this.editorError.set(
-          err?.status === 0
-            ? 'Tidak dapat menghubungi backend (localhost:8080). Pastikan server menyala.'
-            : `Gagal memuat definisi (${err?.status ?? '?'}): ${err?.error?.error ?? err?.message ?? 'error tak dikenal'}`
-        );
+        this.editorError.set(err?.status === 0 ? 'Backend tidak terjangkau.' : `Gagal memuat (${err?.status ?? '?'})`);
       },
     });
   }
 
-  onEditorInput(value: string) {
-    this.editorText.set(value);
-    this.editorSaved.set(false);
-    this.editorError.set('');
-  }
+  closeEditor() { this.editingEp.set(null); }
 
-  saveEditor(s: Simulator) {
-    this.api.saveDefinition(s.id, this.editorScenario(), this.editorText()).subscribe({
-      next: () => {
-        this.editorSaved.set(true);
-        this.editorError.set('');
-      },
+  onEditorInput(v: string) { this.editorText.set(v); this.editorSaved.set(false); this.editorError.set(''); }
+
+  saveEditor(ep: EpMeta) {
+    if (!ep.product) return;
+    this.api.saveDefinition(this.selectedSimId(), this.editorScenario(), this.editorText(), ep.product).subscribe({
+      next: () => { this.editorSaved.set(true); this.editorError.set(''); },
       error: err => this.editorError.set(err?.error?.error ?? 'JSON tidak valid.'),
     });
   }
 
-  resetEditor(s: Simulator) {
-    this.api.resetDefinition(s.id, this.editorScenario()).subscribe(() => {
+  resetEditor(ep: EpMeta) {
+    if (!ep.product) return;
+    this.api.resetDefinition(this.selectedSimId(), this.editorScenario(), ep.product).subscribe(() => {
       this.editorSaved.set(false);
-      this.api.getDefinition(s.id, this.editorScenario()).subscribe(text => this.editorText.set(text));
+      this.api.getDefinition(this.selectedSimId(), this.editorScenario(), ep.product!).subscribe(t => this.editorText.set(t));
     });
   }
 
-  closeEditor() {
-    this.editing.set(null);
-    this.editorText.set('');
-  }
+  // ---- Virtual Account ----
 
-  isSuccess(code: string) {
-    return code?.startsWith('200');
-  }
-
-  toggleVaPanel(s: Simulator) {
-    if (this.vaOpen() === s.id) {
-      this.vaOpen.set(null);
-      return;
-    }
-    this.vaOpen.set(s.id);
-    this.reloadVa(s);
-  }
-
-  reloadVa(s: Simulator) {
+  reloadVa(keepMsg = false) {
+    if (!this.selectedSimId()) return;
     this.vaLoading.set(true);
-    this.vaMsg.set('');
-    this.api.listVirtualAccounts(s.id).subscribe({
-      next: list => {
-        this.vaList.set(list);
-        this.vaLoading.set(false);
-      },
+    if (!keepMsg) this.vaMsg.set('');
+    this.api.listVirtualAccounts(this.selectedSimId()).subscribe({
+      next: list => { this.vaList.set(list); this.vaLoading.set(false); },
       error: () => this.vaLoading.set(false),
     });
   }
 
-  payVa(s: Simulator, va: VirtualAccountView) {
-    this.api.payVirtualAccount(s.id, va.virtualAccountNo).subscribe({
-      next: r => {
-        this.vaMsg.set(r.webhookSent ? 'Payment Notification terkirim ke callback URL.' : r.note);
-        this.reloadVa(s);
-      },
-      error: () => this.vaMsg.set('Gagal menandai VA dibayar.'),
-    });
-  }
-
-  /** Port bebas berikutnya (mulai 9001), berguna sebagai saran di form. */
-  private suggestedPort(): number {
-    const used = new Set(this.sims().map(s => s.port));
-    let p = 9001;
-    while (used.has(p)) p++;
-    return p;
-  }
-
-  openCreate() {
-    const ref = this.dialog.open(SimulatorFormDialog, {
-      data: { mode: 'create', suggestedPort: this.suggestedPort() },
-    });
-    ref.afterClosed().subscribe((result?: SimulatorFormResult) => {
-      if (!result) return;
-      this.api.create(result.name, result.port, result.signatureMode).subscribe({
-        next: () => this.reload(),
-        error: err => alert(err?.error?.error ?? 'Gagal membuat simulator.'),
+  payVa(va: VirtualAccountView) {
+    this.confirmDialog({
+      title: 'Tandai VA sebagai dibayar?',
+      message: `VA "${va.virtualAccountNo}" akan berstatus PAID sebesar ${va.amount} ${va.currency}`
+        + (va.hasCallback ? ', dan Payment Notification (webhook) dikirim ke callback URL-nya.' : '. Tidak ada callback URL tersimpan, jadi webhook tidak dikirim.'),
+      confirmText: 'Tandai Dibayar',
+    }).subscribe(ok => {
+      if (!ok) return;
+      this.api.payVirtualAccount(this.selectedSimId(), va.virtualAccountNo).subscribe({
+        next: r => { this.vaMsg.set(r.webhookSent ? 'Payment Notification terkirim.' : r.note); this.reloadVa(true); },
+        error: () => this.vaMsg.set('Gagal menandai VA dibayar.'),
       });
     });
   }
 
-  openClone(s: Simulator) {
-    const ref = this.dialog.open(SimulatorFormDialog, {
-      data: { mode: 'clone', sourceName: s.name, suggestedPort: this.suggestedPort() },
-    });
-    ref.afterClosed().subscribe((result?: SimulatorFormResult) => {
-      if (!result) return;
-      this.api.clone(s.id, result.name, result.port).subscribe({
-        next: () => this.reload(),
-        error: err => alert(err?.error?.error ?? 'Gagal menduplikat simulator.'),
-      });
-    });
+  vaStatusTone(s: string): 'ok' | 'warn' | 'fault' {
+    if (s === 'PAID') return 'ok'; if (s === 'EXPIRED') return 'fault'; return 'warn';
   }
 
-  remove(s: Simulator) {
-    if (!confirm(`Hapus simulator "${s.name}"? Semua konfigurasi & data rekening ikut terhapus.`)) {
-      return;
-    }
-    this.api.delete(s.id).subscribe(() => this.reload());
-  }
+  // ---- Partner & Rekening ----
 
-  toggleBankPanel(s: Simulator) {
-    if (this.bankOpen() === s.id) {
-      this.bankOpen.set(null);
-      return;
-    }
-    this.bankOpen.set(s.id);
-    this.reloadBank(s);
-  }
-
-  reloadBank(s: Simulator) {
-    this.bankMsg.set('');
-    this.api.listPartners(s.id).subscribe(list => {
+  reloadBank(keepMsg = false) {
+    if (!this.selectedSimId()) return;
+    if (!keepMsg) this.bankMsg.set('');
+    this.api.listPartners(this.selectedSimId()).subscribe(list => {
       this.partnerList.set(list);
-      if (!this.newAccPartnerRowId() && list.length > 0) {
-        this.newAccPartnerRowId.set(list[0].id);
-      }
+      if (!this.newAccPartnerRowId() && list.length > 0) this.newAccPartnerRowId.set(list[0].id);
     });
-    this.api.listAccounts(s.id).subscribe(list => {
+    this.api.listAccounts(this.selectedSimId()).subscribe(list => {
       this.accountList.set(list);
       const edits: Record<string, string> = {};
       list.forEach(a => (edits[a.id] = a.balance));
@@ -339,37 +456,44 @@ Header: X-EXTERNAL-ID: TRX-001
     });
   }
 
-  addPartner(s: Simulator) {
+  addPartner() {
     const partnerId = this.newPartnerId().trim();
     if (!partnerId) return;
-    this.api.createPartner(s.id, partnerId, this.newPartnerSecret().trim() || undefined).subscribe({
+    this.api.createPartner(this.selectedSimId(), partnerId, this.newPartnerSecret().trim() || undefined).subscribe({
       next: () => {
         this.newPartnerId.set('');
         this.newPartnerSecret.set('');
         this.bankMsg.set(`Partner "${partnerId}" ditambahkan.`);
-        this.reloadBank(s);
+        this.reloadBank(true);
       },
       error: err => this.bankMsg.set(err?.error?.error ?? 'Gagal menambah partner.'),
     });
   }
 
-  removePartner(s: Simulator, p: PartnerView) {
-    if (!confirm(`Hapus partner "${p.partnerId}"? Rekening miliknya ikut terhapus.`)) return;
-    this.api.deletePartner(s.id, p.id).subscribe(() => this.reloadBank(s));
+  removePartner(p: PartnerView) {
+    this.confirmDialog({
+      title: 'Hapus partner?',
+      message: `Partner "${p.partnerId}" akan dihapus beserta seluruh rekening miliknya.`,
+      confirmText: 'Hapus',
+      danger: true,
+    }).subscribe(ok => {
+      if (!ok) return;
+      this.api.deletePartner(this.selectedSimId(), p.id).subscribe(() => this.reloadBank());
+    });
   }
 
-  addAccount(s: Simulator) {
+  addAccount() {
     const accNo = this.newAccNo().trim();
     if (!accNo || !this.newAccPartnerRowId()) return;
     this.api
-      .createAccount(s.id, this.newAccPartnerRowId(), accNo, this.newAccHolder().trim(), this.newAccBalance())
+      .createAccount(this.selectedSimId(), this.newAccPartnerRowId(), accNo, this.newAccHolder().trim(), this.newAccBalance())
       .subscribe({
         next: () => {
           this.newAccNo.set('');
           this.newAccHolder.set('');
           this.newAccBalance.set('0');
           this.bankMsg.set(`Rekening "${accNo}" ditambahkan.`);
-          this.reloadBank(s);
+          this.reloadBank(true);
         },
         error: err => this.bankMsg.set(err?.error?.error ?? 'Gagal menambah rekening.'),
       });
@@ -379,23 +503,22 @@ Header: X-EXTERNAL-ID: TRX-001
     this.balanceEdits.update(m => ({ ...m, [accountId]: value }));
   }
 
-  saveBalance(s: Simulator, a: AccountView) {
-    const value = this.balanceEdits()[a.id];
-    this.api.setAccountBalance(s.id, a.id, value).subscribe({
-      next: () => {
-        this.bankMsg.set(`Saldo ${a.accountNo} diperbarui.`);
-        this.reloadBank(s);
-      },
+  saveBalance(a: AccountView) {
+    this.api.setAccountBalance(this.selectedSimId(), a.id, this.balanceEdits()[a.id]).subscribe({
+      next: () => { this.bankMsg.set(`Saldo ${a.accountNo} diperbarui.`); this.reloadBank(true); },
       error: err => this.bankMsg.set(err?.error?.error ?? 'Gagal mengubah saldo.'),
     });
   }
 
-  removeAccount(s: Simulator, a: AccountView) {
-    if (!confirm(`Hapus rekening "${a.accountNo}"?`)) return;
-    this.api.deleteAccount(s.id, a.id).subscribe(() => this.reloadBank(s));
-  }
-
-  toggleEpu(s: Simulator) {
-    this.epuOpen.set(this.epuOpen() === s.id ? null : s.id);
+  removeAccount(a: AccountView) {
+    this.confirmDialog({
+      title: 'Hapus rekening?',
+      message: `Rekening "${a.accountNo}" (${a.holderName || 'tanpa nama'}) akan dihapus permanen.`,
+      confirmText: 'Hapus',
+      danger: true,
+    }).subscribe(ok => {
+      if (!ok) return;
+      this.api.deleteAccount(this.selectedSimId(), a.id).subscribe(() => this.reloadBank());
+    });
   }
 }

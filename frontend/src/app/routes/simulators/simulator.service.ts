@@ -75,7 +75,7 @@ export interface Scenario {
 export const SCENARIOS: Scenario[] = [
   { name: 'Normal', desc: 'Transaksi berjalan normal — dana didebit & dikredit.', icon: 'check_circle', tone: 'ok' },
   { name: 'Saldo Kurang', desc: 'Selalu ditolak: dana tidak cukup (4001714).', icon: 'money_off', tone: 'warn' },
-  { name: 'Limit', desc: 'Ditolak bila nominal di atas 25 juta (4031800).', icon: 'trending_up', tone: 'warn' },
+  { name: 'Limit', desc: 'Ditolak bila nominal di atas 25 juta (4031700).', icon: 'trending_up', tone: 'warn' },
   { name: 'Bank Down', desc: 'Bank sedang gangguan — HTTP 503, saldo tetap utuh.', icon: 'cloud_off', tone: 'fault' },
   { name: 'Timeout', desc: 'Respons sengaja lambat (delay 5 detik).', icon: 'hourglass_empty', tone: 'fault' },
   { name: 'Commit Then Drop', desc: 'Dana terpotong tapi respons hilang — menguji idempotensi/rekonsiliasi.', icon: 'flash_off', tone: 'fault' },
