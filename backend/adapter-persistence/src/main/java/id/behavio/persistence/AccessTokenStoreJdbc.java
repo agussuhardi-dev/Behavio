@@ -28,4 +28,16 @@ public class AccessTokenStoreJdbc implements AccessTokenStore {
                 .param(Timestamp.from(issuedAt)).param(Timestamp.from(expiresAt))
                 .update();
     }
+
+    @Override
+    public boolean isValid(UUID simulatorId, UUID partnerId, String token) {
+        if (token == null || token.isBlank()) return false;
+        Long count = db.sql("""
+                SELECT count(*) FROM access_tokens
+                WHERE simulator_id = ? AND partner_id = ? AND token = ? AND expires_at > now()
+                """)
+                .param(simulatorId).param(partnerId).param(token)
+                .query(Long.class).single();
+        return count != null && count > 0;
+    }
 }

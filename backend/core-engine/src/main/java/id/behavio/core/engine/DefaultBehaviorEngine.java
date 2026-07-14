@@ -6,6 +6,7 @@ import id.behavio.core.domain.Partner;
 import id.behavio.core.domain.SignatureMode;
 import id.behavio.core.domain.Transaction;
 import id.behavio.core.domain.TransactionStatus;
+import id.behavio.core.port.AccessTokenStore;
 import id.behavio.core.port.ConfigRepository;
 import id.behavio.core.port.EventPublisher;
 import id.behavio.core.port.SignatureVerifier;
@@ -53,28 +54,38 @@ public final class DefaultBehaviorEngine implements BehaviorEngine {
     private final EventPublisher events;
     private final SignatureVerifier signatureVerifier; // nullable → mode STRICT tak dicek
     private final WebhookSender webhookSender;          // nullable → webhook dilewati
+    private final AccessTokenStore accessTokenStore;    // nullable → expiry token tak dicek
     private final ConditionEvaluator evaluator = new ConditionEvaluator();
     private final ResponseRenderer renderer = new ResponseRenderer();
     private final Supplier<String> referenceNoGen;
     private final Clock clock;
 
     public DefaultBehaviorEngine(StateRepository state, ConfigRepository config, EventPublisher events) {
-        this(state, config, events, null, null, defaultRefGen(), Clock.systemUTC());
+        this(state, config, events, null, null, null, defaultRefGen(), Clock.systemUTC());
     }
 
     public DefaultBehaviorEngine(StateRepository state, ConfigRepository config, EventPublisher events,
                                  SignatureVerifier signatureVerifier, WebhookSender webhookSender) {
-        this(state, config, events, signatureVerifier, webhookSender, defaultRefGen(), Clock.systemUTC());
+        this(state, config, events, signatureVerifier, webhookSender, null, defaultRefGen(), Clock.systemUTC());
     }
 
     public DefaultBehaviorEngine(StateRepository state, ConfigRepository config, EventPublisher events,
                                  SignatureVerifier signatureVerifier, WebhookSender webhookSender,
+                                 AccessTokenStore accessTokenStore) {
+        this(state, config, events, signatureVerifier, webhookSender, accessTokenStore,
+                defaultRefGen(), Clock.systemUTC());
+    }
+
+    public DefaultBehaviorEngine(StateRepository state, ConfigRepository config, EventPublisher events,
+                                 SignatureVerifier signatureVerifier, WebhookSender webhookSender,
+                                 AccessTokenStore accessTokenStore,
                                  Supplier<String> referenceNoGen, Clock clock) {
         this.state = state;
         this.config = config;
         this.events = events;
         this.signatureVerifier = signatureVerifier;
         this.webhookSender = webhookSender;
+        this.accessTokenStore = accessTokenStore;
         this.referenceNoGen = referenceNoGen;
         this.clock = clock;
     }
@@ -107,11 +118,17 @@ public final class DefaultBehaviorEngine implements BehaviorEngine {
         }
         Partner partner = partnerOpt.get();
 
-        // 1b. Signature (mode STRICT): verifikasi HMAC-SHA512 transaksional
-        if (signatureVerifier != null
-                && config.signatureMode(simulatorId) == SignatureMode.STRICT
-                && !signatureValid(request, partner)) {
-            return error(401, "4017300", "Unauthorized. Invalid Signature");
+        // 1b. Mode STRICT: token Bearer harus valid & belum expired, DAN signature
+        // HMAC-SHA512 transaksional harus cocok. Signature saja tidak cukup — token
+        // acak/kedaluwarsa yang konsisten dipakai klien tetap bisa hasilkan HMAC
+        // valid (HMAC hanya menjamin integritas data, bukan keabsahan token).
+        if (signatureVerifier != null && config.signatureMode(simulatorId) == SignatureMode.STRICT) {
+            if (accessTokenStore != null && !accessTokenStore.isValid(simulatorId, partner.id(), bearerToken(request))) {
+                return error(401, "4017301", "Unauthorized. Token invalid or expired");
+            }
+            if (!signatureValid(request, partner)) {
+                return error(401, "4017300", "Unauthorized. Invalid Signature");
+            }
         }
 
         // 2. Idempotensi (SNAP X-EXTERNAL-ID) — balas respons tersimpan bila ada
@@ -191,14 +208,18 @@ public final class DefaultBehaviorEngine implements BehaviorEngine {
         webhookSender.schedule(simulatorId, url, JSON_HEADERS, body, Duration.ofMillis(spec.delayMillis()));
     }
 
+    private static String bearerToken(SimRequest request) {
+        String auth = request.header(H_AUTH);
+        return auth == null ? "" : auth.replaceFirst("(?i)^Bearer\\s+", "");
+    }
+
     private boolean signatureValid(SimRequest request, Partner partner) {
         String signature = request.header(H_SIGNATURE);
         String timestamp = request.header(H_TIMESTAMP);
         if (signature == null || timestamp == null || partner.clientSecret() == null) {
             return false;
         }
-        String auth = request.header(H_AUTH);
-        String token = auth == null ? "" : auth.replaceFirst("(?i)^Bearer\\s+", "");
+        String token = bearerToken(request);
         return signatureVerifier.verifySymmetric(request.method(), request.path(), token,
                 request.rawBody(), timestamp, signature, partner.clientSecret());
     }

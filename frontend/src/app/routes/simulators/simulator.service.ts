@@ -9,6 +9,33 @@ export interface Simulator {
   status: 'RUNNING' | 'STOPPED';
 }
 
+export interface PartnerView {
+  id: string;
+  partnerId: string;
+  hasPublicKey: boolean;
+  hasClientSecret: boolean;
+}
+
+export interface AccountView {
+  id: string;
+  partnerRowId: string;
+  partnerLabel: string;
+  accountNo: string;
+  holderName: string;
+  currency: string;
+  balance: string;
+}
+
+export interface VirtualAccountView {
+  virtualAccountNo: string;
+  virtualAccountName: string;
+  amount: string;
+  currency: string;
+  status: 'ACTIVE' | 'PAID' | 'EXPIRED';
+  trxId: string;
+  hasCallback: boolean;
+}
+
 export interface Scenario {
   name: string;
   desc: string;
@@ -85,5 +112,48 @@ export class SimulatorService {
   /** URL SSE live view (dilewatkan proxy dev ke :8080). */
   streamUrl(id: string): string {
     return `${this.base}/${id}/logs/stream`;
+  }
+
+  /** Daftar Virtual Account yang sudah dibuat partner (via create-va) di simulator ini. */
+  listVirtualAccounts(id: string) {
+    return this.http.get<VirtualAccountView[]>(`${this.base}/${id}/virtual-accounts`);
+  }
+
+  /** Tandai VA sebagai dibayar — memicu Payment Notification (webhook) ke callback URL-nya. */
+  payVirtualAccount(id: string, vaNo: string) {
+    return this.http.post<{ webhookSent: boolean; note: string }>(
+      `${this.base}/${id}/virtual-accounts/${encodeURIComponent(vaNo)}/pay`,
+      {}
+    );
+  }
+
+  // ---- Partner & Account (nasabah/rekening) ----
+
+  listPartners(id: string) {
+    return this.http.get<PartnerView[]>(`${this.base}/${id}/partners`);
+  }
+
+  createPartner(id: string, partnerId: string, clientSecret?: string, publicKeyPem?: string) {
+    return this.http.post(`${this.base}/${id}/partners`, { partnerId, clientSecret, publicKeyPem });
+  }
+
+  deletePartner(id: string, partnerRowId: string) {
+    return this.http.delete(`${this.base}/${id}/partners/${partnerRowId}`);
+  }
+
+  listAccounts(id: string) {
+    return this.http.get<AccountView[]>(`${this.base}/${id}/accounts`);
+  }
+
+  createAccount(id: string, partnerId: string, accountNo: string, holderName: string, balance: string) {
+    return this.http.post(`${this.base}/${id}/accounts`, { partnerId, accountNo, holderName, balance });
+  }
+
+  setAccountBalance(id: string, accountId: string, balance: string) {
+    return this.http.put(`${this.base}/${id}/accounts/${accountId}/balance`, { balance });
+  }
+
+  deleteAccount(id: string, accountId: string) {
+    return this.http.delete(`${this.base}/${id}/accounts/${accountId}`);
   }
 }

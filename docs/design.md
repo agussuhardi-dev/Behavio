@@ -538,12 +538,86 @@ dari dashboard.
   dengan saldo & transaksi **terisolasi total**; clone membawa override tapi state
   independen sejak saat clone; delete menutup port & membersihkan data.
 
+### Fase 4 (parsial) — Virtual Account ✅ (2026-07-14)
+Endpoint SNAP VA (Lampiran A2) — fokus "selesaikan sisi bank dulu" (QRIS menyusul).
+Berbeda dari Transfer Intrabank: **bukan** alur scenario/rule (tak butuh kondisi
+bisnis kompleks per-request), melainkan CRUD stateful sederhana + aksi trigger
+notifikasi dari dashboard.
+
+- **Domain** (core-engine): `VirtualAccount`, `VirtualAccountStatus` (ACTIVE/PAID/
+  EXPIRED). Port `VirtualAccountRepository`.
+- **Persistence**: `VirtualAccountRepositoryJdbc` — disimpan di tabel generik
+  `entities` (type='virtual_account', JSONB), sesuai strategi hybrid storage §3.2
+  (bukan pembawa uang langsung, tak perlu tabel kaku).
+- **Endpoint** (`VirtualAccountService`, adapter-web, pola sama dengan
+  `AccessTokenService`): `POST /v1.0/transfer-va/create-va` (`2002700`),
+  `POST /v1.0/transfer-va/status` (`2002600`), `DELETE /v1.0/transfer-va/delete-va`
+  (`2002500`). Header & signature simetris (HMAC-SHA512) **reuse pola transfer-
+  intrabank** — STRICT terverifikasi bekerja sama persis.
+- **responseCode kegagalan** — diverifikasi via web (dokumentasi Faspay) bahwa SNAP
+  memakai kode **generik** (service code "00") untuk error lintas-endpoint, BUKAN
+  per-service seperti dugaan awal: `4000002` (field wajib), `4010000`
+  (unauthorized), `4040012` (VA tidak ditemukan — "Invalid Bill/Virtual Account"),
+  `4090001` (duplikat).
+- **Payment Notification** (A2.3): **bukan** endpoint masuk dari partner, melainkan
+  webhook yang KAMI (simulator) kirim ke `X-CALLBACK-URL` yang dicatat saat
+  create-va. Dipicu manual dari dashboard ("aksi VA dibayar", bukan otomatis) via
+  Admin API `POST .../virtual-accounts/{vaNo}/pay` → `VirtualAccountService
+  .markPaid()` → ubah status PAID + `webhookSender.schedule(...)` (pakai outbox
+  Fase 2 yang sama) dengan body persis field A2.3 (`paymentRequestId`,
+  `paidAmount`, `latestTransactionStatus:"00"`, dll).
+- **Admin API**: `GET .../virtual-accounts` (list lintas partner untuk monitoring),
+  `POST .../virtual-accounts/{vaNo}/pay`.
+- **Dashboard**: panel "Virtual Account" per simulator (toggle) — tabel VA (no,
+  nama, jumlah, status) + tombol "Tandai Dibayar" (nonaktif bila sudah PAID atau
+  tak ada callback URL tersimpan) + contoh curl cara membuat VA uji.
+- Terverifikasi end-to-end HTTP: create (+ tolak field hilang, tolak duplikat),
+  inquiry (+ 404 saat tak ada), status ACTIVE→PAID setelah mark-paid, webhook
+  Payment Notification diterima sink dengan field persis spec, delete (+ inquiry
+  setelah delete → 404), signature STRICT (tanpa/valid/salah) — semua sesuai.
+- **Belum**: Update VA (endpoint di tabel A2.1 tapi tanpa service/case code resmi
+  di sumber — sengaja dilewati dulu), expiry otomatis (VA tak auto-EXPIRED saat
+  `expiredDate` lewat, murni field pasif untuk saat ini).
+
+### Fase 4 (lanjutan) — Penyelesaian sisi bank ✅ (2026-07-14)
+Menutup dua celah nyata sebelum lanjut ke QRIS: (1) STRICT baru memverifikasi
+signature, belum memvalidasi bahwa token benar-benar diterbitkan & belum
+kedaluwarsa; (2) tak ada cara menambah partner/rekening dari dashboard — hanya via
+baseline provisioning saat simulator dibuat.
+
+**Validasi expiry token Bearer:**
+- `AccessTokenStore.isValid(simId, partnerId, token)` — cek token ada, milik
+  partner ini, `expires_at > now()`. Impl `AccessTokenStoreJdbc`.
+- Alasan pentingnya: **HMAC signature saja tidak cukup** — signature hanya
+  menjamin integritas data (klien konsisten memakai token+secret yang sama), BUKAN
+  bahwa token itu sah. Token acak yang tak pernah diterbitkan tetap bisa
+  menghasilkan HMAC yang "valid" secara matematis.
+- Diwire ke `DefaultBehaviorEngine` (transfer-intrabank, constructor 6-arg baru
+  dengan `AccessTokenStore`) dan `VirtualAccountService` (VA) — keduanya kini cek
+  token dulu (`4017301`/`4010001`) baru signature (`4017300`/`4010000`).
+- **Terverifikasi**: token acak+signature "valid" → ditolak. Alur asli lengkap
+  (RSA keypair asli → `access-token/b2b` → HMAC pakai token asli → transfer)
+  → sukses, saldo terpotong benar.
+
+**Manajemen Partner & Akun dari dashboard:**
+- Port `AccountAdmin` (core) + `AccountAdminJdbc` (JdbcClient): CRUD partner
+  (partnerId, publicKeyPem RSA, clientSecret HMAC) & account (accountNo,
+  holderName, balance — dijaga ≥0 oleh constraint DB), termasuk **ubah saldo**
+  (top-up untuk keperluan uji).
+- Admin API: `GET/POST/DELETE .../simulators/{id}/partners[/{rowId}]`,
+  `GET/POST/DELETE .../accounts[/{id}]`, `PUT .../accounts/{id}/balance`.
+- Dashboard: panel "Partner & Rekening" (toggle) — daftar partner (badge HMAC/RSA)
+  + form tambah; daftar rekening (saldo *inline editable*) + form tambah.
+- **Terverifikasi end-to-end**: partner baru + RSA public key dibuat via Admin API
+  → rekening baru dibuat & di-top-up via Admin API → dipakai alur token+transfer
+  ASLI (bukan seed) sampai sukses dengan saldo terpotong tepat → partner & akun
+  dihapus bersih. Dashboard (proxy `:4200`) menampilkan data yang sama.
+
 ### Belum dibangun (berikutnya)
-Builder visual rule (saat ini editor JSON teks — "advanced mode"), penerapan editor
-ke endpoint VA & QRIS, verifikasi token Bearer pada transaksional (STRICT), edit
-partner/akun dari dashboard (kini hanya via baseline provisioning), Recorder/Replay
-UI, editor Monaco (ganti textarea), Workspace sebagai pengelompokan opsional lintas
-banyak profil bank (belum diperlukan karena isolasi sudah lewat port+simulator_id).
+QRIS MPM (Lampiran A3), builder visual rule (saat ini editor JSON teks — "advanced
+mode"), penerapan editor override ke endpoint VA & QRIS, Recorder/Replay UI, editor
+Monaco (ganti textarea), Workspace sebagai pengelompokan opsional lintas banyak
+profil bank (belum diperlukan karena isolasi sudah lewat port+simulator_id).
 
 ---
 

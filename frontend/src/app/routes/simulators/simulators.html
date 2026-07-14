@@ -142,6 +142,163 @@
             </div>
           }
 
+          <!-- Virtual Account -->
+          <div class="sim-editline">
+            <button mat-stroked-button (click)="toggleVaPanel(s)">
+              <mat-icon>account_balance_wallet</mat-icon>
+              {{ vaOpen() === s.id ? 'Tutup Virtual Account' : 'Virtual Account' }}
+            </button>
+            <span class="sim-editline__hint">Pantau VA yang dibuat partner & simulasikan pembayarannya</span>
+          </div>
+
+          @if (vaOpen() === s.id) {
+            <div class="va-panel">
+              <div class="va-panel__head">
+                <mat-icon>account_balance_wallet</mat-icon> Virtual Account
+                <button mat-icon-button matTooltip="Muat ulang" (click)="reloadVa(s)">
+                  <mat-icon>refresh</mat-icon>
+                </button>
+              </div>
+              @if (vaMsg()) {
+                <div class="va-panel__msg">{{ vaMsg() }}</div>
+              }
+              @if (!vaLoading() && vaList().length === 0) {
+                <div class="va-panel__empty">
+                  Belum ada VA. Buat lewat <code>POST /v1.0/transfer-va/create-va</code> (lihat contoh di bawah).
+                </div>
+              }
+              @for (va of vaList(); track va.virtualAccountNo) {
+                <div class="va-row">
+                  <div class="va-row__main">
+                    <span class="va-row__no">{{ va.virtualAccountNo }}</span>
+                    <span class="va-row__name">{{ va.virtualAccountName || '—' }}</span>
+                  </div>
+                  <span class="va-row__amount">{{ va.amount }} {{ va.currency }}</span>
+                  <span class="chip" [class.chip--on]="va.status === 'PAID'">
+                    <span class="dot"></span>{{ va.status }}
+                  </span>
+                  <button
+                    mat-flat-button
+                    color="primary"
+                    [disabled]="va.status === 'PAID' || !va.hasCallback"
+                    [matTooltip]="!va.hasCallback ? 'VA dibuat tanpa X-CALLBACK-URL' : 'Simulasikan pembayaran'"
+                    (click)="payVa(s, va)"
+                  >
+                    <mat-icon>payments</mat-icon> Tandai Dibayar
+                  </button>
+                </div>
+              }
+              <details class="sim-try">
+                <summary>Cara membuat VA uji</summary>
+                <pre>curl -X POST http://localhost:{{ s.port }}/v1.0/transfer-va/create-va \
+  -H "X-PARTNER-ID: PARTNER001" -H "X-CALLBACK-URL: http://localhost:8080/api/admin/v1/webhook-sink" \
+  -d '{{ '{' }}"partnerServiceId":"12345678","customerNo":"00000001",
+       "virtualAccountName":"Budi","totalAmount":{{ '{' }}"value":"150000.00","currency":"IDR"{{ '}' }},
+       "virtualAccountTrxType":"C"{{ '}' }}'</pre>
+              </details>
+            </div>
+          }
+
+          <!-- Partner & Rekening -->
+          <div class="sim-editline">
+            <button mat-stroked-button (click)="toggleBankPanel(s)">
+              <mat-icon>groups</mat-icon>
+              {{ bankOpen() === s.id ? 'Tutup Partner & Rekening' : 'Partner & Rekening' }}
+            </button>
+            <span class="sim-editline__hint">Kelola nasabah (partner) & rekening — top-up saldo untuk uji</span>
+          </div>
+
+          @if (bankOpen() === s.id) {
+            <div class="bank-panel">
+              @if (bankMsg()) {
+                <div class="bank-panel__msg">{{ bankMsg() }}</div>
+              }
+
+              <div class="bank-section">
+                <div class="bank-section__head"><mat-icon>badge</mat-icon> Partner</div>
+                @for (p of partnerList(); track p.id) {
+                  <div class="bank-row">
+                    <span class="bank-row__label">{{ p.partnerId }}</span>
+                    @if (p.hasClientSecret) {
+                      <span class="tag">HMAC</span>
+                    }
+                    @if (p.hasPublicKey) {
+                      <span class="tag">RSA</span>
+                    }
+                    <button mat-icon-button matTooltip="Hapus partner" (click)="removePartner(s, p)">
+                      <mat-icon color="warn">delete</mat-icon>
+                    </button>
+                  </div>
+                }
+                <div class="bank-add">
+                  <mat-form-field appearance="outline" class="bank-add__field">
+                    <mat-label>Partner ID baru</mat-label>
+                    <input matInput [value]="newPartnerId()" (input)="newPartnerId.set($any($event.target).value)" placeholder="mis. PARTNER002" />
+                  </mat-form-field>
+                  <mat-form-field appearance="outline" class="bank-add__field">
+                    <mat-label>Client Secret (opsional)</mat-label>
+                    <input matInput [value]="newPartnerSecret()" (input)="newPartnerSecret.set($any($event.target).value)" />
+                  </mat-form-field>
+                  <button mat-flat-button color="primary" (click)="addPartner(s)">
+                    <mat-icon>add</mat-icon> Tambah
+                  </button>
+                </div>
+              </div>
+
+              <div class="bank-section">
+                <div class="bank-section__head"><mat-icon>account_balance</mat-icon> Rekening</div>
+                @for (a of accountList(); track a.id) {
+                  <div class="bank-row">
+                    <div class="bank-row__main">
+                      <span class="bank-row__label">{{ a.accountNo }}</span>
+                      <span class="bank-row__sub">{{ a.holderName || '—' }} · {{ a.partnerLabel }}</span>
+                    </div>
+                    <mat-form-field appearance="outline" class="bank-row__balance">
+                      <mat-label>Saldo</mat-label>
+                      <input
+                        matInput
+                        type="number"
+                        [value]="balanceEdits()[a.id] || a.balance"
+                        (input)="onBalanceEdit(a.id, $any($event.target).value)"
+                      />
+                    </mat-form-field>
+                    <button mat-icon-button matTooltip="Simpan saldo" (click)="saveBalance(s, a)">
+                      <mat-icon>save</mat-icon>
+                    </button>
+                    <button mat-icon-button matTooltip="Hapus rekening" (click)="removeAccount(s, a)">
+                      <mat-icon color="warn">delete</mat-icon>
+                    </button>
+                  </div>
+                }
+                <div class="bank-add">
+                  <mat-form-field appearance="outline" class="bank-add__field">
+                    <mat-label>Partner</mat-label>
+                    <mat-select [value]="newAccPartnerRowId()" (valueChange)="newAccPartnerRowId.set($event)">
+                      @for (p of partnerList(); track p.id) {
+                        <mat-option [value]="p.id">{{ p.partnerId }}</mat-option>
+                      }
+                    </mat-select>
+                  </mat-form-field>
+                  <mat-form-field appearance="outline" class="bank-add__field">
+                    <mat-label>No. Rekening</mat-label>
+                    <input matInput [value]="newAccNo()" (input)="newAccNo.set($any($event.target).value)" />
+                  </mat-form-field>
+                  <mat-form-field appearance="outline" class="bank-add__field">
+                    <mat-label>Nama</mat-label>
+                    <input matInput [value]="newAccHolder()" (input)="newAccHolder.set($any($event.target).value)" />
+                  </mat-form-field>
+                  <mat-form-field appearance="outline" class="bank-add__field bank-add__field--sm">
+                    <mat-label>Saldo awal</mat-label>
+                    <input matInput type="number" [value]="newAccBalance()" (input)="newAccBalance.set($any($event.target).value)" />
+                  </mat-form-field>
+                  <button mat-flat-button color="primary" (click)="addAccount(s)">
+                    <mat-icon>add</mat-icon> Tambah
+                  </button>
+                </div>
+              </div>
+            </div>
+          }
+
           <!-- Cara mencoba -->
           <details class="sim-try">
             <summary>Cara mengirim transaksi uji</summary>

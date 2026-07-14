@@ -33,13 +33,16 @@ public class SimulatorServerManager {
     private final SimulationExecutor executor;
     private final SnapRequestMapper mapper;
     private final AccessTokenService accessTokenService;
+    private final VirtualAccountService virtualAccountService;
     private final Map<UUID, HttpServer> servers = new ConcurrentHashMap<>();
 
     public SimulatorServerManager(SimulationExecutor executor, SnapRequestMapper mapper,
-                                  AccessTokenService accessTokenService) {
+                                  AccessTokenService accessTokenService,
+                                  VirtualAccountService virtualAccountService) {
         this.executor = executor;
         this.mapper = mapper;
         this.accessTokenService = accessTokenService;
+        this.virtualAccountService = virtualAccountService;
     }
 
     public synchronized void start(UUID simulatorId, int port) {
@@ -80,6 +83,24 @@ public class SimulatorServerManager {
             // Endpoint khusus: Access Token B2B (bukan alur scenario/engine)
             if ("POST".equalsIgnoreCase(method) && path.endsWith("/access-token/b2b")) {
                 AccessTokenService.Result r = accessTokenService.issue(simulatorId, headers, body);
+                write(exchange, r.status(), Map.of("Content-Type", "application/json"), r.body());
+                return;
+            }
+
+            // Endpoint khusus: Virtual Account (design.md Lampiran A2) — CRUD stateful,
+            // bukan alur scenario/rule seperti transfer.
+            if ("POST".equalsIgnoreCase(method) && path.endsWith("/transfer-va/create-va")) {
+                VirtualAccountService.Result r = virtualAccountService.create(simulatorId, method, path, headers, body);
+                write(exchange, r.status(), Map.of("Content-Type", "application/json"), r.body());
+                return;
+            }
+            if ("POST".equalsIgnoreCase(method) && path.endsWith("/transfer-va/status")) {
+                VirtualAccountService.Result r = virtualAccountService.inquiry(simulatorId, method, path, headers, body);
+                write(exchange, r.status(), Map.of("Content-Type", "application/json"), r.body());
+                return;
+            }
+            if ("DELETE".equalsIgnoreCase(method) && path.endsWith("/transfer-va/delete-va")) {
+                VirtualAccountService.Result r = virtualAccountService.delete(simulatorId, method, path, headers, body);
                 write(exchange, r.status(), Map.of("Content-Type", "application/json"), r.body());
                 return;
             }

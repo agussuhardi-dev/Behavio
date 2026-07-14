@@ -2,6 +2,7 @@ package id.behavio.app.config;
 
 import id.behavio.core.engine.BehaviorEngine;
 import id.behavio.core.engine.DefaultBehaviorEngine;
+import id.behavio.core.port.AccessTokenStore;
 import id.behavio.core.port.ConfigRepository;
 import id.behavio.core.port.EventPublisher;
 import id.behavio.core.port.SignatureVerifier;
@@ -35,8 +36,9 @@ public class CoreBeansConfig {
                                          ConfigRepository config,
                                          SignatureVerifier signatureVerifier,
                                          WebhookSender webhookSender,
+                                         AccessTokenStore accessTokenStore,
                                          List<EventPublisher> publishers) {
         EventPublisher composite = event -> publishers.forEach(p -> p.publishRequestEvent(event));
-        return new DefaultBehaviorEngine(state, config, composite, signatureVerifier, webhookSender);
+        return new DefaultBehaviorEngine(state, config, composite, signatureVerifier, webhookSender, accessTokenStore);
     }
 }

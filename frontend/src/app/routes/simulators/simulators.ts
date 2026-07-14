@@ -7,12 +7,13 @@ import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import { MatDividerModule } from '@angular/material/divider';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatIconModule } from '@angular/material/icon';
+import { MatInputModule } from '@angular/material/input';
 import { MatMenuModule } from '@angular/material/menu';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatSelectModule } from '@angular/material/select';
 import { MatTooltipModule } from '@angular/material/tooltip';
 
-import { SCENARIOS, Scenario, Simulator, SimulatorService } from './simulator.service';
+import { AccountView, PartnerView, SCENARIOS, Scenario, Simulator, SimulatorService, VirtualAccountView } from './simulator.service';
 import { SimulatorFormDialog, SimulatorFormResult } from './simulator-form-dialog';
 
 interface LiveEvent {
@@ -36,6 +37,7 @@ interface LiveEvent {
     MatDividerModule,
     MatFormFieldModule,
     MatIconModule,
+    MatInputModule,
     MatMenuModule,
     MatProgressBarModule,
     MatSelectModule,
@@ -62,6 +64,25 @@ export class Simulators implements OnInit, OnDestroy {
   readonly editorText = signal<string>('');
   readonly editorError = signal<string>('');
   readonly editorSaved = signal<boolean>(false);
+
+  // panel Virtual Account
+  readonly vaOpen = signal<string | null>(null);
+  readonly vaList = signal<VirtualAccountView[]>([]);
+  readonly vaLoading = signal(false);
+  readonly vaMsg = signal<string>('');
+
+  // panel Partner & Rekening
+  readonly bankOpen = signal<string | null>(null);
+  readonly partnerList = signal<PartnerView[]>([]);
+  readonly accountList = signal<AccountView[]>([]);
+  readonly bankMsg = signal<string>('');
+  readonly newPartnerId = signal('');
+  readonly newPartnerSecret = signal('');
+  readonly newAccPartnerRowId = signal('');
+  readonly newAccNo = signal('');
+  readonly newAccHolder = signal('');
+  readonly newAccBalance = signal('0');
+  readonly balanceEdits = signal<Record<string, string>>({});
 
   ngOnInit() {
     this.reload();
@@ -191,6 +212,37 @@ export class Simulators implements OnInit, OnDestroy {
     return code?.startsWith('200');
   }
 
+  toggleVaPanel(s: Simulator) {
+    if (this.vaOpen() === s.id) {
+      this.vaOpen.set(null);
+      return;
+    }
+    this.vaOpen.set(s.id);
+    this.reloadVa(s);
+  }
+
+  reloadVa(s: Simulator) {
+    this.vaLoading.set(true);
+    this.vaMsg.set('');
+    this.api.listVirtualAccounts(s.id).subscribe({
+      next: list => {
+        this.vaList.set(list);
+        this.vaLoading.set(false);
+      },
+      error: () => this.vaLoading.set(false),
+    });
+  }
+
+  payVa(s: Simulator, va: VirtualAccountView) {
+    this.api.payVirtualAccount(s.id, va.virtualAccountNo).subscribe({
+      next: r => {
+        this.vaMsg.set(r.webhookSent ? 'Payment Notification terkirim ke callback URL.' : r.note);
+        this.reloadVa(s);
+      },
+      error: () => this.vaMsg.set('Gagal menandai VA dibayar.'),
+    });
+  }
+
   /** Port bebas berikutnya (mulai 9001), berguna sebagai saran di form. */
   private suggestedPort(): number {
     const used = new Set(this.sims().map(s => s.port));
@@ -230,5 +282,86 @@ export class Simulators implements OnInit, OnDestroy {
       return;
     }
     this.api.delete(s.id).subscribe(() => this.reload());
+  }
+
+  toggleBankPanel(s: Simulator) {
+    if (this.bankOpen() === s.id) {
+      this.bankOpen.set(null);
+      return;
+    }
+    this.bankOpen.set(s.id);
+    this.reloadBank(s);
+  }
+
+  reloadBank(s: Simulator) {
+    this.bankMsg.set('');
+    this.api.listPartners(s.id).subscribe(list => {
+      this.partnerList.set(list);
+      if (!this.newAccPartnerRowId() && list.length > 0) {
+        this.newAccPartnerRowId.set(list[0].id);
+      }
+    });
+    this.api.listAccounts(s.id).subscribe(list => {
+      this.accountList.set(list);
+      const edits: Record<string, string> = {};
+      list.forEach(a => (edits[a.id] = a.balance));
+      this.balanceEdits.set(edits);
+    });
+  }
+
+  addPartner(s: Simulator) {
+    const partnerId = this.newPartnerId().trim();
+    if (!partnerId) return;
+    this.api.createPartner(s.id, partnerId, this.newPartnerSecret().trim() || undefined).subscribe({
+      next: () => {
+        this.newPartnerId.set('');
+        this.newPartnerSecret.set('');
+        this.bankMsg.set(`Partner "${partnerId}" ditambahkan.`);
+        this.reloadBank(s);
+      },
+      error: err => this.bankMsg.set(err?.error?.error ?? 'Gagal menambah partner.'),
+    });
+  }
+
+  removePartner(s: Simulator, p: PartnerView) {
+    if (!confirm(`Hapus partner "${p.partnerId}"? Rekening miliknya ikut terhapus.`)) return;
+    this.api.deletePartner(s.id, p.id).subscribe(() => this.reloadBank(s));
+  }
+
+  addAccount(s: Simulator) {
+    const accNo = this.newAccNo().trim();
+    if (!accNo || !this.newAccPartnerRowId()) return;
+    this.api
+      .createAccount(s.id, this.newAccPartnerRowId(), accNo, this.newAccHolder().trim(), this.newAccBalance())
+      .subscribe({
+        next: () => {
+          this.newAccNo.set('');
+          this.newAccHolder.set('');
+          this.newAccBalance.set('0');
+          this.bankMsg.set(`Rekening "${accNo}" ditambahkan.`);
+          this.reloadBank(s);
+        },
+        error: err => this.bankMsg.set(err?.error?.error ?? 'Gagal menambah rekening.'),
+      });
+  }
+
+  onBalanceEdit(accountId: string, value: string) {
+    this.balanceEdits.update(m => ({ ...m, [accountId]: value }));
+  }
+
+  saveBalance(s: Simulator, a: AccountView) {
+    const value = this.balanceEdits()[a.id];
+    this.api.setAccountBalance(s.id, a.id, value).subscribe({
+      next: () => {
+        this.bankMsg.set(`Saldo ${a.accountNo} diperbarui.`);
+        this.reloadBank(s);
+      },
+      error: err => this.bankMsg.set(err?.error?.error ?? 'Gagal mengubah saldo.'),
+    });
+  }
+
+  removeAccount(s: Simulator, a: AccountView) {
+    if (!confirm(`Hapus rekening "${a.accountNo}"?`)) return;
+    this.api.deleteAccount(s.id, a.id).subscribe(() => this.reloadBank(s));
   }
 }
