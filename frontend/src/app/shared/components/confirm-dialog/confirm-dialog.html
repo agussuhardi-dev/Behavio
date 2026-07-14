@@ -1,0 +1,15 @@
+<h2 mat-dialog-title class="cd__title">
+  <mat-icon [class.cd__icon--danger]="data.danger">{{ data.danger ? 'warning' : 'help_outline' }}</mat-icon>
+  {{ data.title }}
+</h2>
+
+<mat-dialog-content>
+  <p class="cd__msg">{{ data.message }}</p>
+</mat-dialog-content>
+
+<mat-dialog-actions align="end">
+  <button mat-stroked-button [mat-dialog-close]="false">{{ data.cancelText || 'Batal' }}</button>
+  <button mat-flat-button [color]="data.danger ? 'warn' : 'primary'" [mat-dialog-close]="true" cdkFocusInitial>
+    {{ data.confirmText || 'Ya' }}
+  </button>
+</mat-dialog-actions>

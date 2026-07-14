@@ -1,0 +1,20 @@
+.cd__title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+
+  mat-icon {
+    color: #5b7cfa;
+    flex: none;
+  }
+  .cd__icon--danger {
+    color: #e0533f;
+  }
+}
+
+.cd__msg {
+  margin: 0;
+  line-height: 1.55;
+  opacity: 0.85;
+  overflow-wrap: anywhere;
+}

@@ -48,8 +48,8 @@
             <mat-expansion-panel class="qris-ep" [expanded]="editingEp() === ep.key" (opened)="editingEp() !== ep.key ? {} : null">
               <mat-expansion-panel-header>
                 <mat-panel-title>
-                  <span class="qris-ep__method">{{ ep.key === 'qris-apply-ott' ? 'POST' : 'POST' }}</span>
-                  <span>{{ ep.label }}</span>
+                  <span class="qris-ep__method">POST</span>
+                  <span class="qris-ep__label">{{ ep.label }}</span>
                 </mat-panel-title>
                 <mat-panel-description>{{ ep.desc }}</mat-panel-description>
               </mat-expansion-panel-header>

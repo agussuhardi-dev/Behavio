@@ -23,6 +23,10 @@ export function errorInterceptor(req: HttpRequest<unknown>, next: HttpHandlerFn)
     if (error.error?.msg) {
       return error.error.msg;
     }
+    // Admin API Behavio membalas {"error": "..."} — tanpa ini toast hanya "409 " tanpa sebab.
+    if (typeof error.error?.error === 'string') {
+      return error.error.error;
+    }
     return `${error.status} ${error.statusText}`;
   };
 
