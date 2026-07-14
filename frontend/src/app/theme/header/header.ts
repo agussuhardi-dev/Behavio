@@ -5,10 +5,7 @@ import { MatToolbarModule } from '@angular/material/toolbar';
 import screenfull from 'screenfull';
 
 import { Branding } from '../widgets/branding';
-import { GithubButton } from '../widgets/github-button';
-import { NotificationButton } from '../widgets/notification-button';
 import { TranslateButton } from '../widgets/translate-button';
-import { UserButton } from '../widgets/user-button';
 
 @Component({
   selector: 'app-header',
@@ -18,23 +15,13 @@ import { UserButton } from '../widgets/user-button';
     class: 'matero-header',
   },
   encapsulation: ViewEncapsulation.None,
-  imports: [
-    MatToolbarModule,
-    MatButtonModule,
-    MatIconModule,
-    Branding,
-    GithubButton,
-    NotificationButton,
-    TranslateButton,
-    UserButton,
-  ],
+  imports: [MatToolbarModule, MatButtonModule, MatIconModule, Branding, TranslateButton],
 })
 export class Header {
   readonly showToggle = input(true);
   readonly showBranding = input(false);
 
   readonly toggleSidenav = output<void>();
-  readonly toggleSidenavNotice = output<void>();
 
   toggleFullscreen() {
     if (screenfull.isEnabled) {

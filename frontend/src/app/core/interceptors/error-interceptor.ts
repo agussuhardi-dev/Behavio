@@ -5,7 +5,6 @@ import { HotToastService } from '@ngxpert/hot-toast';
 import { catchError, throwError } from 'rxjs';
 
 export enum STATUS {
-  UNAUTHORIZED = 401,
   FORBIDDEN = 403,
   NOT_FOUND = 404,
   INTERNAL_SERVER_ERROR = 500,
@@ -39,9 +38,6 @@ export function errorInterceptor(req: HttpRequest<unknown>, next: HttpHandlerFn)
       } else {
         console.error('ERROR', error);
         toast.error(getMessage(error));
-        if (error.status === STATUS.UNAUTHORIZED) {
-          router.navigateByUrl('/auth/login');
-        }
       }
 
       return throwError(() => error);

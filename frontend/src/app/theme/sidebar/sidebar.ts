@@ -6,7 +6,6 @@ import { MatToolbarModule } from '@angular/material/toolbar';
 
 import { Sidemenu } from '../sidemenu/sidemenu';
 import { Branding } from '../widgets/branding';
-import { UserPanel } from './user-panel';
 
 @Component({
   selector: 'app-sidebar',
@@ -20,12 +19,10 @@ import { UserPanel } from './user-panel';
     MatToolbarModule,
     Branding,
     Sidemenu,
-    UserPanel,
   ],
 })
 export class Sidebar {
   readonly showToggle = input(true);
-  readonly showUser = input(true);
   readonly showHeader = input(true);
   readonly toggleChecked = input(false);
 

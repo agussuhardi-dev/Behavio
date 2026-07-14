@@ -17,10 +17,6 @@
         "build": {
           "builder": "@angular/build:application",
           "options": {
-            "allowedCommonJsDependencies": [
-              "base64-js",
-              "moment"
-            ],
             "outputPath": "dist/starter",
             "index": "src/index.html",
             "browser": "src/main.ts",
@@ -36,9 +32,6 @@
             ],
             "styles": [
               "src/styles.scss"
-            ],
-            "scripts": [
-              "node_modules/apexcharts/dist/apexcharts.min.js"
             ]
           },
           "configurations": {
@@ -105,9 +98,6 @@
             "styles": [
               "src/styles.scss"
             ],
-            "scripts": [
-              "node_modules/apexcharts/dist/apexcharts.min.js"
-            ],
             "assets": [
               {
                 "glob": "**/*",
@@ -123,25 +113,6 @@
               "src/**/*.ts",
               "src/**/*.html"
             ]
-          }
-        },
-        "e2e": {
-          "builder": "@angular/build:protractor",
-          "options": {
-            "protractorConfig": "e2e/protractor.conf.js",
-            "devServerTarget": "starter:serve"
-          },
-          "configurations": {
-            "production": {
-              "devServerTarget": "starter:serve:production"
-            }
-          }
-        },
-        "deploy": {
-          "builder": "angular-cli-ghpages:deploy",
-          "options": {
-            "baseHref": "/starter/",
-            "noSilent": true
           }
         }
       }

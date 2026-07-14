@@ -45,7 +45,6 @@
     <mat-divider inset class="m-x-0 m-y-24" />
     <h3 class="f-w-400">Navigation</h3>
     <div class="m-l-8">
-      <mat-slide-toggle formControlName="showUserPanel">Show User Panel</mat-slide-toggle>
       <h4 class="f-w-400">Position</h4>
       <mat-radio-group formControlName="navPos">
         <mat-radio-button class="m-x-4" value="side">Side</mat-radio-button>
@@ -62,5 +61,10 @@
         <mat-radio-button class="m-x-4" value="rtl">RTL</mat-radio-button>
       </mat-radio-group>
     </div>
+    <mat-divider inset class="m-x-0 m-y-24" />
+    <button matButton="outlined" type="button" (click)="restore()">
+      <mat-icon>restore</mat-icon>
+      Restore defaults
+    </button>
   </form>
 </ng-template>

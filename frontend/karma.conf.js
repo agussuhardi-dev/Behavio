@@ -4,13 +4,14 @@
 module.exports = function (config) {
   config.set({
     basePath: '',
-    frameworks: ['jasmine', '@angular-devkit/build-angular'],
+    // Builder @angular/build:karma menyuntik framework & plugin-nya sendiri —
+    // jangan daftarkan @angular-devkit/build-angular di sini (paket itu tak terpasang).
+    frameworks: ['jasmine'],
     plugins: [
       require('karma-jasmine'),
       require('karma-chrome-launcher'),
       require('karma-jasmine-html-reporter'),
-      require('karma-coverage'),
-      require('@angular-devkit/build-angular/plugins/karma')
+      require('karma-coverage')
     ],
     client: {
       clearContext: false // leave Jasmine Spec Runner output visible in browser

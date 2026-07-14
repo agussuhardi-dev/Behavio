@@ -11,11 +11,7 @@
 
   <!-- Header Above -->
   @if (options.showHeader && options.headerPos === 'above') {
-    <app-header
-      (toggleSidenav)="sidenav.toggle()"
-      (toggleSidenavNotice)="sidenavNotice.toggle()"
-      [showBranding]="true"
-    />
+    <app-header (toggleSidenav)="sidenav.toggle()" [showBranding]="true" />
   }
 
   <mat-sidenav-container class="matero-container" autosize autoFocus>
@@ -29,16 +25,11 @@
     >
       <app-sidebar
         [showToggle]="!isOver"
-        [showUser]="options.showUserPanel"
         [showHeader]="options.headerPos !== 'above'"
         [toggleChecked]="options.sidenavCollapsed"
         (toggleCollapsed)="toggleCollapsed()"
         (closeSidenav)="sidenav.close()"
       />
-    </mat-sidenav>
-
-    <mat-sidenav #sidenavNotice position="end" mode="over">
-      <app-sidebar-notice />
     </mat-sidenav>
 
     <mat-sidenav-content #content class="matero-content">
@@ -47,7 +38,6 @@
           [showToggle]="!options.sidenavCollapsed && options.navPos !== 'top'"
           [showBranding]="options.navPos === 'top'"
           (toggleSidenav)="sidenav.toggle()"
-          (toggleSidenavNotice)="sidenavNotice.toggle()"
         />
       }
 
@@ -61,6 +51,5 @@
     </mat-sidenav-content>
   </mat-sidenav-container>
 
-  <!-- Demo purposes only -->
   <app-customizer (optionsChange)="updateOptions($event)" />
 </div>

@@ -41,6 +41,7 @@ describe('ErrorInterceptor', () => {
 
   afterEach(() => httpMock.verify());
 
+  // Behavio tak punya halaman login: 401 cukup dilaporkan lewat toast, tanpa redirect.
   it('should handle status code 401', () => {
     spyOn(router, 'navigateByUrl');
     spyOn(toast, 'error');
@@ -49,7 +50,7 @@ describe('ErrorInterceptor', () => {
     httpMock.expectOne('/user').flush({}, { status: 401, statusText: 'Unauthorized' });
 
     expect(toast.error).toHaveBeenCalledWith('401 Unauthorized');
-    expect(router.navigateByUrl).toHaveBeenCalledWith('/auth/login');
+    expect(router.navigateByUrl).not.toHaveBeenCalled();
   });
 
   it('should handle status code 403', () => {

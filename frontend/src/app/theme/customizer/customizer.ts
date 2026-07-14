@@ -92,4 +92,9 @@ export class Customizer {
   sendOptions(options: AppSettings) {
     this.optionsChange.emit(options);
   }
+
+  restore() {
+    this.settings.reset();
+    window.location.reload();
+  }
 }
