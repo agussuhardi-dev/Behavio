@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
@@ -28,6 +28,13 @@ interface EpMeta {
   curl: string; curlKey: string; scenarioList: Scenario[];
 }
 
+interface LiveEvent {
+  method: string; path: string; httpStatus: number;
+  responseCode: string; durationMillis: number; at: string;
+  requestHeaders: Record<string, string>; requestBody: string; responseBody: string;
+  open: boolean;
+}
+
 @Component({
   selector: 'app-qris',
   standalone: true,
@@ -41,7 +48,7 @@ interface EpMeta {
   templateUrl: './qris.html',
   styleUrl: './qris.scss',
 })
-export class Qris implements OnInit {
+export class Qris implements OnInit, OnDestroy {
   private readonly api = inject(SimulatorService);
   private readonly dialog = inject(MatDialog);
 
@@ -57,6 +64,12 @@ export class Qris implements OnInit {
   readonly qrLoading = signal(false);
   readonly qrMsg = signal('');
   readonly payAmounts = signal<Record<string, string>>({});
+
+  // Live View (SSE) — request QRIS real-time
+  readonly liveOpen = signal(false);
+  readonly liveEvents = signal<LiveEvent[]>([]);
+  readonly qrFlash = signal(false);
+  private es?: EventSource;
 
   // per-endpoint scenario editing
   readonly activeScenarios = signal<Record<string, string>>({});
@@ -162,6 +175,8 @@ export class Qris implements OnInit {
 
   ngOnInit() { this.reload(); }
 
+  ngOnDestroy() { this.disconnectLive(); }
+
   reload() {
     this.loading.set(true);
     this.api.list().subscribe({
@@ -170,11 +185,64 @@ export class Qris implements OnInit {
         const keep = sims.some(s => s.id === this.selectedSimId());
         if (!keep && sims.length > 0) this.selectedSimId.set(sims[0].id);
         if (sims.length === 0) this.selectedSimId.set('');
-        if (this.selectedSimId()) { this.reloadQr(); this.syncAllScenarios(); }
+        if (this.selectedSimId()) { this.reloadQr(); this.syncAllScenarios(); this.connectLive(); }
+        else this.disconnectLive();
         this.loading.set(false);
       },
       error: () => this.loading.set(false),
     });
+  }
+
+  // ---- Live View (SSE) ----
+
+  /** Sambungkan stream SSE simulator terpilih. Aktif walau panel Live tertutup
+   *  agar card "QR Dibuat" tetap auto-update saat ada request generate masuk. */
+  private connectLive() {
+    const id = this.selectedSimId();
+    if (!id) return;
+    this.disconnectLive();
+    this.es = new EventSource(this.api.streamUrl(id));
+    this.es.addEventListener('request', (e: MessageEvent) => {
+      try {
+        const d = JSON.parse(e.data);
+        const ev: LiveEvent = {
+          method: d.method, path: d.path, httpStatus: d.httpStatus,
+          responseCode: d.responseCode, durationMillis: d.durationMillis,
+          at: new Date().toLocaleTimeString(),
+          requestHeaders: d.requestHeaders ?? {}, requestBody: d.requestBody ?? '',
+          responseBody: d.responseBody ?? '', open: false,
+        };
+        this.liveEvents.update(list => [ev, ...list].slice(0, 50));
+        // Request QRIS masuk → segarkan daftar QR + kedipkan card sebagai penanda.
+        this.reloadQr();
+        this.qrFlash.set(true);
+        setTimeout(() => this.qrFlash.set(false), 900);
+      } catch { /* abaikan payload tak valid */ }
+    });
+  }
+
+  private disconnectLive() { this.es?.close(); this.es = undefined; }
+
+  toggleLive() { this.liveOpen.set(!this.liveOpen()); }
+
+  clearLive() { this.liveEvents.set([]); }
+
+  isLiveSuccess(code: string): boolean { return !!code && code.startsWith('2'); }
+
+  toggleEvent(ev: LiveEvent) {
+    this.liveEvents.update(list => list.map(e => e === ev ? { ...e, open: !e.open } : e));
+  }
+
+  /** Rapikan JSON agar mudah dibaca saat debugging; biarkan apa adanya bila bukan JSON. */
+  prettyJson(text: string): string {
+    if (!text) return '(kosong)';
+    try { return JSON.stringify(JSON.parse(text), null, 2); } catch { return text; }
+  }
+
+  headerLines(h: Record<string, string>): string {
+    const keys = Object.keys(h ?? {});
+    if (keys.length === 0) return '(tidak ada header)';
+    return keys.sort().map(k => `${k}: ${h[k]}`).join('\n');
   }
 
   private suggestedPort(): number {
@@ -222,8 +290,10 @@ export class Qris implements OnInit {
   onSelectSim(id: string) {
     this.selectedSimId.set(id);
     this.editingEp.set(null);
+    this.liveEvents.set([]);
     this.reloadQr();
     this.syncAllScenarios();
+    this.connectLive();
   }
 
   // ---- scenario per-endpoint ----

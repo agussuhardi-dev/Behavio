@@ -5,6 +5,7 @@ import com.sun.net.httpserver.HttpServer;
 import id.behavio.core.engine.SimRequest;
 import id.behavio.core.engine.SimResponse;
 import id.behavio.core.port.EndpointRegistry;
+import id.behavio.core.port.EventPublisher;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -42,19 +43,23 @@ public class SimulatorServerManager {
     private final VirtualAccountService virtualAccountService;
     private final QrisService qrisService;
     private final EndpointRegistry endpointRegistry;
+    /** Fan-out ke semua EventPublisher (log + request_logs + SSE Live View), sama seperti CoreBeansConfig. */
+    private final EventPublisher events;
     private final Map<UUID, HttpServer> servers = new ConcurrentHashMap<>();
 
     public SimulatorServerManager(SimulationExecutor executor, SnapRequestMapper mapper,
                                   AccessTokenService accessTokenService,
                                   VirtualAccountService virtualAccountService,
                                   QrisService qrisService,
-                                  EndpointRegistry endpointRegistry) {
+                                  EndpointRegistry endpointRegistry,
+                                  List<EventPublisher> eventPublishers) {
         this.executor = executor;
         this.mapper = mapper;
         this.accessTokenService = accessTokenService;
         this.virtualAccountService = virtualAccountService;
         this.qrisService = qrisService;
         this.endpointRegistry = endpointRegistry;
+        this.events = event -> eventPublishers.forEach(p -> p.publishRequestEvent(event));
     }
 
     public synchronized void start(UUID simulatorId, int port) {
@@ -86,6 +91,7 @@ public class SimulatorServerManager {
     }
 
     private void handle(UUID simulatorId, HttpExchange exchange) throws IOException {
+        long startNanos = System.nanoTime();
         try {
             String method = exchange.getRequestMethod();
             String path = exchange.getRequestURI().getPath();
@@ -116,34 +122,20 @@ public class SimulatorServerManager {
                     VirtualAccountService.Result r = virtualAccountService.delete(simulatorId, method, path, headers, body);
                     write(exchange, r.status(), Map.of("Content-Type", "application/json"), r.body());
                 }
-                case "qris-generate" -> {
-                    QrisService.Result r = qrisService.generate(simulatorId, method, path, headers, body);
-                    write(exchange, r.status(), Map.of("Content-Type", "application/json"), r.body());
-                }
-                case "qris-query" -> {
-                    QrisService.Result r = qrisService.query(simulatorId, method, path, headers, body);
-                    write(exchange, r.status(), Map.of("Content-Type", "application/json"), r.body());
-                }
-                case "qris-refund" -> {
-                    QrisService.Result r = qrisService.refund(simulatorId, method, path, headers, body);
-                    write(exchange, r.status(), Map.of("Content-Type", "application/json"), r.body());
-                }
-                case "qris-cancel", "qris-expire" -> {
-                    QrisService.Result r = qrisService.cancel(simulatorId, method, path, headers, body);
-                    write(exchange, r.status(), Map.of("Content-Type", "application/json"), r.body());
-                }
-                case "qris-decode" -> {
-                    QrisService.Result r = qrisService.decode(simulatorId, method, path, headers, body);
-                    write(exchange, r.status(), Map.of("Content-Type", "application/json"), r.body());
-                }
-                case "qris-payment" -> {
-                    QrisService.Result r = qrisService.payment(simulatorId, method, path, headers, body);
-                    write(exchange, r.status(), Map.of("Content-Type", "application/json"), r.body());
-                }
-                case "qris-apply-ott" -> {
-                    QrisService.Result r = qrisService.applyOtt(simulatorId, method, path, headers, body);
-                    write(exchange, r.status(), Map.of("Content-Type", "application/json"), r.body());
-                }
+                case "qris-generate" -> writeQris(simulatorId, method, path, headers, body, exchange,
+                        qrisService.generate(simulatorId, method, path, headers, body), startNanos);
+                case "qris-query" -> writeQris(simulatorId, method, path, headers, body, exchange,
+                        qrisService.query(simulatorId, method, path, headers, body), startNanos);
+                case "qris-refund" -> writeQris(simulatorId, method, path, headers, body, exchange,
+                        qrisService.refund(simulatorId, method, path, headers, body), startNanos);
+                case "qris-cancel", "qris-expire" -> writeQris(simulatorId, method, path, headers, body, exchange,
+                        qrisService.cancel(simulatorId, method, path, headers, body), startNanos);
+                case "qris-decode" -> writeQris(simulatorId, method, path, headers, body, exchange,
+                        qrisService.decode(simulatorId, method, path, headers, body), startNanos);
+                case "qris-payment" -> writeQris(simulatorId, method, path, headers, body, exchange,
+                        qrisService.payment(simulatorId, method, path, headers, body), startNanos);
+                case "qris-apply-ott" -> writeQris(simulatorId, method, path, headers, body, exchange,
+                        qrisService.applyOtt(simulatorId, method, path, headers, body), startNanos);
                 case "transfer" -> handleTransfer(simulatorId, method, path, headers, body, exchange);
                 default -> write(exchange, 404, Map.of("Content-Type", "application/json"),
                         "{\"responseCode\":\"4040400\",\"responseMessage\":\"Operation not implemented\"}");
@@ -155,6 +147,37 @@ public class SimulatorServerManager {
         } finally {
             exchange.close();
         }
+    }
+
+    /**
+     * Tulis respons QRIS lalu siarkan RequestEvent ke Live View (SSE) + request_logs.
+     * Transfer sudah emit event dari dalam engine; QRIS lewat QrisService langsung
+     * sehingga event dipublikasikan di sini (pasca-tulis, di luar transaksi bisnis).
+     */
+    private void writeQris(UUID simulatorId, String method, String path,
+                           Map<String, String> requestHeaders, String requestBody,
+                           HttpExchange exchange, QrisService.Result r, long startNanos) throws IOException {
+        write(exchange, r.status(), Map.of("Content-Type", "application/json"), r.body());
+        long durationMillis = (System.nanoTime() - startNanos) / 1_000_000;
+        try {
+            events.publishRequestEvent(new EventPublisher.RequestEvent(
+                    simulatorId.toString(), method, path, r.status(),
+                    extractResponseCode(r.body()), durationMillis,
+                    requestHeaders, requestBody, r.body()));
+        } catch (Exception e) {
+            log.warn("Simulator {} gagal publikasi event QRIS: {}", simulatorId, e.toString());
+        }
+    }
+
+    /** Ambil nilai "responseCode" dari body JSON tanpa parsing penuh. */
+    private static String extractResponseCode(String body) {
+        if (body == null) return "";
+        int i = body.indexOf("\"responseCode\"");
+        if (i < 0) return "";
+        int q1 = body.indexOf('"', i + 14);
+        if (q1 < 0) return "";
+        int q2 = body.indexOf('"', q1 + 1);
+        return q2 < 0 ? "" : body.substring(q1 + 1, q2);
     }
 
     private void handleTransfer(UUID simulatorId, String method, String path, Map<String, String> headers,

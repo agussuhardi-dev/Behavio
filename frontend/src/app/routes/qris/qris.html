@@ -114,9 +114,11 @@
       </mat-card>
 
       <!-- Kanan: daftar QR -->
-      <mat-card class="qris-card" appearance="outlined">
+      <mat-card class="qris-card" appearance="outlined" [class.qris-card--flash]="qrFlash()">
         <div class="qris-card__head">
           <mat-icon>qr_code_2</mat-icon> QR Dibuat
+          <span class="qris-card__live" [class.qris-card__live--on]="!!selectedSim"><span class="dot"></span>auto</span>
+          <span class="qris-selector__spacer"></span>
           <button mat-icon-button matTooltip="Muat ulang" (click)="reloadQr()"><mat-icon>refresh</mat-icon></button>
         </div>
         <mat-divider />
@@ -150,5 +152,62 @@
         </div>
       </mat-card>
     </div>
+
+    <!-- Live View: setiap request QRIS terekam & bisa dicek manual -->
+    <mat-card class="qris-card qris-live" appearance="outlined">
+      <div class="qris-card__head">
+        <mat-icon>bolt</mat-icon> Live View — request QRIS real-time
+        @if (liveEvents().length > 0) { <span class="qris-live__count">{{ liveEvents().length }}</span> }
+        <span class="qris-selector__spacer"></span>
+        @if (liveEvents().length > 0) {
+          <button mat-icon-button matTooltip="Bersihkan" (click)="clearLive()"><mat-icon>clear_all</mat-icon></button>
+        }
+        <button mat-icon-button [matTooltip]="liveOpen() ? 'Sembunyikan' : 'Tampilkan'" (click)="toggleLive()">
+          <mat-icon>{{ liveOpen() ? 'expand_less' : 'expand_more' }}</mat-icon>
+        </button>
+      </div>
+      @if (liveOpen()) {
+        <mat-divider />
+        <div class="qris-card__body">
+          @if (liveEvents().length === 0) {
+            <div class="qris-live__empty">Menunggu request… kirim ke port {{ selectedSim?.port }} lalu muncul di sini.</div>
+          }
+          @for (e of liveEvents(); track $index) {
+            <div class="live-item" [class.live-item--ok]="isLiveSuccess(e.responseCode)" [class.live-item--err]="!isLiveSuccess(e.responseCode)">
+              <button class="live-row" type="button" (click)="toggleEvent(e)">
+                <mat-icon class="live-row__chev">{{ e.open ? 'expand_more' : 'chevron_right' }}</mat-icon>
+                <span class="live-row__time">{{ e.at }}</span>
+                <span class="live-row__method">{{ e.method }}</span>
+                <span class="live-row__path">{{ e.path }}</span>
+                <span class="live-row__code">{{ e.httpStatus }} · {{ e.responseCode }}</span>
+                <span class="live-row__ms">{{ e.durationMillis }}ms</span>
+              </button>
+              @if (e.open) {
+                <div class="live-detail">
+                  <div class="live-detail__block">
+                    <div class="live-detail__label"><mat-icon>north_east</mat-icon> Request Header
+                      <button mat-icon-button matTooltip="Salin" (click)="copy(headerLines(e.requestHeaders), 'lh' + $index)"><mat-icon>{{ copiedKey() === 'lh' + $index ? 'check' : 'content_copy' }}</mat-icon></button>
+                    </div>
+                    <pre>{{ headerLines(e.requestHeaders) }}</pre>
+                  </div>
+                  <div class="live-detail__block">
+                    <div class="live-detail__label"><mat-icon>north_east</mat-icon> Request Body
+                      <button mat-icon-button matTooltip="Salin" (click)="copy(e.requestBody, 'lq' + $index)"><mat-icon>{{ copiedKey() === 'lq' + $index ? 'check' : 'content_copy' }}</mat-icon></button>
+                    </div>
+                    <pre>{{ prettyJson(e.requestBody) }}</pre>
+                  </div>
+                  <div class="live-detail__block">
+                    <div class="live-detail__label"><mat-icon>south_west</mat-icon> Response Body
+                      <button mat-icon-button matTooltip="Salin" (click)="copy(e.responseBody, 'ls' + $index)"><mat-icon>{{ copiedKey() === 'ls' + $index ? 'check' : 'content_copy' }}</mat-icon></button>
+                    </div>
+                    <pre>{{ prettyJson(e.responseBody) }}</pre>
+                  </div>
+                </div>
+              }
+            </div>
+          }
+        </div>
+      }
+    </mat-card>
   }
 </div>

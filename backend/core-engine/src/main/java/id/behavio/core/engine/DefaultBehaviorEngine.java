@@ -102,7 +102,8 @@ public final class DefaultBehaviorEngine implements BehaviorEngine {
         long durationMs = (System.nanoTime() - start) / 1_000_000;
         events.publishRequestEvent(new EventPublisher.RequestEvent(
                 simulatorId.toString(), request.method(), request.path(),
-                response.httpStatus(), response.responseCode(), durationMs));
+                response.httpStatus(), response.responseCode(), durationMs,
+                request.headers(), request.rawBody(), response.body()));
         return response;
     }
 
