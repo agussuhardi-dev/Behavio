@@ -35,6 +35,28 @@ public final class InterbankTransferBlueprint {
 
     private InterbankTransferBlueprint() {}
 
+    /**
+     * Contoh request untuk export OpenAPI (design.md §15.5, Lampiran A.2 + service 18).
+     * Beda dari intrabank: wajib {@code beneficiaryBankCode} — rekening tujuan ada di
+     * bank lain, jadi tak perlu (dan tak akan) ditemukan di state simulator ini.
+     */
+    public static Map<String, Object> requestExample() {
+        Map<String, Object> amount = new LinkedHashMap<>();
+        amount.put("value", "25000.00");
+        amount.put("currency", "IDR");
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("partnerReferenceNo", "2026071500000000000005");
+        body.put("amount", amount);
+        body.put("beneficiaryAccountNo", "8877665544");
+        body.put("beneficiaryBankCode", "014");
+        body.put("beneficiaryAccountName", "Citra Penerima");
+        body.put("sourceAccountNo", "1234567890");
+        body.put("transactionDate", "2026-07-15T10:00:00+07:00");
+        body.put("additionalInfo", Map.of());
+        return body;
+    }
+
     /** Normal: tolak bila saldo < amount, selain itu transfer sukses (debit saja). */
     public static Scenario normal() {
         Rule insufficient = new Rule(

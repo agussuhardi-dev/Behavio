@@ -20,6 +20,16 @@ public final class QrisQueryBlueprint {
 
     private QrisQueryBlueprint() {}
 
+    /** Contoh request untuk export OpenAPI (design.md §15.5, Lampiran A3.4 service 51). */
+    public static Map<String, Object> requestExample() {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("originalReferenceNo", "BHV17529000000001");
+        body.put("originalPartnerReferenceNo", "2026071500000000000010");
+        body.put("serviceCode", "47");
+        body.put("additionalInfo", Map.of());
+        return body;
+    }
+
     public static Scenario normal() {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("responseCode", "{{responseCode}}");

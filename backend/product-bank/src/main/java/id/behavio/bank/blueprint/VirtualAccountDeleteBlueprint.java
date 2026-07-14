@@ -22,6 +22,20 @@ public final class VirtualAccountDeleteBlueprint {
 
     private VirtualAccountDeleteBlueprint() {}
 
+    /**
+     * Contoh request untuk export OpenAPI (design.md §15.5, Lampiran A2.1 service 25).
+     * Method-nya DELETE tapi SNAP tetap mengirim body — itu memang bentuk spec-nya.
+     */
+    public static Map<String, Object> requestExample() {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("partnerServiceId", "  088899");
+        body.put("customerNo", "12345678901234567890");
+        body.put("virtualAccountNo", "  08889912345678901234567890");
+        body.put("trxId", "INV-2026-0715-001");
+        body.put("additionalInfo", Map.of());
+        return body;
+    }
+
     public static Scenario normal() {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("responseCode", "{{responseCode}}");

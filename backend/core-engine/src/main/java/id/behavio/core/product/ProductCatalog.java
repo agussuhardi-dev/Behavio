@@ -3,6 +3,7 @@ package id.behavio.core.product;
 import id.behavio.core.rule.Scenario;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -43,5 +44,29 @@ public interface ProductCatalog {
      */
     default ActionCodec actionCodec() {
         return ActionCodec.NONE;
+    }
+
+    /**
+     * Contoh request body untuk sebuah operasi — dipakai export OpenAPI agar request di
+     * Postman langsung siap kirim (design.md §15.5).
+     *
+     * Ditulis tangan di blueprint, BUKAN diturunkan dari rule/template: bentuk bersarang
+     * SNAP ({@code amount: {value, currency}}) mustahil ditebak dari nama field yang
+     * dibaca engine, dan contoh yang bentuknya salah lebih menyesatkan daripada tak ada.
+     *
+     * {@code Optional.empty()} = tak ada contoh (mis. operasi GET tanpa body, atau
+     * endpoint kustom yang memang bukan milik katalog).
+     */
+    default Optional<Map<String, Object>> requestExample(String operationKey) {
+        return Optional.empty();
+    }
+
+    /**
+     * Header yang diharapkan sebuah operasi — dipakai export OpenAPI (design.md §15).
+     * Default = set transaksional SNAP; produk meng-override untuk operasi yang polanya
+     * berbeda (mis. {@code access-token} yang memakai {@code X-CLIENT-KEY} + RSA).
+     */
+    default List<HeaderSpec> requestHeaders(String operationKey) {
+        return HeaderSpec.snapTransactional();
     }
 }

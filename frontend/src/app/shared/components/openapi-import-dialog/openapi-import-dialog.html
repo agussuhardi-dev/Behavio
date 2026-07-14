@@ -1,0 +1,116 @@
+<h2 mat-dialog-title class="oai__title">
+  <mat-icon>upload_file</mat-icon>
+  Impor OpenAPI — {{ data.simulatorName }}
+</h2>
+
+<mat-dialog-content class="oai__content">
+  @if (busy()) {
+    <mat-progress-bar mode="indeterminate" />
+  }
+
+  <div class="oai__pick">
+    <button mat-stroked-button (click)="file.click()">
+      <mat-icon>folder_open</mat-icon>
+      Pilih file (.yaml / .json)
+    </button>
+    <input #file type="file" accept=".yaml,.yml,.json,application/json" hidden (change)="pick($event)" />
+    @if (fileName()) {
+      <span class="oai__file">{{ fileName() }}</span>
+    }
+  </div>
+
+  @if (error()) {
+    <div class="oai__error">
+      <mat-icon>error_outline</mat-icon>
+      <span>{{ error() }}</span>
+    </div>
+  }
+
+  @if (rows().length) {
+    @if (sourceTitle()) {
+      <p class="oai__source">Sumber: <b>{{ sourceTitle() }}</b> · {{ rows().length }} path ditemukan</p>
+    }
+
+    <p class="oai__hint">
+      Path tiap bank berbeda, jadi sistem hanya <b>menyarankan</b> operasi — periksa dulu
+      sebelum diterapkan. Belum ada yang berubah sampai Anda menekan Terapkan.
+    </p>
+
+    <table class="oai__table">
+      <thead>
+        <tr>
+          <th>Path di spec</th>
+          <th>Aksi</th>
+          <th>Operasi</th>
+          <th>Perilaku</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (row of rows(); track row.path + row.method) {
+          <tr [class.oai__row--skip]="row.action === 'SKIP'">
+            <td>
+              <div class="oai__path">
+                <span class="oai__method">{{ row.method }}</span>
+                <code>{{ row.path }}</code>
+              </div>
+              <div class="oai__label">
+                <mat-icon class="oai__conf" [matTooltip]="row.confidence">{{ confidenceIcon(row) }}</mat-icon>
+                {{ row.label }}
+              </div>
+            </td>
+            <td>
+              <mat-select class="oai__select" [value]="row.action"
+                          (valueChange)="setAction(row, $event)">
+                <mat-option value="CATALOG">Petakan ke operasi</mat-option>
+                <mat-option value="CUSTOM">Buat endpoint kustom</mat-option>
+                <mat-option value="SKIP">Lewati</mat-option>
+              </mat-select>
+            </td>
+            <td>
+              @if (row.action === 'CATALOG') {
+                <mat-select class="oai__select" [value]="row.operation"
+                            (valueChange)="setOperation(row, $event)"
+                            [class.oai__select--dup]="isDuplicate(row)">
+                  @for (op of data.operations; track op.key) {
+                    <mat-option [value]="op.key">{{ op.label }}</mat-option>
+                  }
+                </mat-select>
+                @if (isDuplicate(row)) {
+                  <span class="oai__dup">
+                    <mat-icon>warning</mat-icon> operasi dipakai baris lain
+                  </span>
+                }
+              } @else {
+                <span class="oai__muted">—</span>
+              }
+            </td>
+            <td>
+              @if (row.hasBehavior) {
+                <span class="oai__behavior" [matTooltip]="row.scenarioNames.join(', ')">
+                  <mat-icon>bolt</mat-icon> {{ row.scenarioNames.length }} scenario
+                </span>
+              } @else {
+                <span class="oai__muted" matTooltip="Spec ini tak membawa x-behavio">bentuk saja</span>
+              }
+            </td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  }
+</mat-dialog-content>
+
+<mat-dialog-actions align="end">
+  @if (hasDuplicateOperation()) {
+    <span class="oai__dup oai__dup--foot">
+      <mat-icon>warning</mat-icon>
+      Satu operasi dipetakan lebih dari sekali — yang terakhir akan menang.
+    </span>
+  }
+  <button mat-stroked-button mat-dialog-close>Batal</button>
+  <button mat-flat-button color="primary"
+          [disabled]="busy() || !applyCount()"
+          (click)="apply()">
+    Terapkan ({{ applyCount() }})
+  </button>
+</mat-dialog-actions>

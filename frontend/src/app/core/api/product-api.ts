@@ -162,4 +162,69 @@ export abstract class ProductApi {
   resetEndpointPath(id: string, operation: string) {
     return this.http.put(`${this.base}/${id}/endpoints/${operation}`, { path: null });
   }
+
+  // ---- Export / Import OpenAPI (design.md §15) ----
+
+  /**
+   * Unduh spec sebagai file. Dipakai Postman/Swagger apa adanya; perilaku (rule,
+   * scenario, fault, webhook) ikut di extension `x-behavio` yang diabaikan tool lain.
+   */
+  exportOpenApi(id: string, format: 'yaml' | 'json' = 'yaml') {
+    return this.http.get(`${this.base}/${id}/openapi?format=${format}`, {
+      responseType: 'blob',
+      observe: 'response',
+    });
+  }
+
+  /** Pratinjau impor — TIDAK mengubah apa pun di server (design.md §15.4). */
+  previewOpenApi(id: string, spec: string) {
+    return this.http.post<OpenApiPreview>(`${this.base}/${id}/openapi/preview`, spec, {
+      headers: { 'Content-Type': 'text/plain' },
+    });
+  }
+
+  /** Terapkan impor sesuai pemetaan yang dikonfirmasi user. */
+  importOpenApi(id: string, spec: string, mappings: OpenApiMapping[]) {
+    return this.http.post<OpenApiImportResult>(`${this.base}/${id}/openapi/import`, {
+      spec,
+      mappings,
+    });
+  }
+}
+
+// ---- Model export/import OpenAPI (cermin record di OpenApiImporter) ----
+
+export type OpenApiAction = 'CATALOG' | 'CUSTOM' | 'SKIP';
+
+export interface OpenApiPreviewRow {
+  path: string;
+  method: string;
+  label: string;
+  /** Kunci katalog yang disarankan; kosong = sistem tak menebak. */
+  suggestedOperation: string;
+  /** Dari mana tebakan datang — ditampilkan agar user tahu seberapa layak dipercaya. */
+  confidence: string;
+  hasBehavior: boolean;
+  scenarioNames: string[];
+}
+
+export interface OpenApiPreview {
+  product: ProductKey;
+  sourceTitle: string;
+  rows: OpenApiPreviewRow[];
+}
+
+export interface OpenApiMapping {
+  path: string;
+  method: string;
+  action: OpenApiAction;
+  operation: string;
+}
+
+export interface OpenApiImportResult {
+  overridden: number;
+  created: number;
+  skipped: number;
+  scenariosRestored: number;
+  messages: string[];
 }

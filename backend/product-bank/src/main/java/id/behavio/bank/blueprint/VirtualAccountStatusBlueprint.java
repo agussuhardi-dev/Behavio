@@ -22,6 +22,17 @@ public final class VirtualAccountStatusBlueprint {
 
     private VirtualAccountStatusBlueprint() {}
 
+    /** Contoh request untuk export OpenAPI (design.md §15.5, Lampiran A2.1 service 26). */
+    public static Map<String, Object> requestExample() {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("partnerServiceId", "  088899");
+        body.put("customerNo", "12345678901234567890");
+        body.put("virtualAccountNo", "  08889912345678901234567890");
+        body.put("inquiryRequestId", "2026071500000000000006");
+        body.put("additionalInfo", Map.of());
+        return body;
+    }
+
     public static Scenario normal() {
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("partnerServiceId", "{{partnerServiceId}}");

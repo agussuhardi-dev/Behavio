@@ -50,6 +50,15 @@
         </button>
         <mat-menu #profileMenu="matMenu">
           <button mat-menu-item (click)="openClone()"><mat-icon>content_copy</mat-icon> Duplikat</button>
+          <mat-divider />
+          <button mat-menu-item (click)="exportOpenApi()"
+                  matTooltip="Spec OpenAPI 3.0.3 — siap dipakai di Postman. Perilaku ikut di x-behavio.">
+            <mat-icon>download</mat-icon> Export OpenAPI
+          </button>
+          <button mat-menu-item (click)="openImportOpenApi()">
+            <mat-icon>upload_file</mat-icon> Impor OpenAPI
+          </button>
+          <mat-divider />
           <button mat-menu-item (click)="removeSelected()"><mat-icon color="warn">delete</mat-icon> Hapus</button>
         </mat-menu>
       </div>

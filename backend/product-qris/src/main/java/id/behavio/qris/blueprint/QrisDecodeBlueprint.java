@@ -16,6 +16,20 @@ public final class QrisDecodeBlueprint {
 
     private QrisDecodeBlueprint() {}
 
+    /**
+     * Contoh request untuk export OpenAPI (design.md §15.5, Lampiran A3.1 service 48).
+     * {@code qrContent} = string EMV QR hasil {@code qr-mpm-generate} — satu-satunya
+     * field wajib (tanpanya service membalas {@code 4004802}).
+     */
+    public static Map<String, Object> requestExample() {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("originalReferenceNo", "BHV17529000000001");
+        body.put("qrContent", "00020101021226610014COM.BEHAVIO.WWW0118M00000010000000015204581253033605802ID"
+                + "5910BEHAVIO QR6007JAKARTA54082500000063049B2A");
+        body.put("additionalInfo", Map.of());
+        return body;
+    }
+
     public static Scenario normal() {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("responseCode", "{{responseCode}}");

@@ -20,6 +20,7 @@ import { SimulatorFormDialog, SimulatorFormResult } from './simulator-form-dialo
 import { EndpointUrlPanel } from '../../shared/components/endpoint-url-panel/endpoint-url-panel';
 import { ConfirmDialog } from '../../shared/components/confirm-dialog/confirm-dialog';
 import { LocalStorageService } from '../../shared/services/storage.service';
+import { OpenApiService } from '../../shared/services/openapi.service';
 
 /**
  * Satu kartu endpoint bank. `operation` = kunci operasi di Admin API, HANYA diisi untuk
@@ -69,6 +70,7 @@ interface LiveEvent {
 export class Simulators implements OnInit, OnDestroy {
   /** Produk BANK (schema `bank`, design.md §3.4) — halaman ini tak pernah menyentuh QRIS. */
   readonly api = inject(BankApi);
+  private readonly openApi = inject(OpenApiService);
   private readonly dialog = inject(MatDialog);
   private readonly storage = inject(LocalStorageService);
 
@@ -404,6 +406,30 @@ export class Simulators implements OnInit, OnDestroy {
         },
         error: err => this.simMsg.set(err?.error?.error ?? 'Gagal menduplikasi profil.'),
       });
+    });
+  }
+
+  // ---- Export / Import OpenAPI (design.md §15) ----
+
+  /** Unduh spec — dipakai Postman dkk; perilaku ikut di x-behavio. */
+  exportOpenApi() {
+    const s = this.selectedSim; if (!s) return;
+    this.openApi.export(this.api, s);
+  }
+
+  openImportOpenApi() {
+    const s = this.selectedSim; if (!s) return;
+    // flatMap, bukan filter+map: filter tidak mempersempit `operation?: string`.
+    const operations = this.buildMeta().flatMap(m =>
+      m.operation ? [{ key: m.operation, label: m.label }] : []
+    );
+
+    this.openApi.openImport(this.api, s, operations).subscribe(result => {
+      if (!result) return;
+      this.simMsg.set(this.openApi.summarize(result));
+      // Path & scenario bisa berubah → muat ulang, jangan percaya tampilan lama.
+      this.reload();
+      this.loadCustomEndpoints();
     });
   }
 

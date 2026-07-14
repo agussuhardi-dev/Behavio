@@ -1,0 +1,142 @@
+.oai__title {
+  display: flex;
+  gap: .5rem;
+  align-items: center;
+}
+
+.oai__content {
+  min-width: min(56rem, 84vw);
+}
+
+.oai__pick {
+  display: flex;
+  gap: .75rem;
+  align-items: center;
+  margin-block: .5rem 1rem;
+}
+
+.oai__file {
+  font-size: .875rem;
+  color: var(--mat-sys-on-surface-variant);
+}
+
+.oai__error {
+  display: flex;
+  gap: .5rem;
+  align-items: center;
+  padding: .75rem;
+  margin-bottom: 1rem;
+  font-size: .875rem;
+  color: var(--mat-sys-on-error-container);
+  background: var(--mat-sys-error-container);
+  border-radius: .5rem;
+}
+
+.oai__source,
+.oai__hint {
+  margin: 0 0 .75rem;
+  font-size: .8125rem;
+  color: var(--mat-sys-on-surface-variant);
+}
+
+.oai__table {
+  width: 100%;
+  border-collapse: collapse;
+
+  th,
+  td {
+    padding: .5rem .5rem .5rem 0;
+    text-align: left;
+    vertical-align: top;
+    border-bottom: 1px solid var(--mat-sys-outline-variant);
+  }
+
+  th {
+    font-size: .75rem;
+    font-weight: 600;
+    color: var(--mat-sys-on-surface-variant);
+    text-transform: uppercase;
+  }
+}
+
+.oai__row--skip {
+  opacity: .55;
+}
+
+.oai__path {
+  display: flex;
+  gap: .5rem;
+  align-items: baseline;
+
+  code {
+    font-size: .8125rem;
+    word-break: break-all;
+  }
+}
+
+.oai__method {
+  font-size: .6875rem;
+  font-weight: 700;
+  color: var(--mat-sys-primary);
+}
+
+.oai__label {
+  display: flex;
+  gap: .25rem;
+  align-items: center;
+  margin-top: .125rem;
+  font-size: .75rem;
+  color: var(--mat-sys-on-surface-variant);
+}
+
+.oai__conf {
+  font-size: 1rem;
+  width: 1rem;
+  height: 1rem;
+}
+
+.oai__select {
+  min-width: 11rem;
+  font-size: .8125rem;
+}
+
+.oai__select--dup {
+  color: var(--mat-sys-error);
+}
+
+.oai__muted {
+  font-size: .8125rem;
+  color: var(--mat-sys-on-surface-variant);
+}
+
+.oai__behavior {
+  display: inline-flex;
+  gap: .25rem;
+  align-items: center;
+  font-size: .8125rem;
+
+  mat-icon {
+    font-size: 1rem;
+    width: 1rem;
+    height: 1rem;
+    color: var(--mat-sys-primary);
+  }
+}
+
+.oai__dup {
+  display: inline-flex;
+  gap: .25rem;
+  align-items: center;
+  font-size: .75rem;
+  color: var(--mat-sys-error);
+
+  mat-icon {
+    font-size: 1rem;
+    width: 1rem;
+    height: 1rem;
+  }
+}
+
+.oai__dup--foot {
+  margin-right: auto;
+}

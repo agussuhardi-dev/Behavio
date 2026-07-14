@@ -82,6 +82,26 @@ public final class QrisMpmBlueprint {
 
     private QrisMpmBlueprint() {}
 
+    /**
+     * Contoh request untuk export OpenAPI (design.md §15.5, Lampiran A3.2).
+     * {@code amount.value} wajib 2 desimal untuk IDR — aturan yang berlaku untuk SEMUA
+     * endpoint QRIS (A3.2).
+     */
+    public static Map<String, Object> requestExample() {
+        Map<String, Object> amount = new LinkedHashMap<>();
+        amount.put("value", "25000.00");
+        amount.put("currency", "IDR");
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("partnerReferenceNo", "2026071500000000000010");
+        body.put("amount", amount);
+        body.put("merchantId", "M0000001");
+        body.put("terminalId", "T0001");
+        body.put("validityPeriod", "2026-07-15T23:59:59+07:00");
+        body.put("additionalInfo", Map.of());
+        return body;
+    }
+
     /** Resolusi nama scenario → preset. Nama tak dikenal → Normal. */
     public static Scenario byName(String name) {
         String key = name == null ? "" : name.trim().toLowerCase();

@@ -23,6 +23,18 @@ public final class AccountInquiryInternalBlueprint {
 
     private AccountInquiryInternalBlueprint() {}
 
+    /**
+     * Contoh request untuk export OpenAPI (design.md §15.5, Lampiran A.3). Rekening
+     * merujuk data seed agar contoh langsung sukses dari Postman.
+     */
+    public static Map<String, Object> requestExample() {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("partnerReferenceNo", "2026071500000000000002");
+        body.put("beneficiaryAccountNo", "9876543210");
+        body.put("additionalInfo", Map.of());
+        return body;
+    }
+
     public static Scenario normal() {
         return new Scenario("Normal", Collections.emptyList(),
                 Outcome.of(List.of(), normalResponse()));

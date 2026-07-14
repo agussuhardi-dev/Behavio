@@ -510,7 +510,8 @@ Browser Account/Transaction (AG Grid). Sakelar scenario matang.
 
 ### Fase 4 — Perluasan
 Packaging Blueprint SNAP. Virtual Account. QRIS MPM (dynamic/static).
-OpenAPI import. Recorder/Replay, Monitoring, Audit trail.
+Export/Import OpenAPI (**§15** — kini juga export, bukan hanya import).
+Recorder/Replay, Monitoring, Audit trail.
 
 ### Fase 5 — Pemisahan produk (§3.4) ✅
 Bank & QRIS jadi dua produk terpisah penuh: modul Gradle sendiri, schema PostgreSQL
@@ -555,6 +556,9 @@ ikut dipisah (BankApi/QrisApi di atas ProductApi generik).
 | Evaluator | JEXL dulu → evaluator mini nanti |
 | Slice pertama | SNAP: Access Token B2B → Transfer Intrabank |
 | Blueprint | Preset akurat (SNAP BI), **dapat di-override penuh** per-simulator |
+| Export/Import | **OpenAPI 3.0.3 + `x-behavio`** (§15) — interop Postman *dan* round-trip dalam satu file; lingkup endpoint+scenario, tanpa kredensial/state |
+| Impor spec | Pratinjau + pemetaan eksplisit path→operasi; sistem menyarankan, user memutuskan (§15.4) |
+| Contoh request | Ditulis di blueprint (`ProductCatalog.requestExample`), bukan inferensi — bentuk bersarang SNAP harus benar (§15.5) |
 
 ---
 
@@ -1081,6 +1085,152 @@ Hasil: `bank` 13→**11 tabel**, `qris` 11→**9 tabel**. **Terverifikasi**: mig
 tanpa memecahkan checksum; `/webhooks/subscriptions` → 404, `/webhooks/outbox` → 200;
 regresi nol — Payment Notify QRIS tetap terkirim (outbox `SENT`), transfer bank `2001700`,
 editor scenario tetap memuat rule dari `scenarios.definition`.
+
+### Fase 4 (lanjutan) — Export/Import OpenAPI ✅ (2026-07-15)
+
+Keputusan & alasannya di **§15**. Yang dibangun:
+
+- `OpenApiExporter` / `OpenApiImporter` (`:adapter-web`, paket `openapi`) +
+  `OpenApiAdminController` — generik lintas produk lewat `{product}`, jadi **bank & QRIS
+  langsung dapat keduanya** tanpa kode terpisah.
+- `ProductCatalog.requestExample()` + `requestHeaders()` (SPI baru) — contoh request
+  ditulis di 16 blueprint; header dideklarasikan katalog (`access-token` = RSA, sisanya
+  Bearer+HMAC).
+- Dashboard: menu Export/Impor di halaman bank **dan** QRIS, lewat `OpenApiService` +
+  `OpenApiImportDialog` bersama (satu salinan, dua halaman).
+
+**Terverifikasi lewat HTTP nyata**, bukan hanya unit test:
+- Export bank = 9 path; transfer membawa 8 scenario lengkap dengan rule, `fault`
+  (`AFTER_ACTIONS`/`drop`), dan `webhook` (`X-CALLBACK-URL`, 2000ms).
+- Export QRIS = 8 path; `qr-mpm-generate` → 18 scenario katalog ASPI menjadi **8 status
+  HTTP** berbeda sebagai contoh response.
+- **0 placeholder `{{…}}` bocor** ke bagian yang dibaca Postman; 225 template mentah tetap
+  utuh di `x-behavio` (memang harus mentah agar round-trip presisi).
+- Spec ala BRI (`/intrabank/snap/v2.0/transfer-intrabank`) → pratinjau **tak mengubah
+  apa pun** (path masih default sesudahnya) → import → path ter-override, 8 scenario
+  dipulihkan → `POST` ke path baru di `:9001` membalas **`2001700`**, path lama **404**.
+- 14 tes di `OpenApiRoundTripTest` (katalog & port palsu — membuktikan exporter/importer
+  benar-benar generik, sebab `:adapter-web` tak boleh melihat modul produk).
+
+**Catatan jujur:** `access-token` QRIS tak punya blueprint, jadi ia satu-satunya endpoint
+tanpa contoh response (hanya `200` kosong). Bukan bug — memang tak ada yang bisa dirujuk.
+
+---
+
+## 15. Export / Import OpenAPI (Fase 4)
+
+> Keputusan diskusi 2026-07-15. Tujuan yang diminta: **spec simulator bisa dipakai di
+> tempat lain — Postman dan sejenisnya.**
+
+### 15.1 Ketegangan inti
+
+**OpenAPI itu format *bentuk*; nilai jual Behavio adalah *perilaku*.** OpenAPI punya
+tempat untuk path, method, header, requestBody, dan contoh response — tapi **tidak
+punya tempat** untuk rule (first-match), action (debit/credit), fault 3 titik, dan
+webhook. Ekspor ke OpenAPI polos otomatis **lossy**: `export → import` mengembalikan
+kerangka kosong, bukan simulator yang sama.
+
+Ini penting karena "export/import" mengundang harapan round-trip, sementara interop
+Postman hanya butuh bentuk. Dua kebutuhan itu tidak harus saling meniadakan.
+
+### 15.2 Keputusan: OpenAPI 3.0.3 + extension `x-behavio`
+
+Satu file melayani dua kebutuhan sekaligus:
+
+- **Bentuk** ditulis sebagai OpenAPI 3.0.3 biasa → Postman/Swagger/Insomnia membacanya
+  normal.
+- **Perilaku** dititipkan di `x-behavio`. Spesifikasi OpenAPI mewajibkan tool
+  **mengabaikan** field berawalan `x-`, jadi kehadirannya tak merusak interop; dan
+  `export → import` memulihkan simulator **utuh**.
+
+```yaml
+paths:
+  /v1.0/transfer-intrabank:
+    post:
+      operationId: transfer
+      parameters: [{name: X-PARTNER-ID, in: header, required: true}, …]
+      requestBody: {content: {application/json: {example: {…}}}}
+      x-behavio:                        # ← diabaikan Postman, dibaca Behavio
+        operation: transfer             # kunci katalog stabil (§2), BUKAN path
+        activeScenario: Normal
+        scenarios:
+          Normal: {rules: [...], fallback: {...}}   # format ScenarioCodec apa adanya
+      responses:
+        '200': {description: Normal, …}
+        '400': {description: Saldo Kurang, …}
+```
+
+**Kenapa 3.0.3, bukan 3.1:** kompatibilitas terluas dengan tool yang beredar. Tak ada
+fitur 3.1 yang kita butuhkan.
+
+**Round-trip nyaris gratis:** `x-behavio.scenarios[nama]` memakai **format JSON
+`ScenarioCodec` apa adanya**, dan jalur masuk/keluarnya sudah tersedia di
+`ScenarioConfigPort` (`effectiveDefinition` keluar, `saveDefinition` masuk — dan
+`saveDefinition` sudah memvalidasi lewat `codec.parse`). Adapter OpenAPI **tidak perlu
+mengenal AST rule sama sekali**; ia hanya memindahkan blob JSON. Tak ada codec kedua
+yang harus dijaga sinkron.
+
+**Satu scenario = satu contoh response.** `httpStatus` tiap scenario jadi kunci
+`responses`, isinya `bodyTemplate`. Jadi di Postman, "Saldo Kurang" tampil sebagai
+contoh response `400` — dokumentasi yang selama ini hanya hidup di dashboard.
+
+### 15.3 Lingkup: endpoint + scenario, BUKAN kredensial & state
+
+Yang diekspor hanya **deskripsi API + perilakunya**. Yang **tidak** ikut:
+
+- **Partner + `client_secret`/`public_key`** — itu kredensial. File spec dibuat untuk
+  dibagikan (justru itu tujuannya); menaruh secret di dalamnya membuat siapa pun yang
+  menerima file bisa menandatangani request yang sah.
+- **Saldo, transaksi, VA, QRIS** — itu state, bukan deskripsi API. Simulator tujuan
+  punya dunianya sendiri.
+
+Impor karenanya bekerja pada simulator **yang sudah ada**, bukan membuat simulator baru.
+
+### 15.4 Impor: pratinjau + pemetaan eksplisit
+
+Masalahnya nyata: dokumen OpenAPI milik bank memakai path mereka sendiri (BRI
+`/intrabank/snap/v2.0/transfer-intrabank`), sedangkan preset kita
+`/v1.0/transfer-intrabank`. Tak ada cara **memastikan** dari path saja bahwa keduanya
+operasi yang sama.
+
+Alur: upload → **pratinjau** (tak mengubah apa pun) → user konfirmasi tiap baris →
+terapkan. Sistem hanya **menyarankan**, dengan urutan keyakinan menurun:
+
+1. `x-behavio.operation` — pasti (file dari Behavio sendiri)
+2. `operationId` yang cocok kunci katalog
+3. suffix segmen terakhir path (`…/transfer-intrabank` → `transfer`)
+
+Tiap baris bisa dipetakan ke: **operasi katalog** (path-nya di-override → blueprint &
+scenario ikut), **endpoint kustom**, atau **dilewati**.
+
+**Ditolak — pencocokan otomatis via heuristik.** Tanpa UI tambahan, tapi tebakan yang
+salah meng-override path operasi lain **tanpa peringatan**. Persis kelas bug yang
+berulang kali digigit di dokumen ini (§ "salah kamar", `4040400`, autowire by-type):
+kesalahan diam-diam yang datanya salah kamar tanpa satu pun error.
+
+**Ditolak — semua jadi endpoint kustom.** Paling sederhana, tapi membuang justru
+manfaat terbesarnya: mengimpor dokumen bank untuk **meng-override path operasi katalog**
+sehingga blueprint tetap menempel — skenario yang sudah dijanjikan §2 ("Bila ada dokumen
+eksternal bank tertentu, user cukup menyesuaikan override").
+
+### 15.5 Contoh request: ditulis di blueprint
+
+Behavio **tak menyimpan schema request** — engine membaca `request.fields()` dinamis
+(§4). Jadi contoh request untuk Postman harus datang dari suatu tempat, dan tanpanya
+`POST` di Postman berisi body kosong (praktis tak berguna untuk SNAP).
+
+Diputuskan: contoh request **ditulis tangan di tiap blueprint**, diambil lewat
+`ProductCatalog.requestExample(operationKey)`.
+
+**Kenapa bukan inferensi** dari `Operand.Field` + field aksi + variabel `{{…}}`:
+otomatis dan jalan untuk endpoint kustom, tapi **bentuk bersarang SNAP tak akan pernah
+benar** — `amount` itu `{value, currency}`, bukan skalar. Contoh yang bentuknya salah
+lebih berbahaya daripada tak ada contoh: user menyalinnya, request ditolak, dan yang
+disalahkan simulatornya. Dokumen ini sudah memilih kesetiaan ASPI field-per-field
+(A3.7); contoh request tak boleh jadi pengecualian.
+
+Endpoint **kustom** tetap memakai inferensi ringan (tak ada blueprint untuk dirujuk),
+dan itu jujur: bentuknya milik user, bukan klaim kesesuaian SNAP.
 
 ---
 

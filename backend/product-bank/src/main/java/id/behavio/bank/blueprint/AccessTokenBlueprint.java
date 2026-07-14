@@ -22,6 +22,14 @@ public final class AccessTokenBlueprint {
 
     private AccessTokenBlueprint() {}
 
+    /** Contoh request untuk export OpenAPI (design.md §15.5, Lampiran A.1). */
+    public static Map<String, Object> requestExample() {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("grantType", "client_credentials");
+        body.put("additionalInfo", Map.of());
+        return body;
+    }
+
     public static Scenario normal() {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("responseCode", "{{responseCode}}");

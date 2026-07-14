@@ -23,6 +23,19 @@ public final class BalanceInquiryBlueprint {
 
     private BalanceInquiryBlueprint() {}
 
+    /**
+     * Contoh request untuk export OpenAPI (design.md §15.5). {@code accountNo} merujuk
+     * rekening seed bersaldo agar contoh langsung sukses dari Postman.
+     */
+    public static Map<String, Object> requestExample() {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("partnerReferenceNo", "2026071500000000000003");
+        body.put("accountNo", "1234567890");
+        body.put("balanceTypes", List.of("Cash"));
+        body.put("additionalInfo", Map.of());
+        return body;
+    }
+
     public static Scenario normal() {
         return new Scenario("Normal", Collections.emptyList(),
                 Outcome.of(List.of(), normalResponse()));

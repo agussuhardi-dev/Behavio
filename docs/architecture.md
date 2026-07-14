@@ -97,6 +97,8 @@ classDiagram
         +operations() List~Operation~
         +blueprint(op, scenario) Scenario
         +actionCodec() ActionCodec
+        +requestExample(op) Map
+        +requestHeaders(op) List~HeaderSpec~
     }
     class OperationHandler {
         <<interface>>
@@ -115,6 +117,12 @@ classDiagram
 
 Menggantikan tiga peta terpisah sebelum pemisahan (`SnapOperations`, `Blueprints`,
 `ProductEndpoints`) yang masing-masing mencampur bank & QRIS dan harus dijaga sinkron.
+
+`requestExample` & `requestHeaders` dipakai export OpenAPI (design.md §15). Keduanya ada
+**di sini**, bukan di exporter, karena isinya pengetahuan produk: contoh request harus
+setia bentuk bersarang SNAP, dan set header berbeda antar operasi (`access-token` memakai
+`X-CLIENT-KEY` + RSA, sisanya `Authorization` Bearer + HMAC). Mencabangkan exporter
+dengan `if ("access-token")` persis pola yang dilarang §2.2.
 
 ### 2.4 Perakitan runtime
 

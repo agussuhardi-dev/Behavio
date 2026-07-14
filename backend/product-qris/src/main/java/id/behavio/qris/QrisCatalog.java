@@ -1,5 +1,6 @@
 package id.behavio.qris;
 
+import id.behavio.core.product.HeaderSpec;
 import id.behavio.core.product.Operation;
 import id.behavio.core.product.ProductCatalog;
 import id.behavio.core.rule.Scenario;
@@ -11,7 +12,9 @@ import id.behavio.qris.blueprint.QrisPaymentBlueprint;
 import id.behavio.qris.blueprint.QrisQueryBlueprint;
 import id.behavio.qris.blueprint.QrisRefundBlueprint;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -78,5 +81,41 @@ public final class QrisCatalog implements ProductCatalog {
             case "qris-apply-ott" -> Optional.of(QrisApplyOttBlueprint.normal());
             default -> Optional.empty();   // access-token berlogika tetap
         };
+    }
+
+    /** Access token memakai pola RSA (X-CLIENT-KEY), bukan Bearer+HMAC (Lampiran A.1). */
+    @Override
+    public List<HeaderSpec> requestHeaders(String operationKey) {
+        return "access-token".equalsIgnoreCase(operationKey == null ? "" : operationKey.trim())
+                ? HeaderSpec.snapAccessToken()
+                : HeaderSpec.snapTransactional();
+    }
+
+    /**
+     * Contoh request per operasi untuk export OpenAPI (design.md §15.5). Alias
+     * {@code "qris"} ikut didukung, sama seperti {@link #byKey} dan {@link #blueprint}.
+     */
+    @Override
+    public Optional<Map<String, Object>> requestExample(String operationKey) {
+        String op = operationKey == null ? "" : operationKey.trim().toLowerCase();
+        return switch (op) {
+            case "access-token" -> Optional.of(accessTokenExample());
+            case "qris", "qris-generate" -> Optional.of(QrisMpmBlueprint.requestExample());
+            case "qris-query" -> Optional.of(QrisQueryBlueprint.requestExample());
+            case "qris-refund" -> Optional.of(QrisRefundBlueprint.requestExample());
+            case "qris-cancel" -> Optional.of(QrisCancelBlueprint.requestExample());
+            case "qris-decode" -> Optional.of(QrisDecodeBlueprint.requestExample());
+            case "qris-payment" -> Optional.of(QrisPaymentBlueprint.requestExample());
+            case "qris-apply-ott" -> Optional.of(QrisApplyOttBlueprint.requestExample());
+            default -> Optional.empty();
+        };
+    }
+
+    /** Access token QRIS berlogika tetap (tanpa blueprint), jadi contohnya di sini (Lampiran A.1). */
+    private static Map<String, Object> accessTokenExample() {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("grantType", "client_credentials");
+        body.put("additionalInfo", Map.of());
+        return body;
     }
 }

@@ -11,11 +11,13 @@ import id.behavio.bank.blueprint.VirtualAccountDeleteBlueprint;
 import id.behavio.bank.blueprint.VirtualAccountStatusBlueprint;
 import id.behavio.bank.rule.BankActionCodec;
 import id.behavio.core.product.ActionCodec;
+import id.behavio.core.product.HeaderSpec;
 import id.behavio.core.product.Operation;
 import id.behavio.core.product.ProductCatalog;
 import id.behavio.core.rule.Scenario;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -139,5 +141,31 @@ public final class BankCatalog implements ProductCatalog {
     @Override
     public ActionCodec actionCodec() {
         return BankActionCodec.INSTANCE;
+    }
+
+    /** Access token memakai pola RSA (X-CLIENT-KEY), bukan Bearer+HMAC (Lampiran A.1). */
+    @Override
+    public List<HeaderSpec> requestHeaders(String operationKey) {
+        return "access-token".equalsIgnoreCase(operationKey == null ? "" : operationKey.trim())
+                ? HeaderSpec.snapAccessToken()
+                : HeaderSpec.snapTransactional();
+    }
+
+    /** Contoh request per operasi untuk export OpenAPI (design.md §15.5). */
+    @Override
+    public Optional<Map<String, Object>> requestExample(String operationKey) {
+        String op = operationKey == null ? "" : operationKey.trim().toLowerCase();
+        return switch (op) {
+            case "access-token" -> Optional.of(AccessTokenBlueprint.requestExample());
+            case "balance-inquiry" -> Optional.of(BalanceInquiryBlueprint.requestExample());
+            case "account-inquiry-internal" -> Optional.of(AccountInquiryInternalBlueprint.requestExample());
+            case "transaction-history-list" -> Optional.of(TransactionHistoryListBlueprint.requestExample());
+            case "transfer" -> Optional.of(TransferIntrabankBlueprint.requestExample());
+            case "transfer-interbank" -> Optional.of(InterbankTransferBlueprint.requestExample());
+            case "va-create" -> Optional.of(VirtualAccountCreateBlueprint.requestExample());
+            case "va-status" -> Optional.of(VirtualAccountStatusBlueprint.requestExample());
+            case "va-delete" -> Optional.of(VirtualAccountDeleteBlueprint.requestExample());
+            default -> Optional.empty();
+        };
     }
 }

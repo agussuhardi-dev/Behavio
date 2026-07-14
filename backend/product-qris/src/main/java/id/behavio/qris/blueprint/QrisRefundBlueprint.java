@@ -16,6 +16,22 @@ public final class QrisRefundBlueprint {
 
     private QrisRefundBlueprint() {}
 
+    /** Contoh request untuk export OpenAPI (design.md §15.5, Lampiran A3.1 service 78). */
+    public static Map<String, Object> requestExample() {
+        Map<String, Object> refundAmount = new LinkedHashMap<>();
+        refundAmount.put("value", "25000.00");
+        refundAmount.put("currency", "IDR");
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("originalReferenceNo", "BHV17529000000001");
+        body.put("originalPartnerReferenceNo", "2026071500000000000010");
+        body.put("partnerRefundNo", "RFD-2026-0715-001");
+        body.put("refundAmount", refundAmount);
+        body.put("reason", "Barang batal dibeli");
+        body.put("additionalInfo", Map.of());
+        return body;
+    }
+
     public static Scenario normal() {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("responseCode", "{{responseCode}}");

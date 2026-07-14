@@ -20,6 +20,7 @@ import { SimulatorFormDialog, SimulatorFormResult } from '../simulators/simulato
 import { EndpointUrlPanel } from '../../shared/components/endpoint-url-panel/endpoint-url-panel';
 import { ConfirmDialog } from '../../shared/components/confirm-dialog/confirm-dialog';
 import { LocalStorageService } from '../../shared/services/storage.service';
+import { OpenApiService } from '../../shared/services/openapi.service';
 
 /** Satu kartu endpoint QRIS. `operation` = kunci operasi di Admin API produk qris. */
 interface EpMeta {
@@ -53,6 +54,7 @@ export class Qris implements OnInit, OnDestroy {
    * dengan port & partner sendiri — sejak pemisahan, bukan lagi profil bank yang sama.
    */
   readonly api = inject(QrisApi);
+  private readonly openApi = inject(OpenApiService);
   private readonly dialog = inject(MatDialog);
   private readonly storage = inject(LocalStorageService);
 
@@ -318,6 +320,28 @@ export class Qris implements OnInit, OnDestroy {
       this.api.clone(s.id, r.name, r.port).subscribe({
         next: c => { this.selectedSimId.set(c.id); this.rememberSim(c.id); this.reload(); },
       });
+    });
+  }
+
+  // ---- Export / Import OpenAPI (design.md §15) ----
+
+  /** Unduh spec — dipakai Postman dkk; perilaku ikut di x-behavio. */
+  exportOpenApi() {
+    const s = this.selectedSim; if (!s) return;
+    this.openApi.export(this.api, s);
+  }
+
+  openImportOpenApi() {
+    const s = this.selectedSim; if (!s) return;
+    const operations = this.endpointMeta().flatMap(m =>
+      m.operation ? [{ key: m.operation, label: m.label }] : []
+    );
+
+    this.openApi.openImport(this.api, s, operations).subscribe(result => {
+      if (!result) return;
+      this.openApi.showResult(result);
+      // Path & scenario bisa berubah → muat ulang, jangan percaya tampilan lama.
+      this.reload();
     });
   }
 

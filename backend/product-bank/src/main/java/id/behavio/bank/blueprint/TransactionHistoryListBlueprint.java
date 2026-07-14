@@ -23,6 +23,19 @@ public final class TransactionHistoryListBlueprint {
 
     private TransactionHistoryListBlueprint() {}
 
+    /** Contoh request untuk export OpenAPI (design.md §15.5). */
+    public static Map<String, Object> requestExample() {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("partnerReferenceNo", "2026071500000000000004");
+        body.put("accountNo", "1234567890");
+        body.put("fromDateTime", "2026-07-01T00:00:00+07:00");
+        body.put("toDateTime", "2026-07-15T23:59:59+07:00");
+        body.put("pageSize", "10");
+        body.put("pageNumber", "1");
+        body.put("additionalInfo", Map.of());
+        return body;
+    }
+
     public static Scenario normal() {
         return new Scenario("Normal", Collections.emptyList(),
                 Outcome.of(List.of(), normalResponse()));

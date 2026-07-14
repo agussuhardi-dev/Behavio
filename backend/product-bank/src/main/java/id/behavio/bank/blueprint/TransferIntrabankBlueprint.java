@@ -39,6 +39,31 @@ public final class TransferIntrabankBlueprint {
 
     private TransferIntrabankBlueprint() {}
 
+    /**
+     * Contoh request untuk export OpenAPI (design.md §15.5, Lampiran A.2). Nominal
+     * sengaja bersarang seperti yang dikirim klien — {@code SnapRequestMapper} yang
+     * meratakannya jadi {@code amount}/{@code currency} untuk engine.
+     *
+     * Rekening merujuk data seed ({@code BankBaseline}) agar contoh ini benar-benar
+     * sukses saat langsung dikirim dari Postman, bukan sekadar bentuk yang benar.
+     */
+    public static Map<String, Object> requestExample() {
+        Map<String, Object> amount = new LinkedHashMap<>();
+        amount.put("value", "15000.00");
+        amount.put("currency", "IDR");
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("partnerReferenceNo", "2026071500000000000001");
+        body.put("amount", amount);
+        body.put("beneficiaryAccountNo", "9876543210");
+        body.put("sourceAccountNo", "1234567890");
+        body.put("feeType", "OUR");
+        body.put("remark", "Transfer test");
+        body.put("transactionDate", "2026-07-15T10:00:00+07:00");
+        body.put("additionalInfo", Map.of());
+        return body;
+    }
+
     /** Normal: tolak bila saldo < amount (4001714), selain itu transfer sukses (2001700). */
     public static Scenario normal() {
         Rule insufficient = new Rule(

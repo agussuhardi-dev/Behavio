@@ -16,6 +16,27 @@ public final class QrisPaymentBlueprint {
 
     private QrisPaymentBlueprint() {}
 
+    /** Contoh request untuk export OpenAPI (design.md §15.5, Lampiran A3.1 service 50). */
+    public static Map<String, Object> requestExample() {
+        Map<String, Object> amount = new LinkedHashMap<>();
+        amount.put("value", "25000.00");
+        amount.put("currency", "IDR");
+
+        Map<String, Object> feeAmount = new LinkedHashMap<>();
+        feeAmount.put("value", "0.00");
+        feeAmount.put("currency", "IDR");
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("partnerReferenceNo", "2026071500000000000011");
+        body.put("amount", amount);
+        body.put("feeAmount", feeAmount);
+        body.put("merchantId", "M0000001");
+        body.put("terminalId", "T0001");
+        body.put("verificationId", "VER-0001");
+        body.put("additionalInfo", Map.of());
+        return body;
+    }
+
     public static Scenario normal() {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("responseCode", "{{responseCode}}");

@@ -22,6 +22,32 @@ public final class VirtualAccountCreateBlueprint {
 
     private VirtualAccountCreateBlueprint() {}
 
+    /**
+     * Contoh request untuk export OpenAPI (design.md §15.5, Lampiran A2.2).
+     * {@code partnerServiceId} 8 digit rata kanan (left-pad spasi) dan
+     * {@code virtualAccountNo} = partnerServiceId + customerNo — bentuk itu bagian dari
+     * spec, bukan kebetulan format.
+     */
+    public static Map<String, Object> requestExample() {
+        Map<String, Object> totalAmount = new LinkedHashMap<>();
+        totalAmount.put("value", "100000.00");
+        totalAmount.put("currency", "IDR");
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("partnerServiceId", "  088899");
+        body.put("customerNo", "12345678901234567890");
+        body.put("virtualAccountNo", "  08889912345678901234567890");
+        body.put("virtualAccountName", "Joko Pelanggan");
+        body.put("virtualAccountEmail", "joko@example.com");
+        body.put("virtualAccountPhone", "628123456789");
+        body.put("totalAmount", totalAmount);
+        body.put("virtualAccountTrxType", "C");
+        body.put("expiredDate", "2026-07-16T10:00:00+07:00");
+        body.put("trxId", "INV-2026-0715-001");
+        body.put("additionalInfo", Map.of());
+        return body;
+    }
+
     public static Scenario normal() {
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("partnerServiceId", "{{partnerServiceId}}");
