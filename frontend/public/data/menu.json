@@ -1,0 +1,16 @@
+{
+  "menu": [
+    {
+      "route": "simulators",
+      "name": "simulators",
+      "type": "link",
+      "icon": "dns"
+    },
+    {
+      "route": "dashboard",
+      "name": "dashboard",
+      "type": "link",
+      "icon": "dashboard"
+    }
+  ]
+}

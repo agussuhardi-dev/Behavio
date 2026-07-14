@@ -50,6 +50,7 @@ public class DemoSeeder implements CommandLineRunner {
         partner.id = partnerId;
         partner.simulatorId = simId;
         partner.partnerId = "PARTNER001";
+        partner.clientSecret = "secret123";   // untuk verifikasi HMAC (mode STRICT)
         em.persist(partner);
 
         em.persist(account(simId, partnerId, "1234567890", "Andi Sumber", "1000000.00"));
@@ -67,6 +68,12 @@ public class DemoSeeder implements CommandLineRunner {
         em.persist(scenario(normalId, endpointId, "Normal"));
         em.persist(scenario(UUID.randomUUID(), endpointId, "Saldo Kurang"));
         em.persist(scenario(UUID.randomUUID(), endpointId, "Limit"));
+        // Scenario fault (Fase 2)
+        em.persist(scenario(UUID.randomUUID(), endpointId, "Bank Down"));
+        em.persist(scenario(UUID.randomUUID(), endpointId, "Timeout"));
+        em.persist(scenario(UUID.randomUUID(), endpointId, "Commit Then Drop"));
+        em.persist(scenario(UUID.randomUUID(), endpointId, "Malformed"));
+        em.persist(scenario(UUID.randomUUID(), endpointId, "Async Callback"));
 
         ep.activeScenarioId = normalId;   // aktif default: Normal
         em.merge(ep);

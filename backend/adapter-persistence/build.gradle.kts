@@ -13,6 +13,7 @@ dependencies {
     implementation(project(":core-engine"))
     implementation(libs.spring.boot.starter.data.jpa)
     implementation(libs.spring.boot.liquibase)   // membawa liquibase-core + autoconfig
+    implementation("com.fasterxml.jackson.core:jackson-databind")  // codec definisi scenario
     runtimeOnly(libs.postgresql)
     testImplementation(libs.spring.boot.starter.test)
 }

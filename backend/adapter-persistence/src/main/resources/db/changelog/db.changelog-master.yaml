@@ -1,3 +1,7 @@
 databaseChangeLog:
   - include:
       file: db/changelog/changes/001-core-tables.sql
+  - include:
+      file: db/changelog/changes/002-webhook-outbox.sql
+  - include:
+      file: db/changelog/changes/003-scenario-definition.sql

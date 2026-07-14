@@ -6,6 +6,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 /**
  * Titik masuk aplikasi. Merakit core-engine + semua adapter (Hexagonal).
  * Scan seluruh id.behavio agar adapter (web/webhook/persistence) terdeteksi.
+ * Entity JPA di-scan lewat PersistenceConfig di adapter-persistence.
  */
 @SpringBootApplication(scanBasePackages = "id.behavio")
 public class BehavioApplication {

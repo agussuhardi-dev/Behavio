@@ -203,6 +203,9 @@ class BehaviorEnginePipelineTest {
                     && TransferIntrabankBlueprint.PATH.equals(path);
             return match ? Optional.of(scenario) : Optional.empty();
         }
+        public id.behavio.core.domain.SignatureMode signatureMode(UUID sim) {
+            return id.behavio.core.domain.SignatureMode.SIMULATED;
+        }
     }
 
     private static final class FakeEvents implements EventPublisher {

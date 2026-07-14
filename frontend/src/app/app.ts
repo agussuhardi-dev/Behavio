@@ -1,31 +1,24 @@
-import { Component, signal, inject, OnInit } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
-
-interface Ping {
-  service: string;
-  status: string;
-  time: string;
-}
+import { Component, OnInit, AfterViewInit, inject } from '@angular/core';
+import { PreloaderService, SettingsService } from '@core';
+import { RouterOutlet } from '@angular/router';
 
 @Component({
   selector: 'app-root',
-  imports: [],
-  templateUrl: './app.html',
-  styleUrl: './app.scss'
+  template: `
+    <router-outlet />
+  `,
+  imports: [RouterOutlet],
 })
-export class App implements OnInit {
-  private readonly http = inject(HttpClient);
+export class App implements OnInit, AfterViewInit {
+  private readonly preloader = inject(PreloaderService);
+  private readonly settings = inject(SettingsService);
 
-  protected readonly backendStatus = signal<string>('menghubungkan…');
-  protected readonly backendTime = signal<string>('');
+  ngOnInit() {
+    this.settings.setDirection();
+    this.settings.setTheme();
+  }
 
-  ngOnInit(): void {
-    this.http.get<Ping>('/api/admin/v1/ping').subscribe({
-      next: (r) => {
-        this.backendStatus.set(r.status);
-        this.backendTime.set(r.time);
-      },
-      error: () => this.backendStatus.set('OFFLINE')
-    });
+  ngAfterViewInit() {
+    this.preloader.hide();
   }
 }

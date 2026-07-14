@@ -32,11 +32,14 @@ public class SimulatorServerManager {
 
     private final SimulationExecutor executor;
     private final SnapRequestMapper mapper;
+    private final AccessTokenService accessTokenService;
     private final Map<UUID, HttpServer> servers = new ConcurrentHashMap<>();
 
-    public SimulatorServerManager(SimulationExecutor executor, SnapRequestMapper mapper) {
+    public SimulatorServerManager(SimulationExecutor executor, SnapRequestMapper mapper,
+                                  AccessTokenService accessTokenService) {
         this.executor = executor;
         this.mapper = mapper;
+        this.accessTokenService = accessTokenService;
     }
 
     public synchronized void start(UUID simulatorId, int port) {
@@ -74,9 +77,35 @@ public class SimulatorServerManager {
             Map<String, String> headers = headers(exchange);
             String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
 
+            // Endpoint khusus: Access Token B2B (bukan alur scenario/engine)
+            if ("POST".equalsIgnoreCase(method) && path.endsWith("/access-token/b2b")) {
+                AccessTokenService.Result r = accessTokenService.issue(simulatorId, headers, body);
+                write(exchange, r.status(), Map.of("Content-Type", "application/json"), r.body());
+                return;
+            }
+
             SimRequest request = new SimRequest(method, path, headers, mapper.toFields(body), body);
             SimResponse response = executor.execute(simulatorId, request);
-            write(exchange, response.httpStatus(), response.headers(), response.body());
+
+            // Efek fisik fault diterapkan PASCA-commit (design.md §4.2)
+            SimResponse.Fault fault = response.fault();
+            if (fault != null && fault.delayMillis() > 0) {
+                try {
+                    Thread.sleep(fault.delayMillis());
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+            if (fault != null && fault.drop()) {
+                // commit-then-drop: state sudah berubah, respons TIDAK dikirim (koneksi ditutup)
+                log.info("Simulator {} FAULT commit-then-drop — respons di-drop", simulatorId);
+                return;
+            }
+            String outBody = response.body();
+            if (fault != null && fault.corrupt()) {
+                outBody = corrupt(outBody);
+            }
+            write(exchange, response.httpStatus(), response.headers(), outBody);
         } catch (Exception e) {
             log.warn("Simulator {} error memproses request: {}", simulatorId, e.toString());
             write(exchange, 500, Map.of("Content-Type", "application/json"),
@@ -95,6 +124,15 @@ public class SimulatorServerManager {
             }
         }
         return out;
+    }
+
+    /** Rusak body respons (malformed JSON) untuk fault titik C. */
+    private static String corrupt(String body) {
+        if (body == null || body.isEmpty()) {
+            return "{malformed";
+        }
+        int half = Math.max(1, body.length() / 2);
+        return body.substring(0, half) + " <<CORRUPTED";
     }
 
     private static void write(HttpExchange exchange, int status, Map<String, String> headers, String body) throws IOException {

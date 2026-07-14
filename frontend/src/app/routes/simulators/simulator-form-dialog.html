@@ -1,0 +1,46 @@
+<h2 mat-dialog-title>
+  @if (data.mode === 'create') {
+    Tambah Profil Bank
+  } @else {
+    Duplikat "{{ data.sourceName }}"
+  }
+</h2>
+
+<mat-dialog-content class="sfd-content">
+  <p class="sfd-hint">
+    @if (data.mode === 'create') {
+      Simulator baru = "profil bank" tersendiri: endpoint, 8 skenario, partner &
+      rekening baseline disiapkan otomatis. Anda bisa sesuaikan setelahnya.
+    } @else {
+      Konfigurasi & request/response yang sudah Anda ubah akan ikut disalin.
+      Cocok untuk bank yang mirip tapi sedikit berbeda.
+    }
+  </p>
+
+  <mat-form-field appearance="outline" class="sfd-field">
+    <mat-label>Nama simulator</mat-label>
+    <input matInput [value]="name()" (input)="name.set($any($event.target).value)" placeholder="mis. Bank Simulasi Mandiri" />
+  </mat-form-field>
+
+  <mat-form-field appearance="outline" class="sfd-field">
+    <mat-label>Port</mat-label>
+    <input matInput type="number" [value]="port()" (input)="port.set(+$any($event.target).value)" />
+  </mat-form-field>
+
+  @if (data.mode === 'create') {
+    <mat-form-field appearance="outline" class="sfd-field">
+      <mat-label>Mode signature</mat-label>
+      <mat-select [value]="signatureMode()" (valueChange)="signatureMode.set($event)">
+        <mat-option value="SIMULATED">Simulated (lewati verifikasi)</mat-option>
+        <mat-option value="STRICT">Strict (verifikasi RSA/HMAC)</mat-option>
+      </mat-select>
+    </mat-form-field>
+  }
+</mat-dialog-content>
+
+<mat-dialog-actions align="end">
+  <button mat-button mat-dialog-close>Batal</button>
+  <button mat-flat-button color="primary" [disabled]="!name().trim() || !port()" (click)="submit()">
+    {{ data.mode === 'create' ? 'Buat' : 'Duplikat' }}
+  </button>
+</mat-dialog-actions>

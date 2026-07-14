@@ -3,20 +3,26 @@ package id.behavio.core.engine;
 import id.behavio.core.domain.Account;
 import id.behavio.core.domain.InsufficientFundsException;
 import id.behavio.core.domain.Partner;
+import id.behavio.core.domain.SignatureMode;
 import id.behavio.core.domain.Transaction;
 import id.behavio.core.domain.TransactionStatus;
 import id.behavio.core.port.ConfigRepository;
 import id.behavio.core.port.EventPublisher;
+import id.behavio.core.port.SignatureVerifier;
 import id.behavio.core.port.StateRepository;
 import id.behavio.core.port.StoredResponse;
+import id.behavio.core.port.WebhookSender;
 import id.behavio.core.rule.Action;
+import id.behavio.core.rule.FaultSpec;
 import id.behavio.core.rule.Outcome;
 import id.behavio.core.rule.ResponseSpec;
 import id.behavio.core.rule.Rule;
 import id.behavio.core.rule.Scenario;
+import id.behavio.core.rule.WebhookSpec;
 
 import java.math.BigDecimal;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -38,23 +44,37 @@ public final class DefaultBehaviorEngine implements BehaviorEngine {
     private static final String H_EXTERNAL = "X-EXTERNAL-ID";
     private static final Map<String, String> JSON_HEADERS = Map.of("Content-Type", "application/json");
 
+    private static final String H_SIGNATURE = "X-SIGNATURE";
+    private static final String H_TIMESTAMP = "X-TIMESTAMP";
+    private static final String H_AUTH = "Authorization";
+
     private final StateRepository state;
     private final ConfigRepository config;
     private final EventPublisher events;
+    private final SignatureVerifier signatureVerifier; // nullable → mode STRICT tak dicek
+    private final WebhookSender webhookSender;          // nullable → webhook dilewati
     private final ConditionEvaluator evaluator = new ConditionEvaluator();
     private final ResponseRenderer renderer = new ResponseRenderer();
     private final Supplier<String> referenceNoGen;
     private final Clock clock;
 
     public DefaultBehaviorEngine(StateRepository state, ConfigRepository config, EventPublisher events) {
-        this(state, config, events, defaultRefGen(), Clock.systemUTC());
+        this(state, config, events, null, null, defaultRefGen(), Clock.systemUTC());
     }
 
     public DefaultBehaviorEngine(StateRepository state, ConfigRepository config, EventPublisher events,
+                                 SignatureVerifier signatureVerifier, WebhookSender webhookSender) {
+        this(state, config, events, signatureVerifier, webhookSender, defaultRefGen(), Clock.systemUTC());
+    }
+
+    public DefaultBehaviorEngine(StateRepository state, ConfigRepository config, EventPublisher events,
+                                 SignatureVerifier signatureVerifier, WebhookSender webhookSender,
                                  Supplier<String> referenceNoGen, Clock clock) {
         this.state = state;
         this.config = config;
         this.events = events;
+        this.signatureVerifier = signatureVerifier;
+        this.webhookSender = webhookSender;
         this.referenceNoGen = referenceNoGen;
         this.clock = clock;
     }
@@ -87,6 +107,13 @@ public final class DefaultBehaviorEngine implements BehaviorEngine {
         }
         Partner partner = partnerOpt.get();
 
+        // 1b. Signature (mode STRICT): verifikasi HMAC-SHA512 transaksional
+        if (signatureVerifier != null
+                && config.signatureMode(simulatorId) == SignatureMode.STRICT
+                && !signatureValid(request, partner)) {
+            return error(401, "4017300", "Unauthorized. Invalid Signature");
+        }
+
         // 2. Idempotensi (SNAP X-EXTERNAL-ID) — balas respons tersimpan bila ada
         String externalId = request.header(H_EXTERNAL);
         if (externalId != null && !externalId.isBlank()) {
@@ -109,11 +136,19 @@ public final class DefaultBehaviorEngine implements BehaviorEngine {
                 accNo -> state.findAccount(simulatorId, partner.id(), accNo).map(Account::balance).orElse(null));
         Outcome outcome = pickOutcome(scenario, ctx);
 
-        // 5. Eksekusi aksi + render response (atomik di batas adapter)
+        // 5. Eksekusi aksi + render response (atomik di batas adapter).
+        //    Fault titik A (BEFORE_ACTIONS) → aksi dilewati (saldo utuh);
+        //    titik B (AFTER_ACTIONS) → aksi jalan lalu efek fisik pasca-commit.
+        FaultSpec fault = outcome.fault();
+        boolean runActions = fault == null || fault.point() == FaultSpec.Point.AFTER_ACTIONS;
+        String referenceNo = referenceNoGen.get();
         SimResponse response;
+        boolean actionsSucceeded = false;
         try {
-            String referenceNo = referenceNoGen.get();
-            applyActions(simulatorId, partner.id(), outcome, request, referenceNo);
+            if (runActions) {
+                applyActions(simulatorId, partner.id(), outcome, request, referenceNo);
+            }
+            actionsSucceeded = true;
             response = renderResponse(outcome.response(), request, referenceNo);
         } catch (InsufficientFundsException e) {
             response = error(400, "4001714", "Insufficient Funds");
@@ -121,12 +156,51 @@ public final class DefaultBehaviorEngine implements BehaviorEngine {
             response = error(404, "4041712", "Invalid Account. " + e.getMessage());
         }
 
-        // 6. Simpan untuk idempotensi
+        // 6. Simpan untuk idempotensi (respons BERSIH, tanpa directive fisik →
+        //    saat replay klien menerima respons yang seharusnya, mis. setelah drop).
         if (externalId != null && !externalId.isBlank()) {
             state.recordExternalId(simulatorId, partner.id(), externalId,
                     new StoredResponse(response.httpStatus(), response.responseCode(), response.body()));
         }
+
+        // 7. Jadwalkan webhook async (enqueue outbox dalam transaksi ini)
+        if (actionsSucceeded && outcome.webhook() != null && webhookSender != null) {
+            scheduleWebhook(simulatorId, outcome.webhook(), request, referenceNo);
+        }
+
+        // 8. Lampirkan efek fisik fault (diterapkan adapter web pasca-commit)
+        if (fault != null && fault.hasPhysicalEffect()) {
+            response = response.withFault(
+                    new SimResponse.Fault(fault.delayMillis(), fault.drop(), fault.corrupt()));
+        }
         return response;
+    }
+
+    private void scheduleWebhook(UUID simulatorId, WebhookSpec spec, SimRequest request, String referenceNo) {
+        String url = request.header(spec.urlHeader());
+        if (url == null || url.isBlank()) {
+            return; // tak ada callback URL → lewati (log di adapter)
+        }
+        Map<String, Object> vars = new HashMap<>(request.fields());
+        vars.put("referenceNo", referenceNo);
+        Object amount = request.fields().get("amount");
+        vars.put("amountValue", amount == null ? "" : amount.toString());
+        vars.putIfAbsent("currency", "IDR");
+        vars.put("transactionDate", OffsetDateTime.now(clock).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME));
+        String body = renderer.render(spec.bodyTemplate(), vars);
+        webhookSender.schedule(simulatorId, url, JSON_HEADERS, body, Duration.ofMillis(spec.delayMillis()));
+    }
+
+    private boolean signatureValid(SimRequest request, Partner partner) {
+        String signature = request.header(H_SIGNATURE);
+        String timestamp = request.header(H_TIMESTAMP);
+        if (signature == null || timestamp == null || partner.clientSecret() == null) {
+            return false;
+        }
+        String auth = request.header(H_AUTH);
+        String token = auth == null ? "" : auth.replaceFirst("(?i)^Bearer\\s+", "");
+        return signatureVerifier.verifySymmetric(request.method(), request.path(), token,
+                request.rawBody(), timestamp, signature, partner.clientSecret());
     }
 
     private Outcome pickOutcome(Scenario scenario, EvalContext ctx) {

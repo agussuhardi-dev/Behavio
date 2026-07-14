@@ -1,0 +1,24 @@
+<page-header />
+
+<mat-card>
+  <mat-tab-group mat-stretch-tabs="false">
+    @for (group of items; track $index) {
+      <mat-tab [label]="group.name">
+        <div class="row no-gutters">
+          @for (item of group.children; track $index) {
+            <div [class]="item.class ? item.class : 'col-sm-6 col-md-3'">
+              <mat-list>
+                <h3 matSubheader>{{ item.name }}</h3>
+                @for (v of item.value; track $index) {
+                  <mat-list-item>
+                    <code>.{{ v }}</code>
+                  </mat-list-item>
+                }
+              </mat-list>
+            </div>
+          }
+        </div>
+      </mat-tab>
+    }
+  </mat-tab-group>
+</mat-card>

@@ -20,7 +20,14 @@ public record SimRequest(
         Map<String, Object> fields,
         String rawBody
 ) {
+    /** Lookup header case-insensitive (adapter bisa menormalkan casing berbeda). */
     public String header(String name) {
-        return headers == null ? null : headers.get(name);
+        if (headers == null) return null;
+        String v = headers.get(name);
+        if (v != null) return v;
+        for (Map.Entry<String, String> e : headers.entrySet()) {
+            if (e.getKey().equalsIgnoreCase(name)) return e.getValue();
+        }
+        return null;
     }
 }

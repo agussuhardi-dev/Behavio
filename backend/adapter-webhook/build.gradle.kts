@@ -12,5 +12,6 @@ dependencyManagement {
 dependencies {
     implementation(project(":core-engine"))
     implementation(libs.spring.boot.starter.web)
+    implementation("org.springframework:spring-jdbc")   // JdbcClient untuk outbox
     testImplementation(libs.spring.boot.starter.test)
 }

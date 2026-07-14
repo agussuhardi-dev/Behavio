@@ -1,0 +1,201 @@
+<div class="sim-page">
+  <!-- Header -->
+  <div class="sim-hero">
+    <div class="sim-hero__text">
+      <h1>Simulator Pembayaran</h1>
+      <p>
+        Uji aplikasi Anda terhadap "bank tiruan" yang berperilaku nyata (SNAP BI).
+        Nyalakan simulator, pilih skenario, lalu pantau lalu lintas transaksi
+        secara langsung.
+      </p>
+    </div>
+    <div class="sim-hero__actions">
+      <button mat-stroked-button (click)="reload()">
+        <mat-icon>refresh</mat-icon> Muat ulang
+      </button>
+      <button mat-flat-button color="primary" (click)="openCreate()">
+        <mat-icon>add</mat-icon> Tambah Profil Bank
+      </button>
+    </div>
+  </div>
+
+  @if (loading()) {
+    <mat-progress-bar mode="indeterminate" />
+  }
+
+  <!-- Kartu simulator -->
+  <div class="sim-grid">
+    @for (s of sims(); track s.id) {
+      <mat-card class="sim-card" appearance="outlined">
+        <div class="sim-card__head">
+          <div class="sim-card__title">
+            <mat-icon class="sim-card__ico">dns</mat-icon>
+            <div>
+              <div class="sim-card__name">{{ s.name }}</div>
+              <div class="sim-card__port">localhost:{{ s.port }}</div>
+            </div>
+          </div>
+          <div class="sim-card__headright">
+            <span class="chip" [class.chip--on]="s.status === 'RUNNING'">
+              <span class="dot"></span>{{ s.status === 'RUNNING' ? 'Menyala' : 'Mati' }}
+            </span>
+            <button mat-icon-button [matMenuTriggerFor]="cardMenu" matTooltip="Lainnya">
+              <mat-icon>more_vert</mat-icon>
+            </button>
+            <mat-menu #cardMenu="matMenu">
+              <button mat-menu-item (click)="openClone(s)">
+                <mat-icon>content_copy</mat-icon> Duplikat profil ini
+              </button>
+              <button mat-menu-item (click)="remove(s)">
+                <mat-icon color="warn">delete</mat-icon> Hapus simulator
+              </button>
+            </mat-menu>
+          </div>
+        </div>
+
+        <mat-divider />
+
+        <div class="sim-card__body">
+          <!-- Aksi nyala/mati -->
+          <div class="sim-actions">
+            @if (s.status === 'RUNNING') {
+              <button mat-flat-button color="warn" (click)="stop(s)">
+                <mat-icon>stop</mat-icon> Matikan
+              </button>
+            } @else {
+              <button mat-flat-button color="primary" (click)="start(s)">
+                <mat-icon>play_arrow</mat-icon> Nyalakan
+              </button>
+            }
+            <button
+              mat-stroked-button
+              [disabled]="s.status !== 'RUNNING'"
+              (click)="toggleLive(s)"
+            >
+              <mat-icon>{{ liveOpen() === s.id ? 'visibility_off' : 'visibility' }}</mat-icon>
+              {{ liveOpen() === s.id ? 'Tutup Live' : 'Live View' }}
+            </button>
+          </div>
+
+          <!-- Pilih skenario -->
+          <mat-form-field appearance="outline" class="sim-scenario">
+            <mat-label>Skenario aktif</mat-label>
+            <mat-select
+              [value]="scenarioFor(s.id)"
+              (valueChange)="changeScenario(s, $event)"
+            >
+              @for (sc of scenarios; track sc.name) {
+                <mat-option [value]="sc.name">
+                  <mat-icon class="opt-ico opt-ico--{{ sc.tone }}">{{ sc.icon }}</mat-icon>
+                  {{ sc.name }}
+                </mat-option>
+              }
+            </mat-select>
+          </mat-form-field>
+
+          @if (scenarioMeta(scenarioFor(s.id)); as meta) {
+            <div class="sim-scenario__desc sim-scenario__desc--{{ meta.tone }}">
+              <mat-icon>{{ meta.icon }}</mat-icon>
+              <span>{{ meta.desc }}</span>
+            </div>
+          }
+
+          <!-- Edit request/response -->
+          <div class="sim-editline">
+            <button mat-stroked-button (click)="editing() === s.id ? closeEditor() : openEditor(s)">
+              <mat-icon>edit</mat-icon>
+              {{ editing() === s.id ? 'Tutup editor' : 'Edit request/response' }}
+            </button>
+            <span class="sim-editline__hint">Ubah kondisi & isi response scenario "{{ scenarioFor(s.id) }}"</span>
+          </div>
+
+          @if (editing() === s.id) {
+            <div class="editor">
+              <div class="editor__head">
+                <mat-icon>tune</mat-icon>
+                Definisi scenario: <b>{{ editorScenario() }}</b>
+              </div>
+              <textarea
+                class="editor__area"
+                spellcheck="false"
+                [value]="editorText()"
+                (input)="onEditorInput($any($event.target).value)"
+              ></textarea>
+              @if (editorError()) {
+                <div class="editor__msg editor__msg--err">
+                  <mat-icon>error</mat-icon> {{ editorError() }}
+                </div>
+              }
+              @if (editorSaved()) {
+                <div class="editor__msg editor__msg--ok">
+                  <mat-icon>check_circle</mat-icon> Tersimpan — response berikutnya memakai definisi ini.
+                </div>
+              }
+              <div class="editor__actions">
+                <button mat-flat-button color="primary" (click)="saveEditor(s)">
+                  <mat-icon>save</mat-icon> Simpan
+                </button>
+                <button mat-stroked-button (click)="resetEditor(s)">
+                  <mat-icon>restart_alt</mat-icon> Reset ke preset
+                </button>
+              </div>
+            </div>
+          }
+
+          <!-- Cara mencoba -->
+          <details class="sim-try">
+            <summary>Cara mengirim transaksi uji</summary>
+            <pre>curl -X POST http://localhost:{{ s.port }}/v1.0/transfer-intrabank \
+  -H "X-PARTNER-ID: PARTNER001" -H "X-EXTERNAL-ID: TRX-001" \
+  -d '{{ '{' }}"amount":{{ '{' }}"value":"50000.00","currency":"IDR"{{ '}' }},
+       "sourceAccountNo":"1234567890","beneficiaryAccountNo":"9876543210"{{ '}' }}'</pre>
+          </details>
+
+          <!-- Live view -->
+          @if (liveOpen() === s.id) {
+            <div class="live">
+              <div class="live__head">
+                <mat-icon>bolt</mat-icon> Live View — request real-time
+              </div>
+              @if (events().length === 0) {
+                <div class="live__empty">Menunggu transaksi… kirim request ke port {{ s.port }}.</div>
+              }
+              @for (e of events(); track $index) {
+                <div class="live__row" [class.live__row--ok]="isSuccess(e.responseCode)" [class.live__row--err]="!isSuccess(e.responseCode)">
+                  <span class="live__time">{{ e.at }}</span>
+                  <span class="live__method">{{ e.method }}</span>
+                  <span class="live__path">{{ e.path }}</span>
+                  <span class="live__code">{{ e.httpStatus }} · {{ e.responseCode }}</span>
+                  <span class="live__ms">{{ e.durationMillis }}ms</span>
+                </div>
+              }
+            </div>
+          }
+        </div>
+      </mat-card>
+    } @empty {
+      @if (!loading()) {
+        <div class="sim-empty">
+          <mat-icon>info</mat-icon>
+          Tidak ada simulator. Pastikan backend berjalan di <code>localhost:8080</code>.
+        </div>
+      }
+    }
+  </div>
+
+  <!-- Legend skenario -->
+  <mat-card class="legend" appearance="outlined">
+    <div class="legend__title"><mat-icon>menu_book</mat-icon> Panduan Skenario</div>
+    <div class="legend__grid">
+      @for (sc of scenarios; track sc.name) {
+        <div class="legend__item">
+          <mat-icon class="opt-ico opt-ico--{{ sc.tone }}">{{ sc.icon }}</mat-icon>
+          <div>
+            <div class="legend__name">{{ sc.name }}</div>
+            <div class="legend__desc">{{ sc.desc }}</div>
+          </div>
+        </div>
+      }
+    </div>
+  </mat-card>
+</div>

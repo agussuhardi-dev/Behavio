@@ -305,6 +305,13 @@ per port, semua mengarah ke satu mesin eksekusi). Menangani:
 Elemen kunci: **sakelar Scenario** (ganti perilaku 1 klik tanpa restart) &
 **Live View SSE**.
 
+### Template UI (keputusan)
+Dashboard memakai **full Angular Material** dengan template **ng-matero**
+(https://github.com/ng-matero/ng-matero) sebagai kerangka admin (layout, tema,
+navigasi, komponen). Shell Angular dasar (Fase 0) akan diganti/di-adopsi ke
+ng-matero. Integrasi ke Admin API: list & start/stop simulator, sakelar scenario,
+Live View SSE, browser Account/Transaction (AG Grid), editor rule/response (Monaco).
+
 ---
 
 ## 8. Model Konfigurasi Rule (jantung engine)
@@ -438,6 +445,105 @@ OpenAPI import. Recorder/Replay, Monitoring, Audit trail.
 | Evaluator | JEXL dulu → evaluator mini nanti |
 | Slice pertama | SNAP: Access Token B2B → Transfer Intrabank |
 | Blueprint | Preset akurat (SNAP BI), **dapat di-override penuh** per-simulator |
+
+---
+
+## 14. Status Implementasi (yang sudah dibangun)
+
+> Sumber kebenaran progres. Diperbarui seiring implementasi (jangan hanya di memory).
+
+### Fase 0 — Fondasi ✅
+Gradle multi-module Hexagonal (`core-engine`, `adapter-persistence`, `adapter-web`,
+`adapter-signature`, `adapter-webhook`, `app`), JDK 25 (Gradle toolchain), Spring
+Boot 4.0.7 MVC, PostgreSQL 17 + Liquibase (11 tabel inti), frontend terpisah.
+
+### Fase 1 — MVP Transfer Intrabank ✅
+Pipeline `DefaultBehaviorEngine` (partner→idempotensi→scenario→rule first-match→
+actions atomik→response→event). Per-port server (**JDK HttpServer**, start/stop =
+connection-refused). Admin API (list/start/stop/active-scenario). Live View SSE +
+RequestLog. Seed demo (sim :9001, partner PARTNER001, rekening, 3 scenario).
+Terverifikasi: transfer sukses/saldo-kurang/limit, idempotensi, partner-auth.
+
+### Fase 2 — Signature STRICT + Fault + Webhook + Access Token ✅
+- **Signature STRICT**: verifikasi HMAC-SHA512 transaksional (mode per-simulator) →
+  `4017300` bila salah; terima signature valid.
+- **Fault injection** (via scenario): Bank Down (503 saldo utuh), Timeout (delay),
+  **Commit-Then-Drop** (debit lalu drop koneksi → retry idempoten), Malformed.
+  Directive fisik diterapkan adapter web pasca-commit.
+- **Webhook outbox** (`webhook_outbox` table): `OutboxWebhookSender` enqueue dalam
+  transaksi request; `WebhookWorker` @Scheduled kirim + retry backoff linear
+  (PENDING→SENT/FAILED). Scenario "Async Callback" (URL dari header X-CALLBACK-URL,
+  delay 2s). Test-sink `POST /api/admin/v1/webhook-sink`.
+- **Access Token B2B**: `POST /v1.0/access-token/b2b` (routing khusus di server
+  per-port) → `AccessTokenService` (STRICT verifikasi RSA asimetris) → `2007300` +
+  accessToken tersimpan di `access_tokens`.
+
+#### Skema `webhook_outbox`
+`id, simulator_id, url, headers jsonb, body, status(PENDING|SENT|FAILED), attempts,
+max_attempts, next_attempt_at, last_error, created_at, sent_at`.
+
+### Fase 3 (parsial) — Editor request/response dari dashboard ✅
+Prinsip **"request & response dapat di-modify dari dashboard"** (§2 override, §8)
+kini **diimplementasikan** untuk Transfer Intrabank:
+- Kolom `scenarios.definition JSONB` — NULL = pakai preset blueprint; berisi JSON =
+  definisi custom.
+- `ScenarioCodec` (adapter-persistence): round-trip **JSON ↔ Scenario** (condition
+  AST, operand, action, response, fault, webhook) — presisi & dapat diedit.
+- Engine (`JpaConfigRepository.findActiveScenario`): pakai definisi custom bila ada,
+  selain itu serialisasi preset blueprint sebagai titik awal.
+- **Admin API**: `GET .../scenarios` (daftar), `GET|PUT|DELETE
+  .../scenarios/{name}/definition` (ambil efektif / simpan override / reset).
+- **Dashboard**: tombol "Edit request/response" per simulator → memuat definisi JSON
+  scenario aktif (preset sebagai awal), edit di textarea, Simpan (divalidasi) / Reset.
+- Terverifikasi: override response → transfer memakai body baru (mis. field custom &
+  pesan diubah); Reset → kembali ke preset.
+
+Format JSON definisi (ringkas):
+```jsonc
+{ "rules": [ { "name": "...",
+    "when": { "kind":"compare", "left":{"kind":"accountBalance","field":"sourceAccountNo"},
+              "op":"LT", "right":{"kind":"field","path":"amount"} },
+    "then": { "actions":[], "response": { "httpStatus":400, "responseCode":"4001714",
+              "responseMessage":"Insufficient Funds", "body": { … } } } } ],
+  "fallback": { "actions":[ {"kind":"debit","accountNoField":"sourceAccountNo","amountField":"amount"},
+                            {"kind":"credit",…}, {"kind":"createTransaction","status":"SUCCESS"} ],
+                "response": { "httpStatus":200, "responseCode":"2001800", "body": { … } },
+                "fault": null, "webhook": null } }
+```
+
+### Fase 3 (parsial) — Simulator (profil bank) CRUD + Clone ✅
+Menjawab kebutuhan **"beda bank = beda profil, kadang berbeda meskipun sedikit"**.
+`Simulator` memang sudah menjadi unit "profil bank" (port sendiri, config sendiri,
+state terisolasi penuh) sejak Fase 0 — yang tadinya belum ada: cara **membuatnya**
+dari dashboard.
+
+- `SimulatorAdmin.create/cloneSimulator/delete` (port baru + `provisionBaseline`):
+  provisioning otomatis partner (PARTNER001), 2 akun baseline, endpoint transfer-
+  intrabank, dan **8 scenario** siap pakai.
+- **Clone**: menyalin kunci partner, **definisi override scenario custom** (hasil
+  editor request/response), dan akun sumber sebagai starting state — lalu berjalan
+  independen (state terpisah sepenuhnya setelah itu).
+- **Delete**: menutup port lalu menghapus simulator; FK `ON DELETE CASCADE` membawa
+  serta semua config & state terkait.
+- Admin API: `POST /simulators` (create), `POST /simulators/{id}/clone`,
+  `DELETE /simulators/{id}` — validasi port bentrok → `409`.
+- Dashboard: tombol **"Tambah Profil Bank"** (dialog form: nama, port, signature
+  mode) + menu per-kartu **"Duplikat profil ini" / "Hapus simulator"**.
+- **Bug ditemukan & diperbaiki** saat verifikasi: status `RUNNING` di DB bisa
+  nyangkut dari sesi sebelumnya padahal port sudah tertutup (Port Manager mulai
+  kosong di memori tiap boot) — melanggar §6.3 ("restart → semua STOPPED").
+  Ditambahkan `ResetStatusOnBoot` (CommandLineRunner @Order(10)) yang memaksa semua
+  simulator ke `STOPPED` saat aplikasi start, sebelum seeding.
+- Terverifikasi end-to-end: 2–3 profil bank berjalan **simultan** di port berbeda
+  dengan saldo & transaksi **terisolasi total**; clone membawa override tapi state
+  independen sejak saat clone; delete menutup port & membersihkan data.
+
+### Belum dibangun (berikutnya)
+Builder visual rule (saat ini editor JSON teks — "advanced mode"), penerapan editor
+ke endpoint VA & QRIS, verifikasi token Bearer pada transaksional (STRICT), edit
+partner/akun dari dashboard (kini hanya via baseline provisioning), Recorder/Replay
+UI, editor Monaco (ganti textarea), Workspace sebagai pengelompokan opsional lintas
+banyak profil bank (belum diperlukan karena isolasi sudah lewat port+simulator_id).
 
 ---
 

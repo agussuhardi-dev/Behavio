@@ -7,6 +7,7 @@ import jakarta.persistence.PersistenceContext;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -67,5 +68,127 @@ public class JpaSimulatorAdmin implements SimulatorAdmin {
 
         ep.activeScenarioId = sc.id;
         em.merge(ep);
+    }
+
+    private static final String[] SCENARIO_NAMES = {
+            "Normal", "Saldo Kurang", "Limit", "Bank Down", "Timeout",
+            "Commit Then Drop", "Malformed", "Async Callback"
+    };
+
+    @Override
+    @Transactional
+    public UUID create(String name, int port, String signatureMode) {
+        return provisionBaseline(name, port, signatureMode);
+    }
+
+    @Override
+    @Transactional
+    public UUID cloneSimulator(UUID sourceId, String name, int port) {
+        SimulatorEntity src = em.find(SimulatorEntity.class, sourceId);
+        if (src == null) {
+            throw new IllegalArgumentException("Simulator sumber tidak ditemukan");
+        }
+        UUID newId = provisionBaseline(name, port, src.signatureMode);
+
+        // Salin kunci partner (public key / client secret)
+        em.createNativeQuery("""
+                UPDATE partners np SET
+                  public_key = sp.public_key, client_secret = sp.client_secret
+                FROM partners sp
+                WHERE np.simulator_id = :dst AND sp.simulator_id = :src
+                """)
+                .setParameter("dst", newId).setParameter("src", sourceId)
+                .executeUpdate();
+
+        // Salin definisi custom scenario (override) berdasar nama
+        em.createNativeQuery("""
+                UPDATE scenarios ns SET definition = ss.definition
+                FROM scenarios ss
+                JOIN endpoints se ON ss.endpoint_id = se.id
+                JOIN endpoints ne ON ne.simulator_id = :dst AND ne.path = se.path
+                WHERE ns.endpoint_id = ne.id AND se.simulator_id = :src AND ss.name = ns.name
+                  AND ss.definition IS NOT NULL
+                """)
+                .setParameter("dst", newId).setParameter("src", sourceId)
+                .executeUpdate();
+
+        // Salin akun sumber (ganti akun default)
+        em.createNativeQuery("DELETE FROM accounts WHERE simulator_id = :dst")
+                .setParameter("dst", newId).executeUpdate();
+        em.createNativeQuery("""
+                INSERT INTO accounts (id, simulator_id, partner_id, account_no, holder_name, currency, balance)
+                SELECT gen_random_uuid(), :dst, (SELECT id FROM partners WHERE simulator_id = :dst LIMIT 1),
+                       account_no, holder_name, currency, balance
+                FROM accounts WHERE simulator_id = :src
+                """)
+                .setParameter("dst", newId).setParameter("src", sourceId)
+                .executeUpdate();
+        return newId;
+    }
+
+    @Override
+    @Transactional
+    public void delete(UUID simulatorId) {
+        SimulatorEntity s = em.find(SimulatorEntity.class, simulatorId);
+        if (s != null) {
+            em.remove(s); // FK ON DELETE CASCADE menghapus config + state
+        }
+    }
+
+    /** Buat simulator baru dengan baseline SNAP (partner, akun, endpoint, 8 scenario). */
+    private UUID provisionBaseline(String name, int port, String signatureMode) {
+        UUID simId = UUID.randomUUID();
+        SimulatorEntity sim = new SimulatorEntity();
+        sim.id = simId;
+        sim.name = name;
+        sim.port = port;
+        sim.status = "STOPPED";
+        sim.signatureMode = signatureMode == null ? "SIMULATED" : signatureMode;
+        em.persist(sim);
+
+        UUID partnerId = UUID.randomUUID();
+        PartnerEntity partner = new PartnerEntity();
+        partner.id = partnerId;
+        partner.simulatorId = simId;
+        partner.partnerId = "PARTNER001";
+        partner.clientSecret = "secret123";
+        em.persist(partner);
+
+        em.persist(account(simId, partnerId, "1234567890", "Andi Sumber", "1000000.00"));
+        em.persist(account(simId, partnerId, "9876543210", "Budi Tujuan", "0.00"));
+
+        UUID endpointId = UUID.randomUUID();
+        EndpointEntity ep = new EndpointEntity();
+        ep.id = endpointId;
+        ep.simulatorId = simId;
+        ep.method = TransferIntrabankBlueprint.METHOD;
+        ep.path = TransferIntrabankBlueprint.PATH;
+        em.persist(ep);
+
+        UUID normalId = null;
+        for (String scName : SCENARIO_NAMES) {
+            UUID scId = UUID.randomUUID();
+            if ("Normal".equals(scName)) normalId = scId;
+            ScenarioEntity sc = new ScenarioEntity();
+            sc.id = scId;
+            sc.endpointId = endpointId;
+            sc.name = scName;
+            em.persist(sc);
+        }
+        ep.activeScenarioId = normalId;
+        em.merge(ep);
+        return simId;
+    }
+
+    private static AccountEntity account(UUID sim, UUID partner, String no, String holder, String balance) {
+        AccountEntity a = new AccountEntity();
+        a.id = UUID.randomUUID();
+        a.simulatorId = sim;
+        a.partnerId = partner;
+        a.accountNo = no;
+        a.holderName = holder;
+        a.currency = "IDR";
+        a.balance = new BigDecimal(balance);
+        return a;
     }
 }

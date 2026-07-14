@@ -1,26 +1,34 @@
 package id.behavio.persistence;
 
-import id.behavio.core.blueprint.TransferIntrabankBlueprint;
 import id.behavio.core.domain.Partner;
+import id.behavio.core.domain.SignatureMode;
 import id.behavio.core.port.ConfigRepository;
 import id.behavio.core.rule.Scenario;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
+import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 
 import java.util.Optional;
 import java.util.UUID;
 
 /**
- * Outbound adapter: {@link ConfigRepository} berbasis JPA. Fase 1 — Scenario dibangun
- * dari preset {@link TransferIntrabankBlueprint}, dipilih berdasarkan nama scenario aktif
- * di DB (sakelar testing). Parsing rule when/then JSONB arbitrer menyusul (Fase 3).
+ * Outbound adapter: {@link ConfigRepository} berbasis JPA. Scenario aktif = definisi
+ * custom (kolom scenarios.definition, dapat di-edit dashboard) bila ada; jika kosong,
+ * jatuh ke preset {@link Blueprints} berdasar nama scenario (design.md §2 & §8).
  */
 @Repository
 public class JpaConfigRepository implements ConfigRepository {
 
     @PersistenceContext
     private EntityManager em;
+
+    private final JdbcClient db;
+    private final ScenarioCodec codec = new ScenarioCodec();
+
+    public JpaConfigRepository(JdbcClient db) {
+        this.db = db;
+    }
 
     @Override
     public Optional<Partner> findPartner(UUID simulatorId, String partnerHeaderId) {
@@ -50,15 +58,27 @@ public class JpaConfigRepository implements ConfigRepository {
         if (sc == null) {
             return Optional.empty();
         }
-        return Optional.of(scenarioFromName(sc.name));
+        return Optional.of(resolveScenario(sc.id, sc.name));
     }
 
-    /** Peta nama scenario (DB) → preset Blueprint. Slice pertama: Transfer Intrabank. */
-    private Scenario scenarioFromName(String name) {
-        return switch (name == null ? "" : name.trim().toLowerCase()) {
-            case "saldo kurang" -> TransferIntrabankBlueprint.forcedInsufficient();
-            case "limit" -> TransferIntrabankBlueprint.limit();
-            default -> TransferIntrabankBlueprint.normal();
-        };
+    /** Definisi custom (JSON) bila ada, selain itu preset blueprint. */
+    private Scenario resolveScenario(UUID scenarioId, String name) {
+        Optional<String> custom = db.sql("SELECT COALESCE(definition::text, '') FROM scenarios WHERE id = ?")
+                .param(scenarioId)
+                .query(String.class).optional();
+        if (custom.isPresent() && !custom.get().isBlank()) {
+            return codec.parse(name, custom.get());
+        }
+        return Blueprints.byName(name);
+    }
+
+    @Override
+    public SignatureMode signatureMode(UUID simulatorId) {
+        SimulatorEntity s = em.find(SimulatorEntity.class, simulatorId);
+        if (s == null || s.signatureMode == null) {
+            return SignatureMode.SIMULATED;
+        }
+        return "STRICT".equalsIgnoreCase(s.signatureMode)
+                ? SignatureMode.STRICT : SignatureMode.SIMULATED;
     }
 }

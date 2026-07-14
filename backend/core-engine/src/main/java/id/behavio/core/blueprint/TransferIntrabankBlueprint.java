@@ -4,7 +4,9 @@ import id.behavio.core.domain.TransactionStatus;
 import id.behavio.core.rule.Action;
 import id.behavio.core.rule.CompareOp;
 import id.behavio.core.rule.Condition;
+import id.behavio.core.rule.FaultSpec;
 import id.behavio.core.rule.Operand;
+import id.behavio.core.rule.WebhookSpec;
 import id.behavio.core.rule.Outcome;
 import id.behavio.core.rule.ResponseSpec;
 import id.behavio.core.rule.Rule;
@@ -69,14 +71,83 @@ public final class TransferIntrabankBlueprint {
         return new Scenario("Limit", List.of(overLimit), successOutcome());
     }
 
+    // ---- scenario fault (design.md §4.2) ----
+
+    public static final String RC_SERVICE_DOWN = "5030000";
+
+    /** Bank Down: tolak di depan (503), saldo utuh — fault titik A. */
+    public static Scenario bankDown() {
+        return new Scenario("Bank Down", List.of(),
+                Outcome.of(errorResponse(503, RC_SERVICE_DOWN, "Service Unavailable")));
+    }
+
+    /** Timeout: proses transfer lalu tunda respons (bank lambat). */
+    public static Scenario timeout() {
+        return timeout(5000);
+    }
+
+    public static Scenario timeout(long delayMillis) {
+        return new Scenario("Timeout", List.of(),
+                Outcome.withFault(successActions(), successResponse(), FaultSpec.delayAfter(delayMillis)));
+    }
+
+    /** Commit-Then-Drop (fault titik B): debit terjadi, respons hilang → uji idempotensi. */
+    public static Scenario commitThenDrop() {
+        return new Scenario("Commit Then Drop", List.of(),
+                Outcome.withFault(successActions(), successResponse(), FaultSpec.commitThenDrop()));
+    }
+
+    /** Malformed (fault titik C): transfer sukses tapi body respons rusak. */
+    public static Scenario malformed() {
+        return new Scenario("Malformed", List.of(),
+                Outcome.withFault(successActions(), successResponse(), FaultSpec.corruptAfter()));
+    }
+
+    /**
+     * Async Callback (design.md §9): transfer diterima (respons PENDING), lalu 2 detik
+     * kemudian simulator mengirim webhook status SUCCESS ke URL di header X-CALLBACK-URL.
+     */
+    public static Scenario asyncCallback() {
+        WebhookSpec webhook = new WebhookSpec("X-CALLBACK-URL", 2000, notificationBody());
+        return new Scenario("Async Callback", List.of(),
+                Outcome.withWebhook(successActions(), pendingResponse(), webhook));
+    }
+
+    private static ResponseSpec pendingResponse() {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("responseCode", "{{responseCode}}");
+        body.put("responseMessage", "{{responseMessage}}");
+        body.put("referenceNo", "{{referenceNo}}");
+        body.put("partnerReferenceNo", "{{partnerReferenceNo}}");
+        body.put("latestTransactionStatus", "PENDING");
+        return new ResponseSpec(200, RC_SUCCESS, "Accepted - awaiting callback", body);
+    }
+
+    private static Map<String, Object> notificationBody() {
+        Map<String, Object> amount = new LinkedHashMap<>();
+        amount.put("value", "{{amountValue}}");
+        amount.put("currency", "{{currency}}");
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("originalReferenceNo", "{{referenceNo}}");
+        body.put("originalPartnerReferenceNo", "{{partnerReferenceNo}}");
+        body.put("latestTransactionStatus", "00");
+        body.put("transactionStatusDesc", "Success");
+        body.put("amount", amount);
+        return body;
+    }
+
     // ---- helpers ----
 
-    private static Outcome successOutcome() {
-        List<Action> actions = List.of(
+    private static List<Action> successActions() {
+        return List.of(
                 new Action.Debit("sourceAccountNo", "amount"),
                 new Action.Credit("beneficiaryAccountNo", "amount"),
                 new Action.CreateTransaction(TransactionStatus.SUCCESS));
-        return new Outcome(actions, successResponse());
+    }
+
+    private static Outcome successOutcome() {
+        return new Outcome(successActions(), successResponse());
     }
 
     private static ResponseSpec successResponse() {
