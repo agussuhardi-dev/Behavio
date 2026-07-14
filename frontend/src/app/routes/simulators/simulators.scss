@@ -1,527 +1,482 @@
-// Halaman bank memakai model tata letak yang sama dengan halaman QRIS (kartu
-// per-endpoint + selector profil). Style Angular ter-scope per komponen, jadi
-// class generik di bawah ini disalin dari qris.scss alih-alih di-share:
-// mengekstraknya ke partial bersama berarti mengubah qris.scss dan berisiko
-// regresi visual di halaman QRIS. Kandidat refactor tersendiri nanti.
+.sim-page { padding: 0 0 48px; }
 
-.qris-page {
-  display: block;
-  max-width: 1400px;
-  margin: 0 auto;
-}
-
-.qris-hero {
-  margin-bottom: 20px;
-
-  &__text h1 {
-    margin: 0 0 6px;
-    font-size: 24px;
-    font-weight: 600;
-  }
-  &__text p {
-    margin: 0;
-    max-width: 720px;
-    opacity: 0.72;
-    line-height: 1.55;
-  }
-}
-
-.qris-empty {
+// ---- hero ----
+.sim-hero {
+  padding: 28px 24px;
+  margin: 0 0 20px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, var(--mat-sys-primary-container), var(--mat-sys-surface-container-highest));
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 24px;
-  opacity: 0.7;
-}
-
-.qris-selector {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 14px 18px;
-  margin-bottom: 18px;
   flex-wrap: wrap;
+  gap: 12px;
+
+  &__text {
+    h1 {
+      margin: 0 0 4px;
+      font-size: 30px;
+      font-weight: 800;
+      letter-spacing: -.5px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    p {
+      margin: 0;
+      color: var(--mat-sys-on-surface-variant);
+      font-size: 15px;
+      max-width: 700px;
+    }
+  }
+
+  &__logo { font-size: 34px; width: 34px; height: 34px; color: var(--mat-sys-primary); }
+}
+
+// ---- loader ----
+.sim-loader { margin-bottom: 8px; }
+
+// ---- empty state ----
+.sim-empty {
+  margin: 24px 0;
+  &__inner {
+    text-align: center;
+    padding: 48px 24px !important;
+    h3 { margin: 12px 0 4px; font-size: 20px; font-weight: 700; }
+    p { margin: 0 0 20px; color: var(--mat-sys-on-surface-variant); }
+  }
+  &__icon { font-size: 56px; width: 56px; height: 56px; color: var(--mat-sys-outline); }
+}
+
+.sim-empty-mini {
+  color: var(--mat-sys-on-surface-variant);
+  font-size: 13px;
+  padding: 8px 0;
+  font-style: italic;
+}
+
+// ---- top bar ----
+.sim-bar {
+  margin-bottom: 16px;
+
+  &__row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 16px;
+  }
 
   &__field {
-    min-width: 280px;
-    margin-bottom: -18px;
+    min-width: 260px;
   }
-  &__spacer {
-    flex: 1;
+
+  &__spacer { flex: 1; }
+}
+
+// ---- chip ----
+.sim-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 500;
+  background: var(--mat-sys-surface-container-highest);
+  color: var(--mat-sys-on-surface-variant);
+  white-space: nowrap;
+
+  &--on { background: var(--mat-sys-tertiary-container); color: var(--mat-sys-tertiary); }
+  &--sm { font-size: 11px; padding: 2px 8px; }
+  &--warn { background: #fff3e0; color: #e65100; }
+  &--err { background: #ffebee; color: #c62828; }
+
+  &__dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--mat-sys-outline);
+    .sim-chip--on & { background: var(--mat-sys-tertiary); }
   }
 }
 
-.qris-grid {
+// ---- tag ----
+.sim-tag {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--mat-sys-surface-container-highest);
+  color: var(--mat-sys-on-surface-variant);
+  letter-spacing: .5px;
+}
+
+.sim-count {
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--mat-sys-primary-container);
+  color: var(--mat-sys-primary);
+  border-radius: 10px;
+  padding: 1px 8px;
+  &--live { background: var(--mat-sys-tertiary-container); color: var(--mat-sys-tertiary); }
+}
+
+// ---- grid ----
+.sim-grid {
   display: grid;
-  grid-template-columns: minmax(360px, 1fr) minmax(420px, 1.2fr);
-  gap: 18px;
+  grid-template-columns: 1fr 380px;
+  gap: 16px;
   align-items: start;
-
-  @media (max-width: 900px) {
-    grid-template-columns: 1fr;
-  }
+  @media (max-width: 1100px) { grid-template-columns: 1fr; }
 }
 
-// Kolom kanan menumpuk dua kartu (Partner & Rekening, lalu Virtual Account).
-.bank-col {
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-}
-
-.qris-card {
-  padding: 0;
-  overflow: hidden;
-
+// ---- card ----
+.sim-card {
   &__head {
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 14px 18px;
+    padding: 12px 16px;
+    font-size: 14px;
     font-weight: 600;
-    mat-icon:first-child { color: #5b7cfa; }
-    button { margin-left: auto; }
   }
-  &__body {
-    padding: 16px 18px;
+  &__head-icon { color: var(--mat-sys-primary); }
+  &__head-btn { font-size: 12px; min-height: 32px; }
+  &__body { padding: 0; }
+}
+
+// ---- side panels ----
+.sim-side {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+// ---- msg ----
+.sim-msg {
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  margin-bottom: 8px;
+  &--info { background: var(--mat-sys-primary-container); color: var(--mat-sys-on-primary-container); }
+}
+
+// ---- section label ----
+.sim-section-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 16px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  color: var(--mat-sys-on-surface-variant);
+  mat-icon { font-size: 18px; width: 18px; height: 18px; }
+}
+
+// ---- rows ----
+.sim-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--mat-sys-outline-variant);
+  transition: background .12s;
+  &:hover { background: var(--mat-sys-surface-container-highest); }
+  &--acc { flex-wrap: wrap; }
+  &--va { flex-direction: column; align-items: stretch; }
+
+  &__main {
+    flex: 1;
+    min-width: 0;
     display: flex;
     flex-direction: column;
-    gap: 14px;
+    gap: 2px;
   }
+  &__name { font-size: 14px; font-weight: 500; }
+  &__sub { font-size: 12px; color: var(--mat-sys-on-surface-variant); }
+  &__tags { display: flex; gap: 4px; margin-top: 2px; }
+  &__bal { width: 120px; flex-shrink: 0; }
+  &__actions { display: flex; gap: 6px; align-items: center; margin-top: 8px; }
+  &__paid { font-size: 13px; color: var(--mat-sys-on-surface-variant); }
 }
 
-.sim-scenario__desc {
+// ---- add row ----
+.sim-add-row {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 8px;
-  font-size: 13px;
-  padding: 10px 12px;
-  border-radius: 10px;
-  line-height: 1.4;
-  background: rgba(91, 124, 250, 0.1);
-
-  mat-icon { font-size: 18px; width: 18px; height: 18px; }
-  &--warn { background: rgba(240, 173, 78, 0.14); }
-  &--fault { background: rgba(231, 76, 60, 0.12); }
+  padding: 8px 16px;
+  flex-wrap: wrap;
+  &__fld { width: 140px; &--sm { width: 100px; } }
 }
 
-.opt-ico {
-  font-size: 18px;
-  width: 18px;
-  height: 18px;
-  vertical-align: middle;
-  margin-right: 6px;
-  &--ok { color: #24a35a; }
-  &--warn { color: #e0912f; }
-  &--fault { color: #e0533f; }
-}
+// ---- endpoint panel ----
+.sim-epu { padding: 4px; }
 
-.editor {
-  border: 1px solid rgba(120, 120, 120, 0.22);
-  border-radius: 10px;
-  overflow: hidden;
+.sim-ep {
+  margin: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  border-bottom: 1px solid var(--mat-sys-outline-variant);
 
-  &__head {
+  &__badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 1px 7px;
+    border-radius: 5px;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .3px;
+    margin-right: 8px;
+    flex-shrink: 0;
+    &--post { background: var(--mat-sys-tertiary-container); color: var(--mat-sys-tertiary); }
+    &--del { background: #ffebee; color: #c62828; }
+  }
+
+  &__label { font-size: 14px; font-weight: 500; }
+
+  &__scenario-tag {
+    font-size: 11px;
+    padding: 1px 8px;
+    border-radius: 10px;
+    background: var(--mat-sys-surface-container-highest);
+    color: var(--mat-sys-on-surface-variant);
+    margin-left: 8px;
+  }
+
+  &__body { padding: 12px 24px 16px; }
+
+  &__bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+  }
+
+  &__scenario { width: 200px; }
+
+  &__hint {
     display: flex;
     align-items: center;
     gap: 6px;
-    padding: 10px 12px;
-    font-size: 12.5px;
-    background: rgba(91, 124, 250, 0.08);
-    mat-icon { color: #5b7cfa; font-size: 18px; width: 18px; height: 18px; }
+    font-size: 13px;
+    padding: 6px 12px;
+    border-radius: 8px;
+    &--ok { background: var(--mat-sys-tertiary-container); color: var(--mat-sys-on-tertiary-container); }
+    &--warn { background: #fff3e0; color: #e65100; }
+    &--fault { background: #ffebee; color: #c62828; }
+    mat-icon { font-size: 18px; width: 18px; height: 18px; }
   }
-  &__area {
-    width: 100%;
-    box-sizing: border-box;
-    min-height: 240px;
-    resize: vertical;
-    border: 0;
-    outline: none;
-    padding: 12px;
-    font-family: ui-monospace, "SF Mono", Menlo, monospace;
-    font-size: 12px;
-    line-height: 1.55;
-    background: rgba(120, 120, 120, 0.06);
-    color: inherit;
-  }
+
   &__msg {
     display: flex;
     align-items: center;
     gap: 6px;
-    padding: 8px 12px;
-    font-size: 12.5px;
-    mat-icon { font-size: 18px; width: 18px; height: 18px; }
-    &--err { color: #e0533f; }
-    &--ok { color: #24a35a; }
-  }
-  &__actions {
-    display: flex;
-    gap: 10px;
-    padding: 10px 12px;
-  }
-}
-
-.qris-try {
-  font-size: 12px;
-  summary { cursor: pointer; opacity: 0.7; }
-
-  &__box {
-    position: relative;
-    margin-top: 8px;
-
-    pre {
-      margin: 0;
-      padding: 12px 44px 12px 12px;
-      border-radius: 8px;
-      background: rgba(120, 120, 120, 0.12);
-      overflow-x: auto;
-      font-size: 11.5px;
-      line-height: 1.5;
-    }
-    button {
-      position: absolute;
-      top: 4px;
-      right: 4px;
-    }
-  }
-}
-
-.spin {
-  animation: sim-spin 0.9s linear infinite;
-}
-
-@keyframes sim-spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-
-.qris-msg {
-  font-size: 12.5px;
-  color: #5b7cfa;
-}
-
-.qris-list-empty {
-  padding: 10px 0;
-  font-size: 12.5px;
-  opacity: 0.6;
-}
-
-.qr-row {
-  border-top: 1px solid rgba(120, 120, 120, 0.14);
-  padding: 12px 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-
-  &:first-child { border-top: none; padding-top: 0; }
-
-  &__top {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-wrap: wrap;
-  }
-  &__ref {
-    font-family: ui-monospace, monospace;
-    font-size: 12.5px;
-    font-weight: 600;
-  }
-  &__sub {
-    font-size: 12px;
-    opacity: 0.62;
-  }
-  &__actions {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    flex-wrap: wrap;
-  }
-  &__hint {
-    font-size: 11.5px;
-    opacity: 0.55;
-  }
-}
-
-.tag {
-  font-size: 10px;
-  font-weight: 700;
-  padding: 2px 6px;
-  border-radius: 5px;
-  background: rgba(46, 204, 113, 0.16);
-  color: #24a35a;
-}
-
-.chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 600;
-  background: rgba(120, 120, 120, 0.14);
-  color: #8a8a8a;
-
-  .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
-  &--on { background: rgba(46, 204, 113, 0.16); color: #24a35a; }
-  &--warn { background: rgba(240, 173, 78, 0.16); color: #e0912f; }
-  &--sm { padding: 2px 8px; font-size: 10.5px; }
-}
-
-// endpoint expansion panel
-.qris-ep {
-  box-shadow: none !important;
-  border: 1px solid rgba(120, 120, 120, 0.16);
-  border-radius: 8px;
-  margin: 0;
-
-  // Tinggi tetap Material (48px) memotong deskripsi endpoint yang panjang → biarkan
-  // header tumbuh mengikuti isi.
-  .mat-expansion-panel-header {
-    height: auto;
-    min-height: 48px;
-    padding: 10px 16px;
     font-size: 13px;
-
-    &.mat-expanded { height: auto; }
-  }
-
-  // .mat-content = wrapper internal Material (perlu ::ng-deep): defaultnya satu baris
-  // flex dengan overflow:hidden, sehingga judul & deskripsi saling desak lalu terpotong.
-  ::ng-deep .mat-content {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 3px;
-    overflow: visible;
-  }
-
-  .mat-expansion-panel-header-title {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-right: 0;
-    flex-grow: 0;
-  }
-
-  .mat-expansion-panel-header-description {
-    display: block;
-    margin-right: 0;
-    flex-grow: 0;
-    white-space: normal;
-    overflow: visible;
-    overflow-wrap: anywhere;
-    line-height: 1.45;
-    font-size: 12px;
-  }
-  &__method {
-    flex: none;
-    font-size: 10px;
-    font-weight: 700;
-    padding: 1px 6px;
-    border-radius: 4px;
-    background: rgba(91, 124, 250, 0.16);
-    color: #5b7cfa;
-  }
-  &__label {
-    font-weight: 600;
-    overflow-wrap: anywhere;
-  }
-  &__body {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    padding: 0 0 8px;
-  }
-  &__scenario {
-    width: 100%;
-    margin-bottom: -12px;
-  }
-  // Endpoint berlogika tetap (access-token, VA) — tak punya editor response.
-  &__hint {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 12.5px;
-    padding: 10px 12px;
-    border-radius: 10px;
-    background: rgba(120, 120, 120, 0.1);
-    opacity: 0.8;
+    padding: 6px 12px;
+    border-radius: 8px;
+    &--ok { background: var(--mat-sys-tertiary-container); color: var(--mat-sys-on-tertiary-container); }
+    &--err { background: #ffebee; color: #c62828; }
     mat-icon { font-size: 18px; width: 18px; height: 18px; }
   }
 }
 
-// ---- Partner & Rekening ----
-.bank-section__head {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  font-weight: 600;
-  mat-icon { color: #5b7cfa; font-size: 18px; width: 18px; height: 18px; }
-}
-
-.bank-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 0;
-  border-top: 1px solid rgba(120, 120, 120, 0.12);
-  flex-wrap: wrap;
-
-  &:first-of-type { border-top: none; }
-
-  &__main {
-    display: flex;
-    flex-direction: column;
-    min-width: 130px;
-  }
-  &__label {
-    font-family: ui-monospace, monospace;
-    font-size: 12.5px;
-    font-weight: 600;
-  }
-  &__sub {
-    font-size: 11px;
-    opacity: 0.6;
-  }
-  &__balance {
-    width: 140px;
-    margin-left: auto;
-    margin-bottom: -18px;
-  }
-}
-
-.bank-add {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  padding: 10px 0 0;
-  border-top: 1px solid rgba(120, 120, 120, 0.12);
-
-  &__field {
-    width: 160px;
-    margin-bottom: -18px;
-    &--sm { width: 110px; }
-  }
-}
-
-// ---- Live View ----
-.qris-live {
-  margin-top: 18px;
-
-  &__count {
-    font-size: 11px;
-    font-weight: 700;
-    padding: 1px 8px;
-    border-radius: 999px;
-    background: rgba(91, 124, 250, 0.16);
-    color: #5b7cfa;
-  }
-  &__empty {
-    font-size: 12.5px;
-    opacity: 0.6;
-    padding: 4px 0;
-  }
-}
-
-.live-item {
-  border-radius: 6px;
-  border-left: 3px solid transparent;
-  background: rgba(120, 120, 120, 0.06);
-  overflow: hidden;
-
-  &--ok { border-left-color: #24a35a; }
-  &--err { border-left-color: #e0533f; }
-}
-
-.live-row {
-  display: grid;
-  grid-template-columns: 22px 82px 52px 1fr auto auto;
-  align-items: center;
-  gap: 10px;
+// ---- editor ----
+.sim-editor {
+  border: 1px solid var(--mat-sys-outline-variant);
+  border-radius: 10px;
+  padding: 14px;
+  margin-top: 8px;
   width: 100%;
-  padding: 6px 10px;
-  border: none;
-  background: transparent;
-  color: inherit;
-  text-align: left;
-  cursor: pointer;
-  font-size: 12px;
-  font-family: 'JetBrains Mono', ui-monospace, monospace;
 
-  &:hover { background: rgba(120, 120, 120, 0.08); }
-
-  &__chev { font-size: 18px; width: 18px; height: 18px; opacity: 0.6; }
-  &__time { opacity: 0.6; }
-  &__method { font-weight: 700; color: #5b7cfa; }
-  &__path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: 0.85; }
-  &__code { font-weight: 600; }
-  &__ms { opacity: 0.6; }
-
-  @media (max-width: 700px) {
-    grid-template-columns: 22px 1fr auto;
-    &__path { grid-column: 1 / -1; }
-  }
-}
-
-.live-detail {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 4px 12px 12px 32px;
-
-  &__block { display: flex; flex-direction: column; gap: 4px; }
-  &__label {
+  &__head {
     display: flex;
     align-items: center;
     gap: 6px;
-    font-size: 11px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    opacity: 0.7;
-    mat-icon { font-size: 15px; width: 15px; height: 15px; }
-    button { margin-left: auto; }
+    font-size: 13px;
+    color: var(--mat-sys-on-surface-variant);
+    margin-bottom: 10px;
+    mat-icon { font-size: 18px; width: 18px; height: 18px; color: var(--mat-sys-primary); }
   }
-  pre {
-    margin: 0;
-    padding: 8px 10px;
-    border-radius: 6px;
-    background: rgba(120, 120, 120, 0.1);
-    font-size: 11.5px;
-    line-height: 1.45;
-    font-family: 'JetBrains Mono', ui-monospace, monospace;
-    white-space: pre-wrap;
-    word-break: break-word;
-    max-height: 260px;
-    overflow: auto;
+
+  &__area {
+    width: 100%;
+    min-height: 260px;
+    padding: 12px;
+    border-radius: 8px;
+    border: 1px solid var(--mat-sys-outline-variant);
+    background: var(--mat-sys-surface-container);
+    color: var(--mat-sys-on-surface);
+    font-family: 'Roboto Mono', monospace;
+    font-size: 12px;
+    line-height: 1.5;
+    resize: vertical;
+    outline: none;
+    &:focus { border-color: var(--mat-sys-primary); }
+  }
+
+  &__actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
   }
 }
 
-// ---- Panduan skenario ----
-.legend {
-  margin-top: 18px;
-  padding: 18px 20px;
+// ---- curl ----
+.sim-curl {
+  margin-top: 6px;
 
-  &__title {
+  summary {
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--mat-sys-primary);
+    padding: 4px 0;
+  }
+
+  &__box {
+    display: flex;
+    align-items: flex-start;
+    gap: 4px;
+    background: var(--mat-sys-surface-container);
+    border-radius: 8px;
+    padding: 10px 12px;
+    pre {
+      margin: 0;
+      flex: 1;
+      overflow-x: auto;
+      font-family: 'Roboto Mono', monospace;
+      font-size: 11px;
+      color: var(--mat-sys-on-surface);
+      line-height: 1.6;
+      white-space: pre-wrap;
+    }
+  }
+}
+
+// ---- live view ----
+.sim-live {
+  margin-top: 16px;
+
+  &__empty {
     display: flex;
     align-items: center;
-    gap: 8px;
-    font-weight: 600;
-    margin-bottom: 14px;
-    mat-icon { color: #5b7cfa; }
+    gap: 10px;
+    padding: 16px;
+    color: var(--mat-sys-on-surface-variant);
+    font-size: 13px;
+    mat-icon { font-size: 22px; width: 22px; height: 22px; color: var(--mat-sys-outline); }
   }
+}
+
+.sim-live-item {
+  border-bottom: 1px solid var(--mat-sys-outline-variant);
+  &--ok { border-left: 3px solid var(--mat-sys-tertiary); }
+  &--err { border-left: 3px solid #ef5350; }
+}
+
+.sim-live-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--mat-sys-on-surface);
+  text-align: left;
+
+  &__chev {
+    font-size: 18px; width: 18px; height: 18px;
+    color: var(--mat-sys-on-surface-variant);
+    flex-shrink: 0;
+  }
+  &__time { color: var(--mat-sys-on-surface-variant); flex-shrink: 0; width: 70px; }
+  &__method { font-weight: 700; width: 42px; flex-shrink: 0; }
+  &__path { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  &__code { width: 130px; flex-shrink: 0; &--ok { color: var(--mat-sys-tertiary); } &--err { color: #ef5350; } }
+  &__ms { color: var(--mat-sys-on-surface-variant); flex-shrink: 0; width: 50px; text-align: right; }
+}
+
+.sim-live-detail {
+  padding: 0 12px 12px 36px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+
+  &__block {
+    pre {
+      margin: 4px 0 0;
+      padding: 8px 10px;
+      background: var(--mat-sys-surface-container);
+      border-radius: 6px;
+      font-family: 'Roboto Mono', monospace;
+      font-size: 11px;
+      color: var(--mat-sys-on-surface-variant);
+      overflow-x: auto;
+      white-space: pre-wrap;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+  }
+
+  &__label {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+    color: var(--mat-sys-on-surface-variant);
+    mat-icon { font-size: 14px; width: 14px; height: 14px; }
+  }
+}
+
+// ---- scenario option icons ----
+.opt-ico {
+  font-size: 18px; width: 18px; height: 18px; margin-right: 4px;
+  &--ok { color: var(--mat-sys-tertiary); }
+  &--warn { color: #ff9800; }
+  &--fault { color: #ef5350; }
+}
+
+// ---- scenario legend ----
+.sim-legend {
+  margin-top: 16px;
+
   &__grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-    gap: 14px;
+    gap: 0;
+    padding: 0;
   }
+
   &__item {
     display: flex;
+    align-items: flex-start;
     gap: 10px;
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--mat-sys-outline-variant);
+    transition: background .12s;
+    &:hover { background: var(--mat-sys-surface-container-highest); }
+
+    mat-icon { margin-top: 2px; flex-shrink: 0; }
   }
-  &__name { font-weight: 600; font-size: 13.5px; }
-  &__desc { font-size: 12.5px; opacity: 0.66; line-height: 1.4; }
+
+  &__name {
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 2px;
+  }
+
+  &__desc {
+    font-size: 12px;
+    color: var(--mat-sys-on-surface-variant);
+    line-height: 1.4;
+  }
 }

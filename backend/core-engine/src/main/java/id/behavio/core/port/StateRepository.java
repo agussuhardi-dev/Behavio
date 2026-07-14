@@ -3,6 +3,8 @@ package id.behavio.core.port;
 import id.behavio.core.domain.Account;
 import id.behavio.core.domain.Transaction;
 
+import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -19,6 +21,8 @@ public interface StateRepository {
     void saveAccount(Account account);
 
     void saveTransaction(Transaction transaction);
+
+    List<Transaction> findTransactions(UUID simulatorId, UUID partnerId, Instant from, Instant to, int limit, int offset);
 
     /** Cek idempotensi SNAP (X-EXTERNAL-ID). */
     boolean externalIdExists(UUID simulatorId, UUID partnerId, String externalId);

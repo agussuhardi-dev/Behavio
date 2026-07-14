@@ -2,12 +2,16 @@ package id.behavio.persistence;
 
 import id.behavio.core.domain.Account;
 import id.behavio.core.domain.Transaction;
+import id.behavio.core.domain.TransactionStatus;
 import id.behavio.core.port.StateRepository;
 import id.behavio.core.port.StoredResponse;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import org.springframework.stereotype.Repository;
 
+import java.math.BigDecimal;
+import java.sql.Timestamp;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -65,7 +69,33 @@ public class JpaStateRepository implements StateRepository {
         e.amount = t.amount();
         e.currency = t.currency();
         e.status = t.status().name();
+        e.createdAt = t.createdAt();
         em.persist(e);
+    }
+
+    @Override
+    public List<Transaction> findTransactions(UUID simulatorId, UUID partnerId,
+                                               Instant from, Instant to, int limit, int offset) {
+        return em.createQuery(
+                        "select e from TransactionEntity e "
+                        + "where e.simulatorId = :sim and e.partnerId = :p "
+                        + "and e.createdAt >= :from and e.createdAt <= :to "
+                        + "order by e.createdAt desc",
+                        TransactionEntity.class)
+                .setParameter("sim", simulatorId)
+                .setParameter("p", partnerId)
+                .setParameter("from", from)
+                .setParameter("to", to)
+                .setMaxResults(limit)
+                .setFirstResult(offset)
+                .getResultList().stream()
+                .map(e -> new Transaction(e.id, e.simulatorId, e.partnerId,
+                        e.referenceNo, e.partnerReferenceNo,
+                        e.sourceAccountNo, e.beneficiaryAccountNo,
+                        e.amount, e.currency,
+                        TransactionStatus.valueOf(e.status),
+                        e.createdAt))
+                .toList();
     }
 
     @Override

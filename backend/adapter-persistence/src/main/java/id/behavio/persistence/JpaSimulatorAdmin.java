@@ -1,5 +1,6 @@
 package id.behavio.persistence;
 
+import id.behavio.core.blueprint.InterbankTransferBlueprint;
 import id.behavio.core.blueprint.QrisMpmBlueprint;
 import id.behavio.core.blueprint.TransferIntrabankBlueprint;
 import id.behavio.core.port.SimulatorAdmin;
@@ -217,10 +218,66 @@ public class JpaSimulatorAdmin implements SimulatorAdmin {
         qrisEp.activeScenarioId = qrisNormalId;
         em.merge(qrisEp);
 
+        // Endpoint Mini ATM (balance-inquiry, account-inquiry-internal, transaction-history-list)
+        // — masing-masing dengan 1 scenario "Normal" agar response dapat di-custom dari dashboard.
+        java.util.function.BiFunction<String, String, UUID> provisionMiniAtm = (opKey, path) -> {
+            UUID epId = UUID.randomUUID();
+            EndpointEntity e = new EndpointEntity();
+            e.id = epId;
+            e.simulatorId = simId;
+            e.method = "POST";
+            e.path = path;
+            e.operation = opKey;
+            em.persist(e);
+            UUID scId = UUID.randomUUID();
+            ScenarioEntity sc = new ScenarioEntity();
+            sc.id = scId;
+            sc.endpointId = epId;
+            sc.name = "Normal";
+            em.persist(sc);
+            e.activeScenarioId = scId;
+            em.merge(e);
+            return epId;
+        };
+        provisionMiniAtm.apply("balance-inquiry", "/v1.0/balance-inquiry");
+        provisionMiniAtm.apply("account-inquiry-internal", "/v1.0/account-inquiry-internal");
+        provisionMiniAtm.apply("transaction-history-list", "/v1.0/transaction-history-list");
+
+        // Interbank Transfer — endpoint scenario-driven via engine, tanpa credit internal.
+        UUID ibEndpointId = UUID.randomUUID();
+        EndpointEntity ibEp = new EndpointEntity();
+        ibEp.id = ibEndpointId;
+        ibEp.simulatorId = simId;
+        ibEp.method = InterbankTransferBlueprint.METHOD;
+        ibEp.path = InterbankTransferBlueprint.PATH;
+        ibEp.operation = "transfer-interbank";
+        em.persist(ibEp);
+        UUID ibNormalId = UUID.randomUUID();
+        ScenarioEntity ibNormalSc = new ScenarioEntity();
+        ibNormalSc.id = ibNormalId;
+        ibNormalSc.endpointId = ibEndpointId;
+        ibNormalSc.name = "Normal";
+        em.persist(ibNormalSc);
+        ScenarioEntity ibInsufSc = new ScenarioEntity();
+        ibInsufSc.id = UUID.randomUUID();
+        ibInsufSc.endpointId = ibEndpointId;
+        ibInsufSc.name = "Saldo Kurang";
+        em.persist(ibInsufSc);
+        ScenarioEntity ibLimitSc = new ScenarioEntity();
+        ibLimitSc.id = UUID.randomUUID();
+        ibLimitSc.endpointId = ibEndpointId;
+        ibLimitSc.name = "Limit";
+        em.persist(ibLimitSc);
+        ibEp.activeScenarioId = ibNormalId;
+        em.merge(ibEp);
+
         // Operasi SNAP lain (tanpa scenario/rule): access-token, VA CRUD, QRIS query/refund/expire.
         // Path default dari katalog SnapOperations — semuanya dapat di-custom dari dashboard.
         for (id.behavio.core.blueprint.SnapOperations.Op op : id.behavio.core.blueprint.SnapOperations.ALL) {
-            if ("transfer".equals(op.key()) || "qris-generate".equals(op.key())) continue; // sudah dibuat di atas
+            if ("transfer".equals(op.key()) || "qris-generate".equals(op.key())) continue;
+            if ("transfer-interbank".equals(op.key())) continue;
+            if ("balance-inquiry".equals(op.key()) || "account-inquiry-internal".equals(op.key())
+                    || "transaction-history-list".equals(op.key())) continue;
             EndpointEntity plain = new EndpointEntity();
             plain.id = UUID.randomUUID();
             plain.simulatorId = simId;

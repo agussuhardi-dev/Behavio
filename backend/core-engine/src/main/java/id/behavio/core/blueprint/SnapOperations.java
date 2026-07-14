@@ -17,7 +17,11 @@ public final class SnapOperations {
 
     public static final List<Op> ALL = List.of(
             new Op("access-token", "POST", "/v1.0/access-token/b2b", "Access Token B2B"),
+            new Op("balance-inquiry", "POST", "/v1.0/balance-inquiry", "Balance Inquiry"),
+            new Op("account-inquiry-internal", "POST", "/v1.0/account-inquiry-internal", "Internal Account Inquiry"),
+            new Op("transaction-history-list", "POST", "/v1.0/transaction-history-list", "Transaction History List"),
             new Op("transfer", "POST", "/v1.0/transfer-intrabank", "Transfer Intrabank"),
+            new Op("transfer-interbank", "POST", "/v1.0/transfer-interbank", "Transfer Interbank"),
             new Op("va-create", "POST", "/v1.0/transfer-va/create-va", "Virtual Account — Create"),
             new Op("va-status", "POST", "/v1.0/transfer-va/status", "Virtual Account — Inquiry Status"),
             new Op("va-delete", "DELETE", "/v1.0/transfer-va/delete-va", "Virtual Account — Delete"),

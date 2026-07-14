@@ -6,6 +6,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.UUID;
 
 /**
@@ -58,6 +59,7 @@ class TransactionEntity {
     BigDecimal amount;
     String currency;
     String status;
+    @Column(name = "created_at") Instant createdAt;
 
     TransactionEntity() {}
 }

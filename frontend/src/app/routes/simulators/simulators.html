@@ -1,237 +1,277 @@
-<div class="qris-page">
-  <div class="qris-hero">
-    <div class="qris-hero__text">
-      <h1>Bank Simulator</h1>
-      <p>Simulasikan endpoint bank SNAP BI — access token, transfer intrabank, dan Virtual Account. Response tiap endpoint dapat di-custom dari dashboard.</p>
+<div class="sim-page">
+  <div class="sim-hero">
+    <div class="sim-hero__text">
+      <h1><mat-icon class="sim-hero__logo">account_balance</mat-icon> Bank Simulator</h1>
+      <p>Simulasikan endpoint bank SNAP BI — cek saldo, transfer, virtual account, dan interbank transfer. Response tiap endpoint dapat di-custom dari dashboard.</p>
     </div>
   </div>
 
-  @if (loading()) { <mat-progress-bar mode="indeterminate" /> }
+  @if (loading()) { <mat-progress-bar mode="indeterminate" class="sim-loader" /> }
 
   @if (!loading() && sims().length === 0) {
-    <div class="qris-empty">
-      <mat-icon>info</mat-icon> Belum ada profil bank.
-      <button mat-flat-button color="primary" (click)="openCreate()"><mat-icon>add</mat-icon> Buat Profil Pertama</button>
-    </div>
+    <mat-card class="sim-empty" appearance="outlined">
+      <mat-card-content class="sim-empty__inner">
+        <mat-icon class="sim-empty__icon">info</mat-icon>
+        <h3>Belum ada profil bank</h3>
+        <p>Buat profil pertama untuk mulai mensimulasikan API bank SNAP BI.</p>
+        <button mat-flat-button color="primary" (click)="openCreate()"><mat-icon>add</mat-icon> Buat Profil</button>
+      </mat-card-content>
+    </mat-card>
   }
 
   @if (sims().length > 0) {
-    <mat-card class="qris-selector" appearance="outlined">
-      <mat-form-field appearance="outline" class="qris-selector__field">
-        <mat-label>Profil (bank)</mat-label>
-        <mat-select [value]="selectedSimId()" (valueChange)="onSelectSim($event)">
-          @for (s of sims(); track s.id) {
-            <mat-option [value]="s.id">{{ s.name }} — :{{ s.port }}</mat-option>
-          }
-        </mat-select>
-      </mat-form-field>
-      @if (selectedSim; as s) {
-        <span class="chip" [class.chip--on]="s.status === 'RUNNING'"><span class="dot"></span>{{ s.status === 'RUNNING' ? 'Menyala' : 'Mati' }}</span>
-        <button mat-stroked-button [color]="s.status === 'RUNNING' ? 'warn' : 'primary'" (click)="toggleRunning()">
-          <mat-icon>{{ s.status === 'RUNNING' ? 'stop' : 'play_arrow' }}</mat-icon>
-          {{ s.status === 'RUNNING' ? 'Matikan' : 'Nyalakan' }}
+    <!-- profile selector -->
+    <mat-card class="sim-bar" appearance="outlined">
+      <div class="sim-bar__row">
+        <mat-form-field appearance="outline" class="sim-bar__field">
+          <mat-label>Profil Bank</mat-label>
+          <mat-select [value]="selectedSimId()" (valueChange)="onSelectSim($event)">
+            @for (s of sims(); track s.id) {
+              <mat-option [value]="s.id">{{ s.name }} — :{{ s.port }}</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+
+        @if (selectedSim; as s) {
+          <span class="sim-chip" [class.sim-chip--on]="s.status === 'RUNNING'">
+            <span class="sim-chip__dot"></span>
+            {{ s.status === 'RUNNING' ? 'Menyala' : 'Mati' }}
+          </span>
+          <button mat-stroked-button [color]="s.status === 'RUNNING' ? 'warn' : 'primary'" (click)="toggleRunning()">
+            <mat-icon>{{ s.status === 'RUNNING' ? 'stop' : 'play_arrow' }}</mat-icon>
+            {{ s.status === 'RUNNING' ? 'Matikan' : 'Nyalakan' }}
+          </button>
+        }
+
+        <span class="sim-bar__spacer"></span>
+        <button mat-flat-button color="primary" (click)="openCreate()"><mat-icon>add</mat-icon> Tambah</button>
+        <button mat-icon-button [matMenuTriggerFor]="profileMenu" matTooltip="Lainnya" [disabled]="!selectedSim">
+          <mat-icon>more_vert</mat-icon>
         </button>
-      }
-      <span class="qris-selector__spacer"></span>
-      <button mat-flat-button color="primary" (click)="openCreate()"><mat-icon>add</mat-icon> Tambah Profil</button>
-      <button mat-icon-button [matMenuTriggerFor]="profileMenu" matTooltip="Lainnya" [disabled]="!selectedSim"><mat-icon>more_vert</mat-icon></button>
-      <mat-menu #profileMenu="matMenu">
-        <button mat-menu-item (click)="openClone()"><mat-icon>content_copy</mat-icon> Duplikat</button>
-        <button mat-menu-item (click)="removeSelected()"><mat-icon color="warn">delete</mat-icon> Hapus</button>
-      </mat-menu>
+        <mat-menu #profileMenu="matMenu">
+          <button mat-menu-item (click)="openClone()"><mat-icon>content_copy</mat-icon> Duplikat</button>
+          <button mat-menu-item (click)="removeSelected()"><mat-icon color="warn">delete</mat-icon> Hapus</button>
+        </mat-menu>
+      </div>
     </mat-card>
 
-    <div class="qris-grid">
-      <!-- Kiri: daftar endpoint -->
-      <mat-card class="qris-card" appearance="outlined">
-        <div class="qris-card__head"><mat-icon>account_balance</mat-icon> Endpoint Bank</div>
+    @if (simMsg()) {
+      <div class="sim-msg sim-msg--info">{{ simMsg() }}</div>
+    }
+
+    <div class="sim-grid">
+      <!-- left: endpoints -->
+      <mat-card class="sim-card" appearance="outlined">
+        <div class="sim-card__head">
+          <mat-icon class="sim-card__head-icon">api</mat-icon>
+          <span>Endpoint Bank SNAP BI</span>
+          <span class="sim-bar__spacer"></span>
+          <button mat-stroked-button (click)="epuOpen.set(!epuOpen())" class="sim-card__head-btn">
+            <mat-icon>link</mat-icon> {{ epuOpen() ? 'Tutup URL' : 'URL Endpoint' }}
+          </button>
+        </div>
         <mat-divider />
-        <div class="qris-card__body">
+
+        @if (epuOpen()) {
+          <div class="sim-epu">
+            <app-endpoint-url-panel [simulatorId]="selectedSimId()" [operations]="bankOperations" />
+          </div>
+          <mat-divider />
+        }
+
+        <div class="sim-card__body">
           @for (ep of endpointMeta(); track ep.key) {
-            <mat-expansion-panel class="qris-ep" [expanded]="editingEp() === ep.key">
+            <mat-expansion-panel class="sim-ep" [expanded]="editingEp() === ep.key" hideToggle>
               <mat-expansion-panel-header>
                 <mat-panel-title>
-                  <span class="qris-ep__method">{{ ep.method }}</span>
-                  <span class="qris-ep__label">{{ ep.label }}</span>
+                  <span class="sim-ep__badge" [class.sim-ep__badge--post]="ep.method === 'POST'" [class.sim-ep__badge--del]="ep.method === 'DELETE'">{{ ep.method }}</span>
+                  <span class="sim-ep__label">{{ ep.label }}</span>
+                  @if (ep.product) {
+                    <span class="sim-ep__scenario-tag">{{ activeScenarioFor(ep.key) }}</span>
+                  }
                 </mat-panel-title>
                 <mat-panel-description>{{ ep.desc }}</mat-panel-description>
               </mat-expansion-panel-header>
 
-              <div class="qris-ep__body">
+              <div class="sim-ep__body">
                 @if (ep.product) {
-                  <mat-form-field appearance="outline" class="qris-ep__scenario">
-                    <mat-label>Skenario</mat-label>
-                    <mat-select [value]="activeScenarioFor(ep.key)" (valueChange)="changeScenario(ep, $event)">
-                      @for (sc of ep.scenarioList; track sc.name) {
-                        <mat-option [value]="sc.name">
-                          <mat-icon class="opt-ico opt-ico--{{ sc.tone }}">{{ sc.icon }}</mat-icon> {{ sc.name }}
-                        </mat-option>
-                      }
-                    </mat-select>
-                  </mat-form-field>
+                  <div class="sim-ep__bar">
+                    <mat-form-field appearance="outline" class="sim-ep__scenario">
+                      <mat-label>Skenario</mat-label>
+                      <mat-select [value]="activeScenarioFor(ep.key)" (valueChange)="changeScenario(ep, $event)">
+                        @for (sc of ep.scenarioList; track sc.name) {
+                          <mat-option [value]="sc.name">
+                            <mat-icon class="opt-ico opt-ico--{{ sc.tone }}">{{ sc.icon }}</mat-icon> {{ sc.name }}
+                          </mat-option>
+                        }
+                      </mat-select>
+                    </mat-form-field>
 
-                  @if (scenarioMeta(ep.scenarioList, activeScenarioFor(ep.key)); as meta) {
-                    <div class="sim-scenario__desc sim-scenario__desc--{{ meta.tone }}">
-                      <mat-icon>{{ meta.icon }}</mat-icon><span>{{ meta.desc }}</span>
-                    </div>
-                  }
-
-                  <button mat-stroked-button (click)="editingEp() === ep.key ? closeEditor() : openEditor(ep)" [disabled]="editorLoading() && editingEp() !== ep.key">
-                    @if (editorLoading() && editingEp() !== ep.key) { <mat-icon class="spin">autorenew</mat-icon> Memuat… }
-                    @else { <mat-icon>edit</mat-icon> {{ editingEp() === ep.key ? 'Tutup' : 'Edit response' }} }
-                  </button>
-
-                  @if (editorError() && editingEp() !== ep.key) {
-                    <div class="editor__msg editor__msg--err"><mat-icon>error</mat-icon> {{ editorError() }}</div>
-                  }
-
-                  @if (editingEp() === ep.key) {
-                    <div class="editor">
-                      <div class="editor__head"><mat-icon>tune</mat-icon> Definisi scenario: <b>{{ editorScenario() }}</b></div>
-                      <textarea class="editor__area" spellcheck="false" [value]="editorText()" (input)="onEditorInput($any($event.target).value)"></textarea>
-                      @if (editorError()) { <div class="editor__msg editor__msg--err"><mat-icon>error</mat-icon> {{ editorError() }}</div> }
-                      @if (editorSaved()) { <div class="editor__msg editor__msg--ok"><mat-icon>check_circle</mat-icon> Tersimpan — response berikutnya memakai definisi ini.</div> }
-                      <div class="editor__actions">
-                        <button mat-flat-button color="primary" (click)="saveEditor(ep)"><mat-icon>save</mat-icon> Simpan</button>
-                        <button mat-stroked-button (click)="resetEditor(ep)"><mat-icon>restart_alt</mat-icon> Reset ke preset</button>
+                    @if (scenarioMeta(ep.scenarioList, activeScenarioFor(ep.key)); as meta) {
+                      <div class="sim-ep__hint sim-ep__hint--{{ meta.tone }}">
+                        <mat-icon>{{ meta.icon }}</mat-icon><span>{{ meta.desc }}</span>
                       </div>
-                    </div>
-                  }
-                } @else {
-                  <div class="qris-ep__hint">
-                    <mat-icon>lock</mat-icon> Logika tetap — response endpoint ini belum dapat di-custom dari dashboard.
+                    }
+
+                    <button mat-stroked-button (click)="editingEp() === ep.key ? closeEditor() : openEditor(ep)" [disabled]="editorLoading() && editingEp() !== ep.key">
+                      <mat-icon>edit</mat-icon> {{ editingEp() === ep.key ? 'Tutup Editor' : 'Edit Response' }}
+                    </button>
+
+                    @if (editorError() && editingEp() !== ep.key) {
+                      <div class="sim-ep__msg sim-ep__msg--err"><mat-icon>error</mat-icon> {{ editorError() }}</div>
+                    }
+
+                    @if (editingEp() === ep.key) {
+                      <div class="sim-editor">
+                        <div class="sim-editor__head">
+                          <mat-icon>tune</mat-icon>
+                          <span>Definisi <b>{{ editorScenario() }}</b> &mdash; edit JSON, lalu Simpan</span>
+                        </div>
+                        <textarea class="sim-editor__area" spellcheck="false" [value]="editorText()" (input)="onEditorInput($any($event.target).value)"></textarea>
+                        @if (editorError()) { <div class="sim-ep__msg sim-ep__msg--err"><mat-icon>error</mat-icon> {{ editorError() }}</div> }
+                        @if (editorSaved()) { <div class="sim-ep__msg sim-ep__msg--ok"><mat-icon>check_circle</mat-icon> Tersimpan — response berikutnya memakai definisi ini.</div> }
+                        <div class="sim-editor__actions">
+                          <button mat-flat-button color="primary" (click)="saveEditor(ep)"><mat-icon>save</mat-icon> Simpan</button>
+                          <button mat-stroked-button (click)="resetEditor(ep)"><mat-icon>restart_alt</mat-icon> Reset ke Preset</button>
+                        </div>
+                      </div>
+                    }
                   </div>
                 }
 
-                <details class="qris-try">
-                  <summary>Cara coba</summary>
-                  <div class="qris-try__box">
+                <details class="sim-curl">
+                  <summary>curl</summary>
+                  <div class="sim-curl__box">
                     <pre>{{ ep.curl }}</pre>
-                    <button mat-icon-button matTooltip="Salin" (click)="copy(ep.curl, ep.curlKey)"><mat-icon>{{ copiedKey() === ep.curlKey ? 'check' : 'content_copy' }}</mat-icon></button>
+                    <button mat-icon-button matTooltip="Salin" (click)="copy(ep.curl, ep.curlKey)">
+                      <mat-icon>{{ copiedKey() === ep.curlKey ? 'check' : 'content_copy' }}</mat-icon>
+                    </button>
                   </div>
                 </details>
               </div>
             </mat-expansion-panel>
           }
-
-          <button mat-stroked-button (click)="epuOpen.set(!epuOpen())" style="margin-top:12px">
-            <mat-icon>link</mat-icon> {{ epuOpen() ? 'Tutup' : 'Kelola URL Endpoint' }}
-          </button>
-          @if (epuOpen()) {
-            <div class="editor" style="border:none">
-              <app-endpoint-url-panel [simulatorId]="selectedSimId()" [operations]="bankOperations" />
-            </div>
-          }
         </div>
       </mat-card>
 
-      <!-- Kanan: Partner & Rekening + Virtual Account -->
-      <div class="bank-col">
-        <mat-card class="qris-card" appearance="outlined">
-          <div class="qris-card__head">
-            <mat-icon>groups</mat-icon> Partner &amp; Rekening
-            <span class="qris-selector__spacer"></span>
+      <!-- right: panels -->
+      <div class="sim-side">
+        <mat-card class="sim-card" appearance="outlined">
+          <div class="sim-card__head">
+            <mat-icon class="sim-card__head-icon">groups</mat-icon>
+            <span>Partner &amp; Rekening</span>
+            <span class="sim-bar__spacer"></span>
             <button mat-icon-button matTooltip="Muat ulang" (click)="reloadBank()"><mat-icon>refresh</mat-icon></button>
           </div>
           <mat-divider />
-          <div class="qris-card__body">
-            @if (bankMsg()) { <div class="qris-msg">{{ bankMsg() }}</div> }
+          <div class="sim-card__body">
+            @if (bankMsg()) { <div class="sim-msg sim-msg--info">{{ bankMsg() }}</div> }
 
-            <div class="bank-section__head"><mat-icon>badge</mat-icon> Partner</div>
+            <div class="sim-section-label"><mat-icon>badge</mat-icon> Partner</div>
+
+            @if (partnerList().length === 0) {
+              <div class="sim-empty-mini">Belum ada partner. Tambah di bawah.</div>
+            }
             @for (p of partnerList(); track p.id) {
-              <div class="bank-row">
-                <span class="bank-row__label">{{ p.partnerId }}</span>
-                @if (p.hasClientSecret) { <span class="tag">HMAC</span> }
-                @if (p.hasPublicKey) { <span class="tag">RSA</span> }
-                <span class="qris-selector__spacer"></span>
-                <button mat-icon-button matTooltip="Hapus partner" (click)="removePartner(p)"><mat-icon color="warn">delete</mat-icon></button>
+              <div class="sim-row">
+                <div class="sim-row__main">
+                  <span class="sim-row__name">{{ p.partnerId }}</span>
+                  <div class="sim-row__tags">
+                    @if (p.hasClientSecret) { <span class="sim-tag">HMAC</span> }
+                    @if (p.hasPublicKey) { <span class="sim-tag">RSA</span> }
+                  </div>
+                </div>
+                <button mat-icon-button matTooltip="Hapus" (click)="removePartner(p)"><mat-icon color="warn">delete_outline</mat-icon></button>
               </div>
             }
-            @if (partnerList().length === 0) { <div class="qris-list-empty">Belum ada partner.</div> }
 
-            <div class="bank-add">
-              <mat-form-field appearance="outline" class="bank-add__field">
-                <mat-label>Partner ID baru</mat-label>
-                <input matInput [value]="newPartnerId()" (input)="newPartnerId.set($any($event.target).value)" placeholder="mis. PARTNER002" />
+            <div class="sim-add-row">
+              <mat-form-field appearance="outline" class="sim-add-row__fld">
+                <mat-label>Partner ID</mat-label>
+                <input matInput [value]="newPartnerId()" (input)="newPartnerId.set($any($event.target).value)" placeholder="PARTNER002" />
               </mat-form-field>
-              <mat-form-field appearance="outline" class="bank-add__field">
-                <mat-label>Client Secret (opsional)</mat-label>
+              <mat-form-field appearance="outline" class="sim-add-row__fld">
+                <mat-label>Secret (opsional)</mat-label>
                 <input matInput [value]="newPartnerSecret()" (input)="newPartnerSecret.set($any($event.target).value)" />
               </mat-form-field>
-              <button mat-flat-button color="primary" (click)="addPartner()" [disabled]="!newPartnerId().trim()"><mat-icon>add</mat-icon> Tambah</button>
+              <button mat-flat-button color="primary" (click)="addPartner()" [disabled]="!newPartnerId().trim()"><mat-icon>add</mat-icon></button>
             </div>
 
             <mat-divider />
-            <div class="bank-section__head"><mat-icon>account_balance</mat-icon> Rekening</div>
+            <div class="sim-section-label"><mat-icon>account_balance</mat-icon> Rekening</div>
+
+            @if (accountList().length === 0) {
+              <div class="sim-empty-mini">Belum ada rekening.</div>
+            }
             @for (a of accountList(); track a.id) {
-              <div class="bank-row">
-                <div class="bank-row__main">
-                  <span class="bank-row__label">{{ a.accountNo }}</span>
-                  <span class="bank-row__sub">{{ a.holderName || '—' }} · {{ a.partnerLabel }}</span>
+              <div class="sim-row sim-row--acc">
+                <div class="sim-row__main">
+                  <span class="sim-row__name">{{ a.accountNo }}</span>
+                  <span class="sim-row__sub">{{ a.holderName || '—' }} · {{ a.partnerLabel }}</span>
                 </div>
-                <mat-form-field appearance="outline" class="bank-row__balance">
+                <mat-form-field appearance="outline" class="sim-row__bal">
                   <mat-label>Saldo</mat-label>
                   <input matInput type="number" [value]="balanceEdits()[a.id] || a.balance" (input)="onBalanceEdit(a.id, $any($event.target).value)" />
                 </mat-form-field>
-                <button mat-icon-button matTooltip="Simpan saldo" (click)="saveBalance(a)"><mat-icon>save</mat-icon></button>
-                <button mat-icon-button matTooltip="Hapus rekening" (click)="removeAccount(a)"><mat-icon color="warn">delete</mat-icon></button>
+                <button mat-icon-button matTooltip="Simpan" (click)="saveBalance(a)"><mat-icon>save</mat-icon></button>
+                <button mat-icon-button matTooltip="Hapus" (click)="removeAccount(a)"><mat-icon color="warn">delete_outline</mat-icon></button>
               </div>
             }
-            @if (accountList().length === 0) { <div class="qris-list-empty">Belum ada rekening.</div> }
 
-            <div class="bank-add">
-              <mat-form-field appearance="outline" class="bank-add__field">
+            <div class="sim-add-row">
+              <mat-form-field appearance="outline" class="sim-add-row__fld">
                 <mat-label>Partner</mat-label>
                 <mat-select [value]="newAccPartnerRowId()" (valueChange)="newAccPartnerRowId.set($event)">
                   @for (p of partnerList(); track p.id) { <mat-option [value]="p.id">{{ p.partnerId }}</mat-option> }
                 </mat-select>
               </mat-form-field>
-              <mat-form-field appearance="outline" class="bank-add__field">
+              <mat-form-field appearance="outline" class="sim-add-row__fld">
                 <mat-label>No. Rekening</mat-label>
                 <input matInput [value]="newAccNo()" (input)="newAccNo.set($any($event.target).value)" />
               </mat-form-field>
-              <mat-form-field appearance="outline" class="bank-add__field">
+              <mat-form-field appearance="outline" class="sim-add-row__fld">
                 <mat-label>Nama</mat-label>
                 <input matInput [value]="newAccHolder()" (input)="newAccHolder.set($any($event.target).value)" />
               </mat-form-field>
-              <mat-form-field appearance="outline" class="bank-add__field bank-add__field--sm">
-                <mat-label>Saldo awal</mat-label>
+              <mat-form-field appearance="outline" class="sim-add-row__fld sim-add-row__fld--sm">
+                <mat-label>Saldo</mat-label>
                 <input matInput type="number" [value]="newAccBalance()" (input)="newAccBalance.set($any($event.target).value)" />
               </mat-form-field>
-              <button mat-flat-button color="primary" (click)="addAccount()" [disabled]="!newAccNo().trim() || !newAccPartnerRowId()"><mat-icon>add</mat-icon> Tambah</button>
+              <button mat-flat-button color="primary" (click)="addAccount()" [disabled]="!newAccNo().trim() || !newAccPartnerRowId()"><mat-icon>add</mat-icon></button>
             </div>
           </div>
         </mat-card>
 
-        <mat-card class="qris-card" appearance="outlined">
-          <div class="qris-card__head">
-            <mat-icon>account_balance_wallet</mat-icon> Virtual Account
-            @if (vaList().length > 0) { <span class="qris-live__count">{{ vaList().length }}</span> }
-            <span class="qris-selector__spacer"></span>
+        <mat-card class="sim-card" appearance="outlined">
+          <div class="sim-card__head">
+            <mat-icon class="sim-card__head-icon">account_balance_wallet</mat-icon>
+            <span>Virtual Account</span>
+            @if (vaList().length > 0) { <span class="sim-count">{{ vaList().length }}</span> }
+            <span class="sim-bar__spacer"></span>
             <button mat-icon-button matTooltip="Muat ulang" (click)="reloadVa()"><mat-icon>refresh</mat-icon></button>
           </div>
           <mat-divider />
-          <div class="qris-card__body">
-            @if (vaMsg()) { <div class="qris-msg">{{ vaMsg() }}</div> }
+          <div class="sim-card__body">
+            @if (vaMsg()) { <div class="sim-msg sim-msg--info">{{ vaMsg() }}</div> }
             @if (!vaLoading() && vaList().length === 0) {
-              <div class="qris-list-empty">Belum ada VA. Gunakan endpoint <b>Create VA</b> di sebelah kiri.</div>
+              <div class="sim-empty-mini">Belum ada VA. Gunakan endpoint <b>Create VA</b> di panel kiri.</div>
             }
             @for (va of vaList(); track va.virtualAccountNo) {
-              <div class="qr-row">
-                <div class="qr-row__top">
-                  <span class="qr-row__ref">{{ va.virtualAccountNo }}</span>
-                  <span class="chip chip--sm" [class.chip--on]="vaStatusTone(va.status) === 'ok'" [class.chip--warn]="vaStatusTone(va.status) === 'warn'">{{ va.status }}</span>
+              <div class="sim-row sim-row--va">
+                <div class="sim-row__main">
+                  <span class="sim-row__name">{{ va.virtualAccountNo }}</span>
+                  <span class="sim-row__sub">{{ va.virtualAccountName || '—' }} · {{ va.amount }} {{ va.currency }}</span>
+                  <span class="sim-chip sim-chip--sm" [class.sim-chip--on]="vaStatusTone(va.status) === 'ok'" [class.sim-chip--warn]="vaStatusTone(va.status) === 'warn'" [class.sim-chip--err]="vaStatusTone(va.status) === 'fault'">{{ va.status }}</span>
                 </div>
-                <div class="qr-row__sub">{{ va.virtualAccountName || '—' }} · {{ va.amount }} {{ va.currency }} · {{ va.trxId }}</div>
-                <div class="qr-row__actions">
+                <div class="sim-row__actions">
                   @if (va.status === 'ACTIVE') {
                     <button mat-flat-button color="primary"
-                      [matTooltip]="va.hasCallback ? 'Simulasikan pembayaran & kirim Payment Notification' : 'VA dibuat tanpa X-CALLBACK-URL — status berubah, webhook tidak dikirim'"
+                      [matTooltip]="va.hasCallback ? 'Simulasikan pembayaran & kirim Payment Notification' : 'VA dibuat tanpa X-CALLBACK-URL'"
                       (click)="payVa(va)">
                       <mat-icon>payments</mat-icon> Tandai Dibayar
                     </button>
                   }
-                  @if (va.status === 'PAID') { <span class="qr-row__hint">Sudah dibayar.</span> }
+                  @if (va.status === 'PAID') { <span class="sim-row__paid">Sudah dibayar.</span> }
                 </div>
               </div>
             }
@@ -240,12 +280,13 @@
       </div>
     </div>
 
-    <!-- Live View -->
-    <mat-card class="qris-card qris-live" appearance="outlined">
-      <div class="qris-card__head">
-        <mat-icon>bolt</mat-icon> Live View — request bank real-time
-        @if (liveEvents().length > 0) { <span class="qris-live__count">{{ liveEvents().length }}</span> }
-        <span class="qris-selector__spacer"></span>
+    <!-- live view -->
+    <mat-card class="sim-card sim-live" appearance="outlined">
+      <div class="sim-card__head">
+        <mat-icon class="sim-card__head-icon">bolt</mat-icon>
+        <span>Live View</span>
+        @if (liveEvents().length > 0) { <span class="sim-count sim-count--live">{{ liveEvents().length }}</span> }
+        <span class="sim-bar__spacer"></span>
         @if (liveEvents().length > 0) {
           <button mat-icon-button matTooltip="Bersihkan" (click)="clearLive()"><mat-icon>clear_all</mat-icon></button>
         }
@@ -255,36 +296,42 @@
       </div>
       @if (liveOpen()) {
         <mat-divider />
-        <div class="qris-card__body">
+        <div class="sim-card__body">
           @if (liveEvents().length === 0) {
-            <div class="qris-live__empty">Menunggu request… kirim ke port {{ selectedSim?.port }} lalu muncul di sini.</div>
+            <div class="sim-live__empty">
+              <mat-icon>sensors</mat-icon>
+              <span>Menunggu request… kirim ke port <b>:{{ selectedSim?.port }}</b> lalu muncul di sini.</span>
+            </div>
           }
           @for (e of liveEvents(); track $index) {
-            <div class="live-item" [class.live-item--ok]="isLiveSuccess(e.responseCode)" [class.live-item--err]="!isLiveSuccess(e.responseCode)">
-              <button class="live-row" type="button" (click)="toggleEvent(e)">
-                <mat-icon class="live-row__chev">{{ e.open ? 'expand_more' : 'chevron_right' }}</mat-icon>
-                <span class="live-row__time">{{ e.at }}</span>
-                <span class="live-row__method">{{ e.method }}</span>
-                <span class="live-row__path">{{ e.path }}</span>
-                <span class="live-row__code">{{ e.httpStatus }} · {{ e.responseCode }}</span>
-                <span class="live-row__ms">{{ e.durationMillis }}ms</span>
+            <div class="sim-live-item" [class.sim-live-item--ok]="isLiveSuccess(e.responseCode)" [class.sim-live-item--err]="!isLiveSuccess(e.responseCode)">
+              <button class="sim-live-row" type="button" (click)="toggleEvent(e)">
+                <mat-icon class="sim-live-row__chev">{{ e.open ? 'expand_more' : 'chevron_right' }}</mat-icon>
+                <span class="sim-live-row__time">{{ e.at }}</span>
+                <span class="sim-live-row__method">{{ e.method }}</span>
+                <span class="sim-live-row__path">{{ e.path }}</span>
+                <span class="sim-live-row__code sim-live-row__code--{{ isLiveSuccess(e.responseCode) ? 'ok' : 'err' }}">{{ e.httpStatus }} · {{ e.responseCode }}</span>
+                <span class="sim-live-row__ms">{{ e.durationMillis }}ms</span>
               </button>
               @if (e.open) {
-                <div class="live-detail">
-                  <div class="live-detail__block">
-                    <div class="live-detail__label"><mat-icon>north_east</mat-icon> Request Header
+                <div class="sim-live-detail">
+                  <div class="sim-live-detail__block">
+                    <div class="sim-live-detail__label">
+                      <mat-icon>north_east</mat-icon> Request Header
                       <button mat-icon-button matTooltip="Salin" (click)="copy(headerLines(e.requestHeaders), 'lh' + $index)"><mat-icon>{{ copiedKey() === 'lh' + $index ? 'check' : 'content_copy' }}</mat-icon></button>
                     </div>
                     <pre>{{ headerLines(e.requestHeaders) }}</pre>
                   </div>
-                  <div class="live-detail__block">
-                    <div class="live-detail__label"><mat-icon>north_east</mat-icon> Request Body
+                  <div class="sim-live-detail__block">
+                    <div class="sim-live-detail__label">
+                      <mat-icon>north_east</mat-icon> Request Body
                       <button mat-icon-button matTooltip="Salin" (click)="copy(e.requestBody, 'lq' + $index)"><mat-icon>{{ copiedKey() === 'lq' + $index ? 'check' : 'content_copy' }}</mat-icon></button>
                     </div>
                     <pre>{{ prettyJson(e.requestBody) }}</pre>
                   </div>
-                  <div class="live-detail__block">
-                    <div class="live-detail__label"><mat-icon>south_west</mat-icon> Response Body
+                  <div class="sim-live-detail__block">
+                    <div class="sim-live-detail__label">
+                      <mat-icon>south_west</mat-icon> Response Body
                       <button mat-icon-button matTooltip="Salin" (click)="copy(e.responseBody, 'ls' + $index)"><mat-icon>{{ copiedKey() === 'ls' + $index ? 'check' : 'content_copy' }}</mat-icon></button>
                     </div>
                     <pre>{{ prettyJson(e.responseBody) }}</pre>
@@ -297,16 +344,20 @@
       }
     </mat-card>
 
-    <!-- Panduan skenario transfer (dipertahankan dari versi sebelumnya) -->
-    <mat-card class="legend" appearance="outlined">
-      <div class="legend__title"><mat-icon>menu_book</mat-icon> Panduan Skenario Transfer</div>
-      <div class="legend__grid">
+    <!-- panduan skenario transfer -->
+    <mat-card class="sim-card sim-legend" appearance="outlined">
+      <div class="sim-card__head">
+        <mat-icon class="sim-card__head-icon">menu_book</mat-icon>
+        <span>Panduan Skenario Transfer</span>
+      </div>
+      <mat-divider />
+      <div class="sim-legend__grid">
         @for (sc of transferScenarios; track sc.name) {
-          <div class="legend__item">
+          <div class="sim-legend__item">
             <mat-icon class="opt-ico opt-ico--{{ sc.tone }}">{{ sc.icon }}</mat-icon>
             <div>
-              <div class="legend__name">{{ sc.name }}</div>
-              <div class="legend__desc">{{ sc.desc }}</div>
+              <div class="sim-legend__name">{{ sc.name }}</div>
+              <div class="sim-legend__desc">{{ sc.desc }}</div>
             </div>
           </div>
         }

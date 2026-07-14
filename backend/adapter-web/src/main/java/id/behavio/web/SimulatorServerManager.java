@@ -42,6 +42,8 @@ public class SimulatorServerManager {
     private final SnapRequestMapper mapper;
     private final AccessTokenService accessTokenService;
     private final VirtualAccountService virtualAccountService;
+    private final AccountService accountService;
+    private final TransactionHistoryService transactionHistoryService;
     private final QrisService qrisService;
     private final EndpointRegistry endpointRegistry;
     /** Fan-out ke semua EventPublisher (log + request_logs + SSE Live View), sama seperti CoreBeansConfig. */
@@ -51,6 +53,8 @@ public class SimulatorServerManager {
     public SimulatorServerManager(SimulationExecutor executor, SnapRequestMapper mapper,
                                   AccessTokenService accessTokenService,
                                   VirtualAccountService virtualAccountService,
+                                  AccountService accountService,
+                                  TransactionHistoryService transactionHistoryService,
                                   QrisService qrisService,
                                   EndpointRegistry endpointRegistry,
                                   List<EventPublisher> eventPublishers) {
@@ -58,6 +62,8 @@ public class SimulatorServerManager {
         this.mapper = mapper;
         this.accessTokenService = accessTokenService;
         this.virtualAccountService = virtualAccountService;
+        this.accountService = accountService;
+        this.transactionHistoryService = transactionHistoryService;
         this.qrisService = qrisService;
         this.endpointRegistry = endpointRegistry;
         this.events = event -> eventPublishers.forEach(p -> p.publishRequestEvent(event));
@@ -109,19 +115,19 @@ public class SimulatorServerManager {
             switch (operation.get()) {
                 case "access-token" -> {
                     AccessTokenService.Result r = accessTokenService.issue(simulatorId, headers, body);
-                    write(exchange, r.status(), Map.of("Content-Type", "application/json"), r.body());
+                    writeAndEmit(simulatorId, method, path, headers, body, r.status(), r.body(), exchange, startNanos);
                 }
                 case "va-create" -> {
                     VirtualAccountService.Result r = virtualAccountService.create(simulatorId, method, path, headers, body);
-                    write(exchange, r.status(), Map.of("Content-Type", "application/json"), r.body());
+                    writeAndEmit(simulatorId, method, path, headers, body, r.status(), r.body(), exchange, startNanos);
                 }
                 case "va-status" -> {
                     VirtualAccountService.Result r = virtualAccountService.inquiry(simulatorId, method, path, headers, body);
-                    write(exchange, r.status(), Map.of("Content-Type", "application/json"), r.body());
+                    writeAndEmit(simulatorId, method, path, headers, body, r.status(), r.body(), exchange, startNanos);
                 }
                 case "va-delete" -> {
                     VirtualAccountService.Result r = virtualAccountService.delete(simulatorId, method, path, headers, body);
-                    write(exchange, r.status(), Map.of("Content-Type", "application/json"), r.body());
+                    writeAndEmit(simulatorId, method, path, headers, body, r.status(), r.body(), exchange, startNanos);
                 }
                 case "qris-generate" -> writeQris(simulatorId, method, path, headers, body, exchange,
                         qrisService.generate(simulatorId, method, path, headers, body), startNanos);
@@ -138,6 +144,19 @@ public class SimulatorServerManager {
                 case "qris-apply-ott" -> writeQris(simulatorId, method, path, headers, body, exchange,
                         qrisService.applyOtt(simulatorId, method, path, headers, body), startNanos);
                 case "transfer" -> handleTransfer(simulatorId, method, path, headers, body, exchange);
+                case "transfer-interbank" -> handleTransfer(simulatorId, method, path, headers, body, exchange);
+                case "balance-inquiry" -> {
+                    AccountService.Result r = accountService.balanceInquiry(simulatorId, method, path, headers, body);
+                    writeAndEmit(simulatorId, method, path, headers, body, r.status(), r.body(), exchange, startNanos);
+                }
+                case "account-inquiry-internal" -> {
+                    AccountService.Result r = accountService.internalInquiry(simulatorId, method, path, headers, body);
+                    writeAndEmit(simulatorId, method, path, headers, body, r.status(), r.body(), exchange, startNanos);
+                }
+                case "transaction-history-list" -> {
+                    TransactionHistoryService.Result r = transactionHistoryService.historyList(simulatorId, method, path, headers, body);
+                    writeAndEmit(simulatorId, method, path, headers, body, r.status(), r.body(), exchange, startNanos);
+                }
                 default -> write(exchange, 404, Map.of("Content-Type", "application/json"),
                         "{\"responseCode\":\"4040400\",\"responseMessage\":\"Operation not implemented\"}");
             }
@@ -257,6 +276,23 @@ public class SimulatorServerManager {
             try (OutputStream os = exchange.getResponseBody()) {
                 os.write(bytes);
             }
+        }
+    }
+
+    /** Tulis respons lalu siarkan event ke Live View (SSE) + request_logs. */
+    private void writeAndEmit(UUID simulatorId, String method, String path,
+                               Map<String, String> requestHeaders, String requestBody,
+                               int status, String responseBody,
+                               HttpExchange exchange, long startNanos) throws IOException {
+        write(exchange, status, Map.of("Content-Type", "application/json"), responseBody);
+        long durationMillis = (System.nanoTime() - startNanos) / 1_000_000;
+        try {
+            events.publishRequestEvent(new EventPublisher.RequestEvent(
+                    simulatorId.toString(), method, path, status,
+                    extractResponseCode(responseBody), durationMillis,
+                    requestHeaders, requestBody, responseBody));
+        } catch (Exception e) {
+            log.warn("Simulator {} gagal publikasi event: {}", simulatorId, e.toString());
         }
     }
 }

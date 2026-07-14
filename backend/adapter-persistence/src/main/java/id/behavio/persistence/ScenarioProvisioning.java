@@ -39,7 +39,9 @@ class ScenarioProvisioning {
      */
     void ensure(UUID simulatorId, String product) {
         String p = product == null ? "" : product.trim().toLowerCase();
-        if (!p.startsWith("qris")) return;
+        if (!p.startsWith("qris") && !p.equals("balance-inquiry")
+                && !p.equals("account-inquiry-internal") && !p.equals("transaction-history-list")
+                && !p.equals("transfer-interbank")) return;
 
         ProductEndpoints.Endpoint ep = ProductEndpoints.resolve(product);
         UUID endpointId = db.sql("SELECT id FROM endpoints WHERE simulator_id = ? AND path = ?")
@@ -47,8 +49,6 @@ class ScenarioProvisioning {
                 .query(UUID.class).optional()
                 .orElseGet(() -> insertEndpoint(simulatorId, p, ep));
 
-        // Endpoint bisa saja SUDAH ada tapi tanpa baris scenario — provisionBaseline membuat
-        // endpoint QRIS non-generate tanpa scenario. Lengkapi yang kurang, jangan berhenti di sini.
         ensureScenarios(endpointId, p);
     }
 

@@ -16,7 +16,9 @@ final class Blueprints {
         if (product == null) return false;
         return switch (product.trim().toLowerCase()) {
             case "transfer", "qris", "qris-generate", "qris-query", "qris-refund",
-                 "qris-cancel", "qris-decode", "qris-payment", "qris-apply-ott" -> true;
+                 "qris-cancel", "qris-decode", "qris-payment", "qris-apply-ott",
+                 "balance-inquiry", "account-inquiry-internal", "transaction-history-list",
+                 "transfer-interbank" -> true;
             default -> false;
         };
     }
@@ -25,9 +27,6 @@ final class Blueprints {
         String key = name == null ? "" : name.trim().toLowerCase();
         String p = product == null ? "transfer" : product.trim().toLowerCase();
         return switch (p) {
-            // "qris-generate" = kunci operasi di tabel endpoints (SnapOperations);
-            // "qris" = nama product yang dipakai dashboard. Keduanya endpoint yang sama.
-            // Katalog nama→preset dipegang blueprint sendiri (lihat SCENARIO_NAMES).
             case "qris", "qris-generate" -> QrisMpmBlueprint.byName(key);
             case "qris-query" -> QrisQueryBlueprint.normal();
             case "qris-refund" -> QrisRefundBlueprint.normal();
@@ -35,6 +34,14 @@ final class Blueprints {
             case "qris-decode" -> QrisDecodeBlueprint.normal();
             case "qris-payment" -> QrisPaymentBlueprint.normal();
             case "qris-apply-ott" -> QrisApplyOttBlueprint.normal();
+            case "balance-inquiry" -> BalanceInquiryBlueprint.normal();
+            case "account-inquiry-internal" -> AccountInquiryInternalBlueprint.normal();
+            case "transaction-history-list" -> TransactionHistoryListBlueprint.normal();
+            case "transfer-interbank" -> switch (key) {
+                case "saldo kurang" -> InterbankTransferBlueprint.forcedInsufficient();
+                case "limit" -> InterbankTransferBlueprint.limit();
+                default -> InterbankTransferBlueprint.normal();
+            };
             default -> switch (key) {
                 case "saldo kurang" -> TransferIntrabankBlueprint.forcedInsufficient();
                 case "limit" -> TransferIntrabankBlueprint.limit();

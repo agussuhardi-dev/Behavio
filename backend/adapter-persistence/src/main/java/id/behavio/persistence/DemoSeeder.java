@@ -1,5 +1,6 @@
 package id.behavio.persistence;
 
+import id.behavio.core.blueprint.InterbankTransferBlueprint;
 import id.behavio.core.blueprint.QrisMpmBlueprint;
 import id.behavio.core.blueprint.TransferIntrabankBlueprint;
 import jakarta.persistence.EntityManager;
@@ -97,8 +98,49 @@ public class DemoSeeder implements CommandLineRunner {
         qrisEp.activeScenarioId = qrisNormalId;
         em.merge(qrisEp);
 
+        // Endpoint Mini ATM (balance-inquiry, account-inquiry-internal, transaction-history-list)
+        // — masing-masing dengan 1 scenario "Normal" agar response dapat di-custom dari dashboard.
+        java.util.function.Function<String, UUID> seedMiniAtm = opKey -> {
+            UUID epId = UUID.randomUUID();
+            EndpointEntity e = new EndpointEntity();
+            e.id = epId;
+            e.simulatorId = simId;
+            e.method = "POST";
+            e.path = id.behavio.core.blueprint.SnapOperations.byKey(opKey).defaultPath();
+            e.operation = opKey;
+            em.persist(e);
+            UUID scId = UUID.randomUUID();
+            ScenarioEntity sc = scenario(scId, epId, "Normal");
+            em.persist(sc);
+            e.activeScenarioId = scId;
+            em.merge(e);
+            return epId;
+        };
+        seedMiniAtm.apply("balance-inquiry");
+        seedMiniAtm.apply("account-inquiry-internal");
+        seedMiniAtm.apply("transaction-history-list");
+
+        // Interbank Transfer — scenario Normal/Saldo Kurang/Limit (seperti intrabank).
+        UUID ibEndpointId = UUID.randomUUID();
+        EndpointEntity ibEp = new EndpointEntity();
+        ibEp.id = ibEndpointId;
+        ibEp.simulatorId = simId;
+        ibEp.method = InterbankTransferBlueprint.METHOD;
+        ibEp.path = InterbankTransferBlueprint.PATH;
+        ibEp.operation = "transfer-interbank";
+        em.persist(ibEp);
+        UUID ibNormalId = UUID.randomUUID();
+        em.persist(scenario(ibNormalId, ibEndpointId, "Normal"));
+        em.persist(scenario(UUID.randomUUID(), ibEndpointId, "Saldo Kurang"));
+        em.persist(scenario(UUID.randomUUID(), ibEndpointId, "Limit"));
+        ibEp.activeScenarioId = ibNormalId;
+        em.merge(ibEp);
+
         for (id.behavio.core.blueprint.SnapOperations.Op op : id.behavio.core.blueprint.SnapOperations.ALL) {
             if ("transfer".equals(op.key()) || "qris-generate".equals(op.key())) continue;
+            if ("transfer-interbank".equals(op.key())) continue;
+            if ("balance-inquiry".equals(op.key()) || "account-inquiry-internal".equals(op.key())
+                    || "transaction-history-list".equals(op.key())) continue;
             EndpointEntity plain = new EndpointEntity();
             plain.id = UUID.randomUUID();
             plain.simulatorId = simId;

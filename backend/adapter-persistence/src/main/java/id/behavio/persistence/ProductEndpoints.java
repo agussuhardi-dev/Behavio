@@ -14,6 +14,10 @@ final class ProductEndpoints {
 
     static Endpoint resolve(String product) {
         return switch (product == null ? "transfer" : product.trim().toLowerCase()) {
+            case "balance-inquiry" -> new Endpoint(BalanceInquiryBlueprint.METHOD, BalanceInquiryBlueprint.PATH);
+            case "account-inquiry-internal" -> new Endpoint(AccountInquiryInternalBlueprint.METHOD, AccountInquiryInternalBlueprint.PATH);
+            case "transaction-history-list" -> new Endpoint(TransactionHistoryListBlueprint.METHOD, TransactionHistoryListBlueprint.PATH);
+            case "transfer-interbank" -> new Endpoint(InterbankTransferBlueprint.METHOD, InterbankTransferBlueprint.PATH);
             case "qris" -> new Endpoint(QrisMpmBlueprint.METHOD, QrisMpmBlueprint.PATH);
             case "qris-query" -> new Endpoint(QrisQueryBlueprint.METHOD, QrisQueryBlueprint.PATH);
             case "qris-refund" -> new Endpoint(QrisRefundBlueprint.METHOD, QrisRefundBlueprint.PATH);

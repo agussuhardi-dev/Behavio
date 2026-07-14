@@ -4,19 +4,13 @@
       "route": "simulators",
       "name": "simulators",
       "type": "link",
-      "icon": "dns"
+      "icon": "account_balance"
     },
     {
       "route": "qris",
       "name": "qris",
       "type": "link",
       "icon": "qr_code_2"
-    },
-    {
-      "route": "dashboard",
-      "name": "dashboard",
-      "type": "link",
-      "icon": "dashboard"
     }
   ]
 }

@@ -81,7 +81,9 @@ export class Simulators implements OnInit, OnDestroy {
   /** Profil terakhir yang dipilih user — dipulihkan saat halaman dibuka lagi. */
   private static readonly LAST_SIM_KEY = 'behavio.bank.lastSimId';
 
-  readonly bankOperations = ['access-token', 'transfer', 'va-create', 'va-status', 'va-delete'];
+  readonly bankOperations = ['access-token', 'balance-inquiry', 'account-inquiry-internal',
+    'transaction-history-list', 'transfer', 'transfer-interbank',
+    'va-create', 'va-status', 'va-delete'];
 
   /** Dipakai kartu "Panduan Skenario" — penjelasan lengkap tiap scenario transfer. */
   readonly transferScenarios = SCENARIOS;
@@ -91,6 +93,7 @@ export class Simulators implements OnInit, OnDestroy {
   readonly selectedSimId = signal<string>('');
   readonly epuOpen = signal(false);
   readonly copiedKey = signal<string | null>(null);
+  readonly simMsg = signal('');
 
   // Live View (SSE)
   readonly liveOpen = signal(false);
@@ -129,6 +132,21 @@ export class Simulators implements OnInit, OnDestroy {
 
   readonly endpointMeta = (): EpMeta[] => [
     {
+      key: 'balance-inquiry', label: 'Balance Inquiry', method: 'POST',
+      desc: 'Cek saldo rekening — Info Saldo (service 11). Mengembalikan saldo available, ledger, float, hold.',
+      curl: this.curlBalance(), curlKey: 'bal', scenarioList: [],
+    },
+    {
+      key: 'account-inquiry-internal', label: 'Internal Account Inquiry', method: 'POST',
+      desc: 'Validasi nomor & nama rekening internal sebelum transfer (service 15).',
+      curl: this.curlAccountInquiry(), curlKey: 'aci', scenarioList: [],
+    },
+    {
+      key: 'transaction-history-list', label: 'Transaction History List', method: 'POST',
+      desc: 'Mini statement — riwayat transaksi per-partner (service 12). Mendukung paginasi & rentang tanggal.',
+      curl: this.curlTxHistory(), curlKey: 'txh', scenarioList: [],
+    },
+    {
       key: 'access-token', label: 'Access Token B2B', method: 'POST',
       desc: 'Terbitkan token Bearer B2B — dipakai semua endpoint lain saat mode STRICT.',
       curl: this.curlToken(), curlKey: 'tok', scenarioList: [],
@@ -137,6 +155,12 @@ export class Simulators implements OnInit, OnDestroy {
       key: 'transfer', label: 'Transfer Intrabank', method: 'POST',
       desc: 'Transfer antar rekening internal (service 17). Saldo benar-benar didebit & dikredit.',
       product: 'transfer', curl: this.curlTransfer(), curlKey: 'trf', scenarioList: SCENARIOS,
+    },
+    {
+      key: 'transfer-interbank', label: 'Transfer Interbank', method: 'POST',
+      desc: 'Transfer ke bank lain (service 18). Hanya debit sumber — rekening tujuan di bank berbeda.',
+      product: 'transfer-interbank', curl: this.curlInterbank(), curlKey: 'ibi',
+      scenarioList: SCENARIOS.filter(s => ['Normal', 'Saldo Kurang', 'Limit'].includes(s.name)),
     },
     {
       key: 'va-create', label: 'Virtual Account — Create', method: 'POST',
@@ -168,11 +192,37 @@ export class Simulators implements OnInit, OnDestroy {
   -d '{"grantType":"client_credentials"}'`;
   }
 
+  curlBalance(): string {
+    return `curl -X POST http://localhost:${this.port()}/v1.0/balance-inquiry \\
+  -H "X-PARTNER-ID: PARTNER001" -H "CHANNEL-ID: 95221" \\
+  -d '{"accountNo":"1234567890","partnerReferenceNo":"REF-BAL-001"}'`;
+  }
+
+  curlAccountInquiry(): string {
+    return `curl -X POST http://localhost:${this.port()}/v1.0/account-inquiry-internal \\
+  -H "X-PARTNER-ID: PARTNER001" -H "CHANNEL-ID: 95221" \\
+  -d '{"beneficiaryAccountNo":"1234567890","partnerReferenceNo":"REF-INQ-001"}'`;
+  }
+
+  curlTxHistory(): string {
+    return `curl -X POST http://localhost:${this.port()}/v1.0/transaction-history-list \\
+  -H "X-PARTNER-ID: PARTNER001" -H "CHANNEL-ID: 95221" \\
+  -d '{"partnerReferenceNo":"REF-HIST-001","pageSize":5,"pageNumber":0}'`;
+  }
+
   curlTransfer(): string {
     return `curl -X POST http://localhost:${this.port()}/v1.0/transfer-intrabank \\
   -H "X-PARTNER-ID: PARTNER001" -H "X-EXTERNAL-ID: TRX-001" \\
   -d '{"partnerReferenceNo":"PREF-001","amount":{"value":"50000.00","currency":"IDR"},
        "sourceAccountNo":"1234567890","beneficiaryAccountNo":"9876543210"}'`;
+  }
+
+  curlInterbank(): string {
+    return `curl -X POST http://localhost:${this.port()}/v1.0/transfer-interbank \\
+  -H "X-PARTNER-ID: PARTNER001" -H "X-EXTERNAL-ID: IB-001" \\
+  -d '{"partnerReferenceNo":"IB-REF-001","amount":{"value":"50000.00","currency":"IDR"},
+       "sourceAccountNo":"1234567890","beneficiaryAccountNo":"888801000157508",
+       "beneficiaryAccountName":"Yories Yolanda","beneficiaryBankCode":"002"}'`;
   }
 
   curlVaCreate(): string {
@@ -307,8 +357,15 @@ export class Simulators implements OnInit, OnDestroy {
     const ref = this.dialog.open(SimulatorFormDialog, { data: { mode: 'create', suggestedPort: this.suggestedPort() } });
     ref.afterClosed().subscribe((r?: SimulatorFormResult) => {
       if (!r) return;
+      this.simMsg.set('');
       this.api.create(r.name, r.port, r.signatureMode).subscribe({
-        next: c => { this.selectedSimId.set(c.id); this.rememberSim(c.id); this.reload(); },
+        next: c => {
+          this.simMsg.set(`Profil "${c.name}" berhasil dibuat di port ${c.port}.`);
+          this.selectedSimId.set(c.id);
+          this.rememberSim(c.id);
+          this.reload();
+        },
+        error: err => this.simMsg.set(err?.error?.error ?? 'Gagal membuat profil.'),
       });
     });
   }
@@ -318,8 +375,15 @@ export class Simulators implements OnInit, OnDestroy {
     const ref = this.dialog.open(SimulatorFormDialog, { data: { mode: 'clone', sourceName: s.name, suggestedPort: this.suggestedPort() } });
     ref.afterClosed().subscribe((r?: SimulatorFormResult) => {
       if (!r) return;
+      this.simMsg.set('');
       this.api.clone(s.id, r.name, r.port).subscribe({
-        next: c => { this.selectedSimId.set(c.id); this.rememberSim(c.id); this.reload(); },
+        next: c => {
+          this.simMsg.set(`Profil "${c.name}" berhasil diduplikasi di port ${c.port}.`);
+          this.selectedSimId.set(c.id);
+          this.rememberSim(c.id);
+          this.reload();
+        },
+        error: err => this.simMsg.set(err?.error?.error ?? 'Gagal menduplikasi profil.'),
       });
     });
   }
