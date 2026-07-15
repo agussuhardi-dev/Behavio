@@ -75,8 +75,9 @@
           <mat-icon class="sim-card__head-icon">api</mat-icon>
           <span>Endpoint Bank SNAP BI</span>
           <span class="sim-bar__spacer"></span>
-          <button mat-stroked-button (click)="epuOpen.set(!epuOpen())" class="sim-card__head-btn">
-            <mat-icon>link</mat-icon> {{ epuOpen() ? 'Tutup URL' : 'URL Endpoint' }}
+          <button mat-stroked-button (click)="epuOpen.set(!epuOpen())" class="sim-card__head-btn"
+                  matTooltip="Atur URL endpoint simulator dan daftarkan URL notifikasi (webhook) per partner">
+            <mat-icon>link</mat-icon> {{ epuOpen() ? 'Tutup' : 'URL & Webhook' }}
           </button>
         </div>
         <mat-divider />

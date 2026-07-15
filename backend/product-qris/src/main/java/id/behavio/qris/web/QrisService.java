@@ -426,8 +426,17 @@ public class QrisService {
         notif.put("transactionStatusDesc", statusDesc(qr.status()));
         notif.put("amount", Map.of("value", notified == null ? "0.00" : notified.toPlainString(),
                 "currency", qr.currency()));
-        notif.put("merchantId", strOrEmpty(qr.merchantId()));
-        notif.put("paidTime", qr.paidAt() != null ? ts(qr.paidAt()) : "");
+        // merchantId & paidTime BUKAN field top-level service 52 — daftar ASPI hanya mengenal
+        // originalReferenceNo, originalPartnerReferenceNo, latestTransactionStatus,
+        // transactionStatusDesc, customerNumber, accountType, destinationNumber,
+        // destinationAccountName, amount, sessionId, bankCode, externalStoreId, additionalInfo.
+        // additionalInfo justru didefinisikan untuk "custom use that are not provided by SNAP",
+        // jadi di sinilah tempatnya (konvensi yang sama dipakai acquirer lain, mis. Finpay).
+        Map<String, Object> extra = new LinkedHashMap<>();
+        extra.put("merchantId", strOrEmpty(qr.merchantId()));
+        extra.put("terminalId", strOrEmpty(qr.terminalId()));
+        extra.put("paidTime", qr.paidAt() != null ? ts(qr.paidAt()) : "");
+        notif.put("additionalInfo", extra);
         webhookSender.schedule(simulatorId, url.get(), Map.of("Content-Type", "application/json"),
                 writeJson(notif), Duration.ZERO);
         return new PayResult(true, true, label + " dijadwalkan ke " + url.get());

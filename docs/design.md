@@ -512,6 +512,12 @@ Event: `transfer-notify` · `va-payment` · `qris-payment` · `ALL`.
 `"urlHeader"` tetap dimuat — `ScenarioCodec` mengabaikan field itu dan memakai
 `event: "ALL"`. Definisi tersimpan tak boleh pecah hanya karena mesinnya berubah.
 
+**Di dashboard** (`app-webhook-panel`, dipakai halaman Bank & QRIS): tersembunyi di balik
+tombol **"URL & Webhook"** di kepala card Endpoint. Tombol itu dulu berlabel *"URL
+Endpoint"* dan user melaporkan fiturnya "tidak ada" — padahal lengkap; label itu tak
+menyebut webhook sama sekali, jadi tak ada alasan menebaknya ada di situ. **Pelajaran:
+fitur di balik toggle yang labelnya tak menyebut fitur itu = fitur yang tidak ada.**
+
 ### 9.2 Pengiriman: otomatis dulu, tombol hanya jaring pengaman
 
 Notifikasi terkirim **otomatis saat status entitas berubah** (VA → `PAID`, QR → dibayar,
@@ -1726,6 +1732,7 @@ dengan tabel ASPI, terverifikasi via HTTP nyata (bukan hanya baca kode):
 | 51 | `qr-mpm-query` | `2005100` | ✅ `amount`/`feeAmount` bersarang, `latestTransactionStatus` |
 | 77 | `qr-mpm-cancel` | `2007700` | ✅ `cancelTime`/`transactionDate` ISO ber-offset |
 | 78 | `qr-mpm-refund` | `2007800` | ✅ `refundAmount` bersarang |
+| 52 | `qr-mpm-notify` (webhook) | `2005200` | ✅ diverifikasi 2026-07-15 — lihat di bawah |
 
 `additionalInfo` bersifat **Optional** di ASPI untuk semua service di atas — tidak
 dikirim = tetap sesuai spec.
@@ -1736,13 +1743,30 @@ kosong dikirim sebagai `""`, TIDAK PERNAH `null`): `verificationId` (50),
 `merchantId` (webhook). Uji regresinya: kirim request **minimal** (semua field
 opsional dihilangkan) lalu pastikan tak ada `null` di JSON response mana pun.
 
-> **BELUM terverifikasi:** body webhook **Payment Notify (service 52)**. Field intinya
-> (`originalReferenceNo`, `originalPartnerReferenceNo`, `latestTransactionStatus`,
-> `transactionStatusDesc`, `amount` bersarang) cocok, tetapi daftar field ASPI yang
-> terbaca saat riset memuat field ber-rasa transfer (`customerNumber`, `bankCode`,
-> `destinationAccountName`) sehingga diduga tercampur bagian lain di halaman yang sama.
-> `merchantId`/`paidTime` yang kita kirim juga tak muncul di daftar itu.
-> **Perlu konfirmasi ke dokumen ASPI resmi sebelum diubah.**
+#### Payment Notify (52) — diverifikasi 2026-07-15
+
+Dugaan lama bahwa daftar field ASPI "tercampur bagian lain" ternyata **salah**. Halaman
+ASPI, di bawah judul *API Payment Notification Request Body*, memang mendaftarkan field
+ber-rasa transfer — semuanya **Optional**; SNAP memakai ulang bentuk notify bersama:
+
+| Field | M/O | Catatan |
+|---|---|---|
+| `originalReferenceNo` | **M** | dikirim |
+| `latestTransactionStatus` | **M** | dikirim — `00`..`07` |
+| `originalPartnerReferenceNo` | O | dikirim |
+| `transactionStatusDesc` | O | dikirim |
+| `amount{value,currency}` | O | dikirim |
+| `customerNumber`, `accountType`, `destinationNumber`, `destinationAccountName`, `sessionId`, `bankCode`, `externalStoreId` | O | tak relevan untuk MPM → tak dikirim |
+| `additionalInfo` | O | dikirim: `merchantId`, `terminalId`, `paidTime` |
+
+**Aturan yang mengikat:** top-level hanya boleh berisi field dari tabel di atas.
+`merchantId`/`paidTime` **bukan** field top-level service 52 — sebelum 2026-07-15 kita
+mengirimnya di top-level, dan itu keliru. ASPI mendefinisikan `additionalInfo` sebagai
+*"Additional information for custom use that are not provided by SNAP"*, jadi field
+custom apa pun masuk ke sana (konvensi yang sama dipakai acquirer lain, mis. Finpay).
+
+`latestTransactionStatus` mengikuti status **aktif** QR (`03` = pending untuk QR belum
+dibayar), bukan selalu `00` — notifikasi & `qr-mpm-query` tak boleh berbeda cerita.
 
 ---
 
@@ -1751,6 +1775,8 @@ opsional dihilangkan) lalu pastikan tak ada `null` di JSON response mana pun.
 - [SNAP — Bank Indonesia](https://www.bi.go.id/id/layanan/standar/snap/default.aspx)
 - [Standar Open API Pembayaran Indonesia (SNAP) — ASPI](https://aspi-indonesia.or.id/standar-dan-layanan/standar-open-api-pembayaran-indonesia-snap/)
 - [SNAP Developer Site — ASPI (api-services)](https://apidevportal.aspi-indonesia.or.id/api-services/transfer-kredit/trigger-transfer)
+- [QRIS MPM — ASPI (service 47–52, 77, 78)](https://apidevportal.aspi-indonesia.or.id/api-services/transfer-kredit/mpm) — sumber utama A3.7
+- [QRIS Payment Notify — Finpay](https://hub.finpay.id/docs/finpay-pg/SNAP/QRIS/paymentNotify) — pembanding konvensi `additionalInfo` (A3.7)
 - [Intrabank Transfer — BRIAPI](https://developers.bri.co.id/en/snap-bi/api-account-inquiry-internal-intrabank-transfer-v11)
 - [Memahami Dasar Cara Integrasi SNAP BI — Medium](https://thearkas.medium.com/memahami-dasar-cara-integrasi-snap-bi-17a61b65047e)
 - [snap-bi-signer-js — GitHub](https://github.com/TheArKaID/snap-bi-signer-js)
