@@ -25,6 +25,7 @@ import id.behavio.core.port.ScenarioConfigPort;
 import id.behavio.core.port.SignatureVerifier;
 import id.behavio.core.port.SimulatorAdmin;
 import id.behavio.core.port.WebhookSender;
+import id.behavio.core.port.WebhookSubscriptions;
 import id.behavio.core.product.FaultSpecs;
 import id.behavio.core.product.OperationHandler;
 import id.behavio.core.product.ProductCatalog;
@@ -40,6 +41,7 @@ import id.behavio.persistence.SchemaRequestLogWriter;
 import id.behavio.persistence.SchemaScenarioConfig;
 import id.behavio.persistence.SchemaSimulatorAdmin;
 import id.behavio.persistence.SchemaTables;
+import id.behavio.persistence.SchemaWebhookSubscriptions;
 import id.behavio.web.AccessTokenService;
 import id.behavio.web.ProductRuntime;
 import id.behavio.web.SimulatorServerManager;
@@ -140,11 +142,17 @@ public class BankProductConfig {
         return new OutboxWebhookSender(db, SCHEMA);
     }
 
+    /** Registrasi URL notifikasi — satu-satunya sumber URL webhook (design.md §9.1). */
+    @Bean
+    public WebhookSubscriptions bankWebhookSubscriptions() {
+        return new SchemaWebhookSubscriptions(db, bankTables());
+    }
+
     @Bean
     public SimulationExecutor bankSimulationExecutor(SignatureVerifier verifier) {
         return new SimulationExecutor(new DefaultBehaviorEngine(
                 bankStateRepository(), bankConfigRepository(), verifier,
-                bankWebhookSender(), bankAccessTokenStore()));
+                bankWebhookSender(), bankWebhookSubscriptions(), bankAccessTokenStore()));
     }
 
     @Bean
@@ -167,7 +175,7 @@ public class BankProductConfig {
     @Bean
     public VirtualAccountService bankVirtualAccountService(SignatureVerifier verifier, ObjectMapper mapper) {
         return new VirtualAccountService(bankConfigRepository(), verifier, bankVaRepository(),
-                bankWebhookSender(), bankAccessTokenStore(), mapper);
+                bankWebhookSender(), bankWebhookSubscriptions(), bankAccessTokenStore(), mapper);
     }
 
     @Bean
@@ -192,6 +200,7 @@ public class BankProductConfig {
         handlers.put("transfer-interbank", r -> transfer(executor, snapMapper, r));
         handlers.put("balance-inquiry", r -> transfer(executor, snapMapper, r));
         handlers.put("account-inquiry-internal", r -> transfer(executor, snapMapper, r));
+        handlers.put("account-inquiry-external", r -> transfer(executor, snapMapper, r));
         handlers.put("transaction-history-list", r -> transfer(executor, snapMapper, r));
         handlers.put("va-create", withScenario(config, r ->
                 result(va.create(r.simulatorId(), r.method(), r.path(), r.headers(), r.body()))));
@@ -203,7 +212,7 @@ public class BankProductConfig {
         SimulatorServerManager servers = new SimulatorServerManager(
                 SCHEMA, bankEndpointRegistry(), handlers, eventPublishers(sharedPublishers));
         return new ProductRuntime(bankCatalog(), bankSimulatorAdmin(ports), bankScenarioConfig(),
-                bankEndpointRegistry(), bankPartnerAdmin(), servers, handlers);
+                bankEndpointRegistry(), bankPartnerAdmin(), bankWebhookSubscriptions(), servers, handlers);
     }
 
     /**

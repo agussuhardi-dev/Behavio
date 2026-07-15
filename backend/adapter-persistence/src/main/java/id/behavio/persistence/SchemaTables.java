@@ -34,6 +34,7 @@ public final class SchemaTables {
     public String entities()     { return schema + ".entities"; }
     public String requestLogs()  { return schema + ".request_logs"; }
     public String webhookOutbox(){ return schema + ".webhook_outbox"; }
+    public String webhookSubscriptions() { return schema + ".webhook_subscriptions"; }
 
     @Override
     public String toString() { return schema; }

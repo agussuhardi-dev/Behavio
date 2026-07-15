@@ -19,6 +19,7 @@ import id.behavio.core.port.SignatureVerifier;
 import id.behavio.bank.port.StateRepository;
 import id.behavio.core.port.StoredResponse;
 import id.behavio.core.port.WebhookSender;
+import id.behavio.core.port.WebhookSubscriptions;
 import id.behavio.bank.rule.BankAction;
 import id.behavio.core.rule.Action;
 import id.behavio.core.rule.FaultSpec;
@@ -61,6 +62,7 @@ public final class DefaultBehaviorEngine implements BehaviorEngine {
     private final ConfigRepository config;
     private final SignatureVerifier signatureVerifier; // nullable → mode STRICT tak dicek
     private final WebhookSender webhookSender;          // nullable → webhook dilewati
+    private final WebhookSubscriptions subscriptions;   // nullable → webhook dilewati (§9.1)
     private final AccessTokenStore accessTokenStore;    // nullable → expiry token tak dicek
     private final ConditionEvaluator evaluator = new ConditionEvaluator();
     private final ResponseRenderer renderer = new ResponseRenderer();
@@ -76,29 +78,31 @@ public final class DefaultBehaviorEngine implements BehaviorEngine {
     private static final ZoneId SNAP_ZONE = ZoneId.of("Asia/Jakarta");
 
     public DefaultBehaviorEngine(StateRepository state, ConfigRepository config) {
-        this(state, config, null, null, null, defaultRefGen(), Clock.system(SNAP_ZONE));
+        this(state, config, null, null, null, null, defaultRefGen(), Clock.system(SNAP_ZONE));
     }
 
     public DefaultBehaviorEngine(StateRepository state, ConfigRepository config,
                                  SignatureVerifier signatureVerifier, WebhookSender webhookSender) {
-        this(state, config, signatureVerifier, webhookSender, null, defaultRefGen(), Clock.system(SNAP_ZONE));
-    }
-
-    public DefaultBehaviorEngine(StateRepository state, ConfigRepository config,
-                                 SignatureVerifier signatureVerifier, WebhookSender webhookSender,
-                                 AccessTokenStore accessTokenStore) {
-        this(state, config, signatureVerifier, webhookSender, accessTokenStore,
+        this(state, config, signatureVerifier, webhookSender, null, null,
                 defaultRefGen(), Clock.system(SNAP_ZONE));
     }
 
     public DefaultBehaviorEngine(StateRepository state, ConfigRepository config,
                                  SignatureVerifier signatureVerifier, WebhookSender webhookSender,
-                                 AccessTokenStore accessTokenStore,
+                                 WebhookSubscriptions subscriptions, AccessTokenStore accessTokenStore) {
+        this(state, config, signatureVerifier, webhookSender, subscriptions, accessTokenStore,
+                defaultRefGen(), Clock.system(SNAP_ZONE));
+    }
+
+    public DefaultBehaviorEngine(StateRepository state, ConfigRepository config,
+                                 SignatureVerifier signatureVerifier, WebhookSender webhookSender,
+                                 WebhookSubscriptions subscriptions, AccessTokenStore accessTokenStore,
                                  Supplier<String> referenceNoGen, Clock clock) {
         this.state = state;
         this.config = config;
         this.signatureVerifier = signatureVerifier;
         this.webhookSender = webhookSender;
+        this.subscriptions = subscriptions;
         this.accessTokenStore = accessTokenStore;
         this.referenceNoGen = referenceNoGen;
         this.clock = clock;
@@ -198,7 +202,7 @@ public final class DefaultBehaviorEngine implements BehaviorEngine {
 
         // 7. Jadwalkan webhook async (enqueue outbox dalam transaksi ini)
         if (actionsSucceeded && outcome.webhook() != null && webhookSender != null) {
-            scheduleWebhook(simulatorId, outcome.webhook(), request, referenceNo);
+            scheduleWebhook(simulatorId, partner.id(), outcome.webhook(), request, referenceNo);
         }
 
         // 8. Lampirkan efek fisik fault (diterapkan adapter web pasca-commit)
@@ -209,10 +213,19 @@ public final class DefaultBehaviorEngine implements BehaviorEngine {
         return response;
     }
 
-    private void scheduleWebhook(UUID simulatorId, WebhookSpec spec, SimRequest request, String referenceNo) {
-        String url = request.header(spec.urlHeader());
-        if (url == null || url.isBlank()) {
-            return; // tak ada callback URL → lewati (log di adapter)
+    /**
+     * URL tujuan di-resolve dari registrasi partner (design.md §9.1), bukan dari header
+     * request. Partner yang tak mendaftarkan URL → webhook dilewati diam-diam, sama
+     * seperti bank sungguhan yang tak punya alamat notifikasi untuk dituju.
+     */
+    private void scheduleWebhook(UUID simulatorId, UUID partnerId, WebhookSpec spec,
+                                 SimRequest request, String referenceNo) {
+        if (subscriptions == null) {
+            return; // engine dirakit tanpa registrasi (mis. unit test) → webhook dilewati
+        }
+        Optional<String> url = subscriptions.resolveUrl(simulatorId, partnerId, spec.event());
+        if (url.isEmpty()) {
+            return; // partner belum mendaftarkan URL untuk event ini
         }
         Map<String, Object> vars = new HashMap<>(request.fields());
         vars.put("referenceNo", referenceNo);
@@ -221,7 +234,7 @@ public final class DefaultBehaviorEngine implements BehaviorEngine {
         vars.putIfAbsent("currency", "IDR");
         vars.put("transactionDate", OffsetDateTime.now(clock).format(SNAP_TS));
         String body = renderer.render(spec.bodyTemplate(), vars);
-        webhookSender.schedule(simulatorId, url, JSON_HEADERS, body, Duration.ofMillis(spec.delayMillis()));
+        webhookSender.schedule(simulatorId, url.get(), JSON_HEADERS, body, Duration.ofMillis(spec.delayMillis()));
     }
 
     private static String bearerToken(SimRequest request) {
@@ -296,6 +309,21 @@ public final class DefaultBehaviorEngine implements BehaviorEngine {
         return new SimResponse(spec.httpStatus(), spec.responseCode(), JSON_HEADERS, body);
     }
 
+    /**
+     * Isi {@code holderName}/{@code accountNo} dari state agar template response bisa
+     * menyebut nama pemilik rekening.
+     *
+     * Urutan menentukan siapa pemilik {@code holderName} saat sebuah request menyebut
+     * beberapa rekening sekaligus, dan {@code putIfAbsent} membuat yang PERTAMA menang:
+     * {@code accountNo} (balance-inquiry) → {@code sourceAccountNo} (transfer, pengirim)
+     * → {@code beneficiaryAccountNo} (inquiry, penerima). Beneficiary sengaja TERAKHIR:
+     * pada transfer, {@code holderName} harus tetap milik rekening SUMBER.
+     *
+     * Lookup beneficiary dulu tak ada, sehingga {@code account-inquiry-internal} —
+     * yang requestnya hanya mengirim {@code beneficiaryAccountNo} — merender
+     * {@code beneficiaryAccountName} sebagai string kosong, padahal field itu WAJIB di
+     * ASPI (service 15). Seluruh guna operasi itu justru mengembalikan nama pemilik.
+     */
     private void enrichAccountVars(UUID simulatorId, UUID partnerId, Map<String, Object> vars) {
         String accountNo = (String) vars.get("accountNo");
         if (accountNo != null && !accountNo.isBlank()) {
@@ -307,6 +335,12 @@ public final class DefaultBehaviorEngine implements BehaviorEngine {
         String source = (String) vars.get("sourceAccountNo");
         if (source != null && !source.isBlank() && !source.equals(accountNo)) {
             state.findAccount(simulatorId, partnerId, source).ifPresent(acc -> {
+                vars.putIfAbsent("holderName", acc.holderName());
+            });
+        }
+        String beneficiary = (String) vars.get("beneficiaryAccountNo");
+        if (beneficiary != null && !beneficiary.isBlank()) {
+            state.findAccount(simulatorId, partnerId, beneficiary).ifPresent(acc -> {
                 vars.putIfAbsent("holderName", acc.holderName());
             });
         }

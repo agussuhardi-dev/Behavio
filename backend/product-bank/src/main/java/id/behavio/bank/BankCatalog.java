@@ -3,6 +3,7 @@ package id.behavio.bank;
 import id.behavio.bank.blueprint.AccountInquiryInternalBlueprint;
 import id.behavio.bank.blueprint.AccessTokenBlueprint;
 import id.behavio.bank.blueprint.BalanceInquiryBlueprint;
+import id.behavio.bank.blueprint.ExternalAccountInquiryBlueprint;
 import id.behavio.bank.blueprint.InterbankTransferBlueprint;
 import id.behavio.bank.blueprint.TransactionHistoryListBlueprint;
 import id.behavio.bank.blueprint.TransferIntrabankBlueprint;
@@ -49,6 +50,8 @@ public final class BankCatalog implements ProductCatalog {
                     "Balance Inquiry", INQUIRY_SCENARIOS),
             new Operation("account-inquiry-internal", AccountInquiryInternalBlueprint.METHOD,
                     AccountInquiryInternalBlueprint.PATH, "Internal Account Inquiry", INQUIRY_SCENARIOS),
+            new Operation("account-inquiry-external", ExternalAccountInquiryBlueprint.METHOD,
+                    ExternalAccountInquiryBlueprint.PATH, "External Account Inquiry", INQUIRY_SCENARIOS),
             new Operation("transaction-history-list", TransactionHistoryListBlueprint.METHOD,
                     TransactionHistoryListBlueprint.PATH, "Transaction History List", INQUIRY_SCENARIOS),
             new Operation("transfer", TransferIntrabankBlueprint.METHOD, TransferIntrabankBlueprint.PATH,
@@ -96,6 +99,11 @@ public final class BankCatalog implements ProductCatalog {
                 case "bank down" -> AccountInquiryInternalBlueprint.bankDown();
                 case "timeout" -> AccountInquiryInternalBlueprint.timeout();
                 default -> AccountInquiryInternalBlueprint.normal();
+            });
+            case "account-inquiry-external" -> Optional.of(switch (sc) {
+                case "bank down" -> ExternalAccountInquiryBlueprint.bankDown();
+                case "timeout" -> ExternalAccountInquiryBlueprint.timeout();
+                default -> ExternalAccountInquiryBlueprint.normal();
             });
             case "transaction-history-list" -> Optional.of(switch (sc) {
                 case "bank down" -> TransactionHistoryListBlueprint.bankDown();
@@ -159,6 +167,7 @@ public final class BankCatalog implements ProductCatalog {
             case "access-token" -> Optional.of(AccessTokenBlueprint.requestExample());
             case "balance-inquiry" -> Optional.of(BalanceInquiryBlueprint.requestExample());
             case "account-inquiry-internal" -> Optional.of(AccountInquiryInternalBlueprint.requestExample());
+            case "account-inquiry-external" -> Optional.of(ExternalAccountInquiryBlueprint.requestExample());
             case "transaction-history-list" -> Optional.of(TransactionHistoryListBlueprint.requestExample());
             case "transfer" -> Optional.of(TransferIntrabankBlueprint.requestExample());
             case "transfer-interbank" -> Optional.of(InterbankTransferBlueprint.requestExample());

@@ -163,6 +163,31 @@ export abstract class ProductApi {
     return this.http.put(`${this.base}/${id}/endpoints/${operation}`, { path: null });
   }
 
+  // ---- Registrasi URL notifikasi (design.md §9.1) ----
+
+  listWebhookSubscriptions(id: string) {
+    return this.http.get<WebhookSubscription[]>(`${this.base}/${id}/webhooks/subscriptions`);
+  }
+
+  /** Daftarkan/perbarui URL untuk (partner, event) — idempoten per pasangan itu. */
+  registerWebhook(id: string, partnerId: string, event: string, url: string) {
+    return this.http.post<WebhookSubscription>(`${this.base}/${id}/webhooks/subscriptions`, {
+      partnerId,
+      event,
+      url,
+    });
+  }
+
+  deleteWebhookSubscription(id: string, subscriptionId: string) {
+    return this.http.delete(`${this.base}/${id}/webhooks/subscriptions/${subscriptionId}`);
+  }
+
+  setWebhookSubscriptionStatus(id: string, subscriptionId: string, status: WebhookStatus) {
+    return this.http.put(`${this.base}/${id}/webhooks/subscriptions/${subscriptionId}/status`, {
+      status,
+    });
+  }
+
   // ---- Export / Import OpenAPI (design.md §15) ----
 
   /**
@@ -191,6 +216,35 @@ export abstract class ProductApi {
     });
   }
 }
+
+// ---- Model registrasi webhook (cermin WebhookSubscriptions.Subscription) ----
+
+export type WebhookStatus = 'ACTIVE' | 'INACTIVE';
+
+export interface WebhookSubscription {
+  id: string;
+  /** Nilai X-PARTNER-ID, bukan UUID baris — itu yang dikenali user. */
+  partnerId: string;
+  event: string;
+  url: string;
+  status: WebhookStatus;
+}
+
+/**
+ * Event notifikasi per produk (design.md §9.1). `ALL` = tangkap semua, dipakai bila
+ * partner tak butuh URL berbeda per jenis notifikasi.
+ */
+export const WEBHOOK_EVENTS: Record<ProductKey, { key: string; label: string }[]> = {
+  bank: [
+    { key: 'ALL', label: 'ALL — semua notifikasi' },
+    { key: 'transfer-notify', label: 'transfer-notify — Async Callback transfer' },
+    { key: 'va-payment', label: 'va-payment — Payment Notification VA' },
+  ],
+  qris: [
+    { key: 'ALL', label: 'ALL — semua notifikasi' },
+    { key: 'qris-payment', label: 'qris-payment — Payment Notify (service 52)' },
+  ],
+};
 
 // ---- Model export/import OpenAPI (cermin record di OpenApiImporter) ----
 

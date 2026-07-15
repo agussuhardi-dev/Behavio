@@ -10,7 +10,7 @@ export interface QrisView {
   amount: string | null;
   currency: string;
   status: 'ACTIVE' | 'PAID' | 'REFUNDED' | 'EXPIRED';
-  hasCallback: boolean;
+  // Tanpa hasCallback — lihat catatan di VirtualAccountView (design.md §9.1).
 }
 
 /** Satu halaman QR + total, sesuai respons Admin API `GET .../qris?page=&size=`. */
@@ -68,6 +68,17 @@ export class QrisApi extends ProductApi {
     return this.http.post<{ webhookSent: boolean; note: string }>(
       `${this.base}/${id}/qris/${encodeURIComponent(referenceNo)}/pay`,
       amount ? { amount } : {}
+    );
+  }
+
+  /**
+   * Kirim ulang Payment Notify memakai status AKTIF QR — retry/test (design.md §9.2).
+   * Tidak mengubah data.
+   */
+  resendQrisNotification(id: string, referenceNo: string) {
+    return this.http.post<{ webhookSent: boolean; note: string }>(
+      `${this.base}/${id}/qris/${encodeURIComponent(referenceNo)}/resend-notification`,
+      {}
     );
   }
 

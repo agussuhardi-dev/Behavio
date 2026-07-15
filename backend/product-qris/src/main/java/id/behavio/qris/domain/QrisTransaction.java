@@ -22,7 +22,8 @@ public class QrisTransaction {
     private final BigDecimal amount;
     private final String currency;
     private final String qrContent;
-    private final String callbackUrl;
+    // Tak ada callbackUrl: URL notifikasi di-resolve dari registrasi partner saat kirim
+    // (design.md §9.1).
     private QrisStatus status;
     /** Nominal aktual yang dibayar (diisi saat markPaid — wajib untuk static). */
     private BigDecimal paidAmount;
@@ -32,7 +33,7 @@ public class QrisTransaction {
 
     public QrisTransaction(UUID id, UUID simulatorId, UUID partnerId, String partnerReferenceNo,
                            String referenceNo, String merchantId, String terminalId, QrisType qrType,
-                           BigDecimal amount, String currency, String qrContent, String callbackUrl,
+                           BigDecimal amount, String currency, String qrContent,
                            QrisStatus status, BigDecimal paidAmount, BigDecimal refundedAmount,
                            Instant createdAt) {
         this.id = id;
@@ -46,7 +47,6 @@ public class QrisTransaction {
         this.amount = amount;
         this.currency = currency;
         this.qrContent = qrContent;
-        this.callbackUrl = callbackUrl;
         this.status = status;
         this.paidAmount = paidAmount;
         this.refundedAmount = refundedAmount;
@@ -94,7 +94,6 @@ public class QrisTransaction {
     public BigDecimal amount() { return amount; }
     public String currency() { return currency; }
     public String qrContent() { return qrContent; }
-    public String callbackUrl() { return callbackUrl; }
     public QrisStatus status() { return status; }
     public BigDecimal paidAmount() { return paidAmount; }
     public BigDecimal refundedAmount() { return refundedAmount; }

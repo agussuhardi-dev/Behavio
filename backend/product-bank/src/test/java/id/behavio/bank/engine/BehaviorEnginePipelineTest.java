@@ -1,5 +1,7 @@
 package id.behavio.bank.engine;
 
+import id.behavio.bank.blueprint.AccountInquiryInternalBlueprint;
+import id.behavio.bank.blueprint.ExternalAccountInquiryBlueprint;
 import id.behavio.bank.blueprint.TransferIntrabankBlueprint;
 import id.behavio.core.engine.SimRequest;
 import id.behavio.core.engine.SimResponse;
@@ -42,8 +44,20 @@ class BehaviorEnginePipelineTest {
     }
 
     private void seed(String accountNo, String balance) {
+        seed(accountNo, balance, "Holder");
+    }
+
+    private void seed(String accountNo, String balance, String holderName) {
         state.accounts.put(key(accountNo),
-                new Account(UUID.randomUUID(), SIM, PARTNER_UUID, accountNo, "Holder", "IDR", new BigDecimal(balance)));
+                new Account(UUID.randomUUID(), SIM, PARTNER_UUID, accountNo, holderName, "IDR", new BigDecimal(balance)));
+    }
+
+    private SimRequest inquiry(String path, Map<String, Object> extraFields) {
+        Map<String, String> headers = new HashMap<>();
+        headers.put("X-PARTNER-ID", PARTNER_HEADER);
+        Map<String, Object> fields = new HashMap<>(extraFields);
+        fields.put("partnerReferenceNo", "PREF-INQ");
+        return new SimRequest("POST", path, headers, fields, "{}");
     }
 
     private String key(String accountNo) { return PARTNER_UUID + "/" + accountNo; }
@@ -60,6 +74,73 @@ class BehaviorEnginePipelineTest {
         fields.put("currency", "IDR");
         return new SimRequest(TransferIntrabankBlueprint.METHOD, TransferIntrabankBlueprint.PATH,
                 headers, fields, "{}");
+    }
+
+    /**
+     * Regresi: {@code beneficiaryAccountName} & {@code beneficiaryAccountNo} pernah
+     * terender STRING KOSONG padahal keduanya WAJIB di ASPI service 15 — penyebabnya
+     * {@code enrichAccountVars} tak mengenali {@code beneficiaryAccountNo}, sehingga
+     * satu-satunya guna operasi ini (mengembalikan nama pemilik rekening) tak jalan.
+     */
+    @Test
+    void account_inquiry_internal_mengembalikan_nama_pemilik_bukan_string_kosong() {
+        config.scenario = AccountInquiryInternalBlueprint.normal();
+        seed("9876543210", "0", "Budi Tujuan");
+
+        SimResponse res = engine.handle(SIM,
+                inquiry(AccountInquiryInternalBlueprint.PATH, Map.of("beneficiaryAccountNo", "9876543210")));
+
+        assertEquals(200, res.httpStatus());
+        assertEquals("2001500", res.responseCode());
+        assertTrue(res.body().contains("\"beneficiaryAccountName\":\"Budi Tujuan\""),
+                "nama pemilik harus terisi, body: " + res.body());
+        assertTrue(res.body().contains("\"beneficiaryAccountNo\":\"9876543210\""),
+                "nomor rekening harus terisi, body: " + res.body());
+    }
+
+    /**
+     * Penjaga urutan di {@code enrichAccountVars}: pada transfer, {@code holderName}
+     * harus tetap milik rekening SUMBER. Kalau lookup beneficiary dinaikkan ke atas,
+     * transfer diam-diam mulai menyebut nama penerima sebagai pengirim.
+     */
+    @Test
+    void transfer_holderName_tetap_milik_rekening_sumber_bukan_penerima() {
+        config.scenario = TransferIntrabankBlueprint.normal();
+        seed("111", "100000", "Andi Sumber");
+        seed("222", "0", "Budi Tujuan");
+
+        Map<String, Object> vars = new HashMap<>();
+        engine.handle(SIM, transfer("EXT-HOLDER", "111", "222", "1000"));
+
+        // Template transfer tak menampilkan holderName, jadi diuji lewat inquiry pada
+        // request yang membawa sourceAccountNo DAN beneficiaryAccountNo sekaligus.
+        config.scenario = AccountInquiryInternalBlueprint.normal();
+        vars.put("sourceAccountNo", "111");
+        vars.put("beneficiaryAccountNo", "222");
+        SimResponse res = engine.handle(SIM, inquiry(AccountInquiryInternalBlueprint.PATH, vars));
+
+        assertTrue(res.body().contains("\"beneficiaryAccountName\":\"Andi Sumber\""),
+                "sourceAccountNo harus menang atas beneficiaryAccountNo, body: " + res.body());
+    }
+
+    /** External inquiry (service 16) — rekening ada di bank LAIN, tak pernah ada di state. */
+    @Test
+    void account_inquiry_external_balas_2001600_dengan_field_wajib_aspi() {
+        config.scenario = ExternalAccountInquiryBlueprint.normal();
+
+        SimResponse res = engine.handle(SIM, inquiry(ExternalAccountInquiryBlueprint.PATH,
+                Map.of("beneficiaryBankCode", "014", "beneficiaryAccountNo", "8877665544")));
+
+        assertEquals(200, res.httpStatus());
+        assertEquals("2001600", res.responseCode());
+        assertTrue(res.body().contains("\"beneficiaryAccountNo\":\"8877665544\""), res.body());
+        assertTrue(res.body().contains("\"beneficiaryBankCode\":\"014\""), res.body());
+        // WAJIB di ASPI — tak boleh kosong walau rekeningnya bukan milik bank ini.
+        assertFalse(res.body().contains("\"beneficiaryAccountName\":\"\""), res.body());
+        assertTrue(res.body().contains("\"beneficiaryBankName\""), res.body());
+        // Service 16 TIDAK punya field ini (beda dari service 15).
+        assertFalse(res.body().contains("beneficiaryAccountStatus"), res.body());
+        assertFalse(res.body().contains("beneficiaryAccountType"), res.body());
     }
 
     @Test
@@ -202,10 +283,14 @@ class BehaviorEnginePipelineTest {
         public Optional<Partner> findPartner(UUID sim, String partnerHeaderId) {
             return partner.partnerId().equals(partnerHeaderId) ? Optional.of(partner) : Optional.empty();
         }
+        /**
+         * Melayani path mana pun yang dipakai tes: yang diuji di sini pipeline engine,
+         * bukan routing (routing punya registry sendiri). Sebelumnya path di-hardcode ke
+         * transfer, sehingga operasi lain diam-diam balas 404 alih-alih menjalankan
+         * scenario yang sedang dipasang.
+         */
         public Optional<Scenario> findActiveScenario(UUID sim, String method, String path) {
-            boolean match = TransferIntrabankBlueprint.METHOD.equals(method)
-                    && TransferIntrabankBlueprint.PATH.equals(path);
-            return match ? Optional.of(scenario) : Optional.empty();
+            return Optional.ofNullable(scenario);
         }
         public id.behavio.core.domain.SignatureMode signatureMode(UUID sim) {
             return id.behavio.core.domain.SignatureMode.SIMULATED;

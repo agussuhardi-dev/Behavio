@@ -112,7 +112,8 @@ public class QrisRepositoryJdbc implements QrisRepository {
         n.put("amount", qr.amount() == null ? null : qr.amount().toPlainString());
         n.put("currency", qr.currency());
         n.put("qrContent", qr.qrContent());
-        n.put("callbackUrl", qr.callbackUrl());
+        // callbackUrl tak ditulis lagi (design.md §9.1); baris QR lama yang masih memuatnya
+        // tetap terbaca — field-nya diabaikan.
         n.put("paidAmount", qr.paidAmount() == null ? null : qr.paidAmount().toPlainString());
         n.put("refundedAmount", qr.refundedAmount() == null ? null : qr.refundedAmount().toPlainString());
         n.put("paidAt", qr.paidAt() == null ? null : qr.paidAt().toString());
@@ -128,7 +129,7 @@ public class QrisRepositoryJdbc implements QrisRepository {
                     UUID.randomUUID(), simulatorId, partnerId,
                     text(n, "partnerReferenceNo"), text(n, "referenceNo"), text(n, "merchantId"), text(n, "terminalId"),
                     QrisType.valueOf(text(n, "qrType")),
-                    decimal(n, "amount"), text(n, "currency"), text(n, "qrContent"), text(n, "callbackUrl"),
+                    decimal(n, "amount"), text(n, "currency"), text(n, "qrContent"),
                     status, decimal(n, "paidAmount"), decimal(n, "refundedAmount"),
                     n.hasNonNull("createdAt") ? Instant.parse(n.get("createdAt").asText()) : Instant.now());
             if (n.hasNonNull("paidAt")) {

@@ -15,9 +15,10 @@ import { MatSelectModule } from '@angular/material/select';
 import { MatTooltipModule } from '@angular/material/tooltip';
 
 import { QRIS_SCENARIOS, QrisApi, QrisView } from '../../core/api/qris-api';
-import { Scenario, Simulator } from '../../core/api/product-api';
+import { PartnerView, Scenario, Simulator } from '../../core/api/product-api';
 import { SimulatorFormDialog, SimulatorFormResult } from '../simulators/simulator-form-dialog';
 import { EndpointUrlPanel } from '../../shared/components/endpoint-url-panel/endpoint-url-panel';
+import { WebhookPanel } from '../../shared/components/webhook-panel/webhook-panel';
 import { ConfirmDialog } from '../../shared/components/confirm-dialog/confirm-dialog';
 import { LocalStorageService } from '../../shared/services/storage.service';
 import { OpenApiService } from '../../shared/services/openapi.service';
@@ -44,6 +45,7 @@ interface LiveEvent {
     MatExpansionModule, MatFormFieldModule, MatIconModule, MatInputModule,
     MatMenuModule, MatPaginatorModule, MatProgressBarModule, MatSelectModule, MatTooltipModule,
     EndpointUrlPanel,
+    WebhookPanel,
   ],
   templateUrl: './qris.html',
   styleUrl: './qris.scss',
@@ -66,6 +68,7 @@ export class Qris implements OnInit, OnDestroy {
   readonly sims = signal<Simulator[]>([]);
   readonly loading = signal(true);
   readonly selectedSimId = signal<string>('');
+  readonly partnerList = signal<PartnerView[]>([]);
   readonly epuOpen = signal(false);
   readonly copiedKey = signal<string | null>(null);
 
@@ -157,8 +160,10 @@ export class Qris implements OnInit, OnDestroy {
   }
 
   curlDynamic(): string {
+    // Tanpa X-CALLBACK-URL (design.md §9.1): URL notifikasi didaftarkan partner di panel
+    // Webhook, bukan dititipkan per-request.
     return `curl -X POST http://localhost:${this.port()}/v1.0/qr/qr-mpm-generate \\
-  -H "X-PARTNER-ID: PARTNER001" -H "X-CALLBACK-URL: http://localhost:8080/api/admin/v1/webhook-sink" \\
+  -H "X-PARTNER-ID: PARTNER001" \\
   -d '{"partnerReferenceNo":"PR-001","merchantId":"MERCHANT01","amount":{"value":"25000.00","currency":"IDR"}}'`;
   }
 
@@ -225,11 +230,25 @@ export class Qris implements OnInit, OnDestroy {
           const remembered = sims.find(s => s.id === this.rememberedSimId())?.id;
           this.selectedSimId.set(remembered ?? sims[0]?.id ?? '');
         }
-        if (this.selectedSimId()) { this.reloadQr(); this.syncAllScenarios(); this.connectLive(); }
-        else this.disconnectLive();
+        if (this.selectedSimId()) {
+          this.reloadQr();
+          this.syncAllScenarios();
+          this.loadPartners();
+          this.connectLive();
+        } else {
+          this.disconnectLive();
+        }
         this.loading.set(false);
       },
       error: () => this.loading.set(false),
+    });
+  }
+
+  /** Partner profil ini — dipakai panel registrasi webhook (design.md §9.1). */
+  private loadPartners() {
+    this.api.listPartners(this.selectedSimId()).subscribe({
+      next: list => this.partnerList.set(list),
+      error: () => this.partnerList.set([]),
     });
   }
 
@@ -462,14 +481,26 @@ export class Qris implements OnInit, OnDestroy {
 
   onPayAmount(refNo: string, value: string) { this.payAmounts.update(m => ({ ...m, [refNo]: value })); }
 
+  /**
+   * Kirim ulang Payment Notify memakai status aktif QR — retry/test (design.md §9.2).
+   * Tanpa konfirmasi: tak ada data yang berubah.
+   */
+  resendNotification(qr: QrisView) {
+    this.api.resendQrisNotification(this.selectedSimId(), qr.referenceNo).subscribe({
+      next: r => this.qrMsg.set(r.note),
+      error: err => this.qrMsg.set(err?.error?.error ?? 'Gagal mengirim ulang notifikasi.'),
+    });
+  }
+
   pay(qr: QrisView) {
     const amount = qr.qrType === 'STATIC' ? this.payAmounts()[qr.referenceNo] : undefined;
     if (qr.qrType === 'STATIC' && !amount) { this.qrMsg.set('QR static butuh nominal.'); return; }
     const nominal = qr.qrType === 'STATIC' ? `${amount} ${qr.currency}` : `${qr.amount} ${qr.currency}`;
     this.confirmDialog({
       title: 'Tandai QR sebagai dibayar?',
-      message: `QR "${qr.referenceNo}" akan berstatus PAID sebesar ${nominal}`
-        + (qr.hasCallback ? ', dan Payment Notify (webhook) dikirim ke callback URL-nya.' : '. Tidak ada callback URL tersimpan, jadi webhook tidak dikirim.'),
+      message: `QR "${qr.referenceNo}" akan berstatus PAID sebesar ${nominal},`
+        + ' dan Payment Notify dikirim otomatis ke URL yang didaftarkan partner.'
+        + ' Partner tanpa registrasi tidak menerima notifikasi.',
       confirmText: 'Tandai Dibayar',
     }).subscribe(ok => {
       if (!ok) return;

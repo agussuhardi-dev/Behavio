@@ -476,6 +476,52 @@ kasus), node ekspresi menambal kasus sulit. **Tanpa** transpile dua arah.
   mengirim, dan **retry** bila gagal. Tahan restart.
 - Dukungan: delayed callback, retry strategy, HMAC/JWT signature, custom header.
 
+### 9.1 URL tujuan = registrasi per partner (keputusan 2026-07-15)
+
+**`X-CALLBACK-URL` dihapus sepenuhnya.** URL notifikasi kini **didaftarkan** per
+`(partner, event)`, bukan dititipkan di header tiap request.
+
+**Alasan:** `X-CALLBACK-URL` itu **buatan Behavio, bukan bagian spec SNAP** — tak ada
+satu pun endpoint ASPI yang memintanya. Di dunia nyata merchant mendaftarkan URL
+notifikasinya ke bank/PJP di luar request. Selama header itu ada, simulator memaksa
+klien melakukan sesuatu yang tak akan pernah mereka lakukan ke bank sungguhan — persis
+kebalikan dari tujuan platform ini.
+
+```
+resolveUrl(simulator, partner, event):
+  1. registrasi (partner, event)  → pakai
+  2. registrasi (partner, 'ALL')  → pakai
+  3. tak ada                      → webhook dilewati (alasan dicatat)
+```
+
+Event: `transfer-notify` · `va-payment` · `qris-payment` · `ALL`.
+
+> **Sejarah yang wajib diingat.** Tabel `webhook_subscriptions` **dihapus 2026-07-14**
+> (changeset `*-003-drop-unused`) dengan alasan yang masih benar sampai sekarang:
+> *"subscription bisa didaftarkan tapi tak akan pernah dipakai — lebih jujur dibuang
+> daripada membiarkannya menipu pembaca skema."* Ia dihidupkan lagi di sini **bukan**
+> karena penilaian itu keliru, tapi karena kali ini ia **benar-benar dibaca engine**
+> lewat port `WebhookSubscriptions` dan menjadi **satu-satunya** sumber URL. Bentuk
+> tabelnya dulu sudah tepat `(simulator, partner, url, event_type, status)`; yang salah
+> hanya tak pernah disambungkan.
+>
+> Pelajarannya: **kalau registrasi ini sampai tak terbaca engine lagi, hapus lagi.**
+> Fitur yang bisa diatur tapi tak berefek lebih buruk daripada tak ada fitur.
+
+**Kompatibilitas data lama:** definisi scenario custom milik user yang masih memuat
+`"urlHeader"` tetap dimuat — `ScenarioCodec` mengabaikan field itu dan memakai
+`event: "ALL"`. Definisi tersimpan tak boleh pecah hanya karena mesinnya berubah.
+
+### 9.2 Pengiriman: otomatis dulu, tombol hanya jaring pengaman
+
+Notifikasi terkirim **otomatis saat status entitas berubah** (VA → `PAID`, QR → dibayar,
+transfer → hasil scenario). Itu jalur utama, dan itu yang meniru perilaku bank.
+
+Tombol **"Kirim Notifikasi"** di dashboard hanya **retry/test tambahan**: mengambil
+status **aktif** entitas lalu menjadwalkan ulang notifikasi yang sama. Ia **tidak
+mengubah data** — kalau tombol ini jadi satu-satunya cara notifikasi terkirim, berarti
+auto-send-nya rusak dan itu bug, bukan alur normal.
+
 ---
 
 ## 10. Live View / Monitoring
@@ -1086,6 +1132,89 @@ tanpa memecahkan checksum; `/webhooks/subscriptions` → 404, `/webhooks/outbox`
 regresi nol — Payment Notify QRIS tetap terkirim (outbox `SENT`), transfer bank `2001700`,
 editor scenario tetap memuat rule dari `scenarios.definition`.
 
+### External Account Inquiry + perbaikan nama kosong ✅ (2026-07-15)
+
+Berangkat dari catatan operasi milik user (`addon.md`), disaring dengan aturannya
+sendiri: **"sesuaikan dengan spec ASPI; jika tidak ada di ASPI maka abaikan."**
+
+**Ditambahkan — `account-inquiry-external` (service 16, A.6).** Satu-satunya entri
+`addon.md` yang punya padanan ASPI. Mengisi lubang nyata: intrabank punya pasangan
+inquiry+transfer, interbank sama sekali tak punya inquiry.
+
+**Bug yang ditemukan & diperbaiki — `account-inquiry-internal` mengembalikan nama
+KOSONG.** Ditemukan saat menyiapkan blueprint external (nyaris tersalin bug-nya).
+Template memakai `{{holderName}}`/`{{accountNo}}`, tapi `enrichAccountVars` hanya
+mengenali var `accountNo`/`sourceAccountNo` — sedangkan request service 15 mengirim
+`beneficiaryAccountNo`. Hasilnya `beneficiaryAccountName` & `beneficiaryAccountNo` —
+**keduanya WAJIB di ASPI** — selalu terender `""`. Seluruh guna operasi ini justru
+mengembalikan nama pemilik rekening, jadi ia praktis tak berfungsi sejak dibuat.
+Audit A3.7 tak menangkapnya karena audit itu hanya mencakup QRIS.
+
+Perbaikan: `enrichAccountVars` mengenali `beneficiaryAccountNo` — **ditaruh TERAKHIR**
+supaya pada transfer `holderName` tetap milik rekening SUMBER (dikunci tes regresi).
+
+**Terverifikasi via HTTP nyata:** internal balas `"beneficiaryAccountName":"Budi Tujuan"`
+(sebelumnya `""`); external balas `2001600` dengan seluruh field wajib terisi dan **tanpa**
+`beneficiaryAccountStatus`/`Type`; transfer tanpa regresi; export OpenAPI otomatis
+memuat operasi ke-10.
+
+**DIABAIKAN — tidak ada di spec ASPI** (terverifikasi ke portal, bukan asumsi):
+| Dari `addon.md` | Alasan |
+|---|---|
+| `CHANGE_PIN`, `CHANGE_PHONE_NO`, `RESET_PASSWORD_INTERNET_BANKING` | ASPI "Registrasi" hanya mencakup binding kartu/rekening, OTP, OAuth — **tak ada** layanan ubah PIN/HP/password |
+| Seluruh `TRANSFER_OFF_US_*` (8) | ASPI **tak punya** layanan transfer MASUK; semua layanan transfer bersifat keluar |
+| Pemisahan SAVING vs GIRO sbg operasi | ASPI tak memisahkannya jadi endpoint; `beneficiaryAccountType` (`D`=Giro, `S`=Tabungan) hanya **field response**, dan hanya di service 15 |
+
+**Catatan sisa (belum dikerjakan, di luar permintaan):**
+- `beneficiaryAccountType` masih **hardcode `"S"`** — `bank.accounts` tak punya kolom
+  tipe rekening, jadi rekening giro mustahil diwakili. Ini field ASPI yang kita isi
+  dengan dusta. Menutupnya = perubahan schema.
+- ASPI punya layanan transfer yang belum ada di sini: **19** Request for Payment,
+  **20/21** Interbank Bulk (+notify), **22** RTGS, **23** SKNBI, **75/76** notifikasi
+  SKN/RTGS. Tak ada di `addon.md`, jadi tak dikerjakan.
+- **`AccountService` & `TransactionHistoryService` adalah kode mati** (±386 baris):
+  bean-nya dibuat dan variabelnya di-assign di `BankProductConfig`, tapi tak satu pun
+  method-nya dipanggil — handler-nya dialihkan ke engine (`architecture.md` §6.1).
+
+### Webhook: registrasi URL menggantikan X-CALLBACK-URL ✅ (2026-07-15)
+
+Keputusan & alasannya di **§9.1–9.2**. Yang dibangun:
+
+- Port `WebhookSubscriptions` + `SchemaWebhookSubscriptions` (schema-parameterized, satu
+  salinan untuk dua produk). Tabel dihidupkan lewat changeset **baru** (`*-003`), bukan
+  dengan mengedit yang lama.
+- `WebhookSpec.urlHeader` → `WebhookSpec.event`. URL di-resolve saat kirim di **tiga
+  jalur**: engine (Async Callback), VA (`markPaid`), QRIS (`markPaid`).
+- `X-CALLBACK-URL` hilang total dari engine, VA, QRIS, blueprint, contoh curl, dan
+  `hasCallback` di kedua view. Snapshot `callbackUrl` di VA/QR dibuang — URL kini milik
+  partner, bukan milik entitas, jadi mengubah tujuan tak lagi berarti membuat ulang VA.
+- Admin API CRUD registrasi + `resend-notification` (retry/test) di kedua produk;
+  dashboard dapat panel registrasi bersama + tombol kirim ulang.
+
+**Terverifikasi lewat HTTP nyata** (bukan hanya unit test):
+- `create-va` & `qr-mpm-generate` **tanpa** header callback → sukses.
+- Bayar **tanpa** registrasi → status tetap berubah, webhook dilewati dengan alasan
+  eksplisit (`"Partner belum mendaftarkan URL … event 'va-payment'"`).
+- Setelah registrasi → notifikasi **benar-benar sampai** di `/webhook-sink`, dengan
+  `latestTransactionStatus` diturunkan dari status entitas (`00` untuk PAID).
+- Resolusi §9.1 terbukti berjenjang: event spesifik menang atas `ALL`; begitu yang
+  spesifik di-`INACTIVE`-kan, resolusi jatuh ke `ALL`.
+- Ketiga jalur kirim terbukti: engine (Async Callback, delay 2 dtk), VA, QRIS.
+- 6 tes `ScenarioCodecWebhookTest` — tes **pertama** untuk `adapter-persistence`,
+  menjaga definisi scenario lama ber-`urlHeader` tetap dimuat (jatuh ke `ALL`).
+
+**Dua jebakan yang ditemukan saat verifikasi, bukan saat menulis:**
+1. `resendNotification` sempat `@Transactional(readOnly = true)` — "tak mengubah data"
+   ternyata salah: menjadwalkan webhook **menulis** ke outbox → `25006 read-only
+   transaction`. Unit test ber-fake tak akan pernah menangkap ini.
+2. Komentar prosa di changeset diawali kata `changeset` (`-- changeset yang sudah
+   ter-apply…`), dan parser Liquibase membacanya sebagai **direktif** lalu menolak seluruh
+   berkas. Kalimat yang rusak justru kalimat peringatan soal checksum.
+
+**Belum:** kirim ulang untuk transaksi transfer — dashboard belum punya daftar transaksi
+bank, jadi belum ada yang bisa ditekan. Notifikasi transfer tetap terkirim otomatis lewat
+scenario Async Callback.
+
 ### Fase 4 (lanjutan) — Export/Import OpenAPI ✅ (2026-07-15)
 
 Keputusan & alasannya di **§15**. Yang dibangun:
@@ -1297,12 +1426,42 @@ Response: + beneficiaryAccountName, beneficiaryAccountStatus,
             beneficiaryAccountType (D|S), currency
 ```
 
+### A.6 External Account Inquiry (service 16) — cek nama rekening di BANK LAIN
+> **Terverifikasi ke [portal ASPI](https://apidevportal.aspi-indonesia.or.id/api-services/transfer-kredit/account-inquiry)
+> 2026-07-15.** Pasangan A.3 untuk sisi interbank: dipanggil sebelum
+> `transfer-interbank`, sebagaimana A.3 dipanggil sebelum `transfer-intrabank`.
+```
+POST /v1.0/account-inquiry-external          Service 16 · sukses 2001600
+```
+Request:
+```jsonc
+{
+  "beneficiaryBankCode": "…",     // M, ≤11  ← WAJIB; ini beda utama dari service 15
+  "beneficiaryAccountNo": "…",    // M, ≤34
+  "partnerReferenceNo": "…",      // O, ≤64
+  "additionalInfo": { }           // O
+}
+```
+Response: `responseCode`, `responseMessage`, `referenceNo`, `partnerReferenceNo`,
+**`beneficiaryAccountName`** (M), **`beneficiaryAccountNo`** (M), `beneficiaryBankCode`,
+`beneficiaryBankName`, `currency`, `additionalInfo`.
+
+> **Beda dari service 15 (A.3):** service 16 **TIDAK** punya `beneficiaryAccountStatus`
+> maupun `beneficiaryAccountType`; sebagai gantinya ia membawa `beneficiaryBankCode` +
+> `beneficiaryBankName`. Masuk akal: kita tak tahu status/tipe rekening di bank lain.
+
+> **Nama pemiliknya preset, bukan dari state.** Rekening ada di bank LAIN, jadi ia memang
+> tak pernah ada di `bank.accounts` — enrichment akan selalu gagal dan merender field
+> WAJIB jadi string kosong. Nilai default di blueprint **di-override per-simulator** (§2)
+> atau dipilih lewat rule per `beneficiaryAccountNo`.
+
 ### A.4 Format responseCode = `[HTTP status 3][service code 2][case code 2]`
 | Code | Arti |
 |---|---|
 | `2001700` | Transfer intrabank sukses (service 17) |
 | `2001800` | Transfer **inter**bank sukses (service 18 — endpoint berbeda) |
 | `2001500` | Account inquiry internal sukses |
+| `2001600` | Account inquiry **external** sukses (service 16 — A.6) |
 | `4001701` | Invalid Field Format |
 | `4001702` | Invalid Mandatory Field |
 | `4001714` | Insufficient Funds |

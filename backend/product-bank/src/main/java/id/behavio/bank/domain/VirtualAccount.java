@@ -25,8 +25,10 @@ public class VirtualAccount {
     private final String virtualAccountTrxType; // C|O|V
     private final String expiredDate;
     private final String trxId;
-    /** URL callback (X-CALLBACK-URL saat create) — dipakai Payment Notification. */
-    private final String callbackUrl;
+    // Tak ada callbackUrl: URL notifikasi di-resolve dari registrasi partner saat kirim
+    // (design.md §9.1). Sebelumnya URL di-snapshot dari header X-CALLBACK-URL saat
+    // create-va, sehingga VA yang dibuat sebelum URL-nya benar terkunci selamanya ke
+    // alamat lama — mengubah tujuan berarti membuat ulang VA-nya.
     private VirtualAccountStatus status;
     private final Instant createdAt;
 
@@ -34,7 +36,7 @@ public class VirtualAccount {
                           String customerNo, String virtualAccountNo, String virtualAccountName,
                           String virtualAccountEmail, String virtualAccountPhone,
                           BigDecimal totalAmount, String currency, String virtualAccountTrxType,
-                          String expiredDate, String trxId, String callbackUrl,
+                          String expiredDate, String trxId,
                           VirtualAccountStatus status, Instant createdAt) {
         this.id = id;
         this.simulatorId = simulatorId;
@@ -50,7 +52,6 @@ public class VirtualAccount {
         this.virtualAccountTrxType = virtualAccountTrxType;
         this.expiredDate = expiredDate;
         this.trxId = trxId;
-        this.callbackUrl = callbackUrl;
         this.status = status;
         this.createdAt = createdAt;
     }
@@ -71,7 +72,6 @@ public class VirtualAccount {
     public String virtualAccountTrxType() { return virtualAccountTrxType; }
     public String expiredDate() { return expiredDate; }
     public String trxId() { return trxId; }
-    public String callbackUrl() { return callbackUrl; }
     public VirtualAccountStatus status() { return status; }
     public Instant createdAt() { return createdAt; }
 }

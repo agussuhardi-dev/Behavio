@@ -58,7 +58,7 @@ class OpenApiRoundTripTest {
                              "responseMessage": "Successful",
                              "body": {"responseCode": "{{responseCode}}", "referenceNo": "{{referenceNo}}"}},
                 "fault": {"point": "AFTER_ACTIONS", "delayMillis": 0, "drop": true, "corrupt": false},
-                "webhook": {"urlHeader": "X-CALLBACK-URL", "delayMillis": 2000,
+                "webhook": {"event": "transfer-notify", "delayMillis": 2000,
                             "bodyTemplate": {"latestTransactionStatus": "00"}}
               }
             }""";
@@ -93,7 +93,7 @@ class OpenApiRoundTripTest {
 
     private ProductRuntime runtime(String name, int port) {
         return new ProductRuntime(new FakeCatalog(), new FakeAdmin(name, port, scenarios),
-                scenarios, endpoints, null, null, Map.of());
+                scenarios, endpoints, null, null, null, Map.of());
     }
 
     // ---------------- export ----------------
@@ -243,7 +243,7 @@ class OpenApiRoundTripTest {
         targetScenarios.put("transfer", "Saldo Kurang", "{}");
         ProductRuntime target = new ProductRuntime(new FakeCatalog(),
                 new FakeAdmin("Target", 9002, targetScenarios), targetScenarios, targetEndpoints,
-                null, null, Map.of());
+                null, null, null, Map.of());
 
         var preview = importer.preview(target, spec);
         var mappings = preview.rows().stream()

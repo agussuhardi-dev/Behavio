@@ -10,6 +10,7 @@ import id.behavio.core.port.ScenarioConfigPort;
 import id.behavio.core.port.SignatureVerifier;
 import id.behavio.core.port.SimulatorAdmin;
 import id.behavio.core.port.WebhookSender;
+import id.behavio.core.port.WebhookSubscriptions;
 import id.behavio.core.product.OperationHandler;
 import id.behavio.core.product.ProductCatalog;
 import id.behavio.persistence.PortRegistry;
@@ -21,6 +22,7 @@ import id.behavio.persistence.SchemaProvisioning;
 import id.behavio.persistence.SchemaRequestLogWriter;
 import id.behavio.persistence.SchemaScenarioConfig;
 import id.behavio.persistence.SchemaSimulatorAdmin;
+import id.behavio.persistence.SchemaWebhookSubscriptions;
 import id.behavio.persistence.SchemaTables;
 import id.behavio.qris.persistence.QrisDemoSeeder;
 import id.behavio.qris.persistence.QrisRepositoryJdbc;
@@ -114,6 +116,12 @@ public class QrisProductConfig {
         return new OutboxWebhookSender(db, SCHEMA);
     }
 
+    /** Registrasi URL notifikasi — satu-satunya sumber URL webhook (design.md §9.1). */
+    @Bean
+    public WebhookSubscriptions qrisWebhookSubscriptions() {
+        return new SchemaWebhookSubscriptions(db, qrisTables());
+    }
+
     @Bean
     public AccessTokenService qrisAccessTokenService(SignatureVerifier verifier) {
         return new AccessTokenService(qrisConfigRepository(), verifier, qrisAccessTokenStore());
@@ -122,7 +130,7 @@ public class QrisProductConfig {
     @Bean
     public QrisService qrisService(SignatureVerifier verifier, ObjectMapper mapper) {
         return new QrisService(qrisConfigRepository(), verifier, qrisAccessTokenStore(),
-                qrisRepository(), qrisWebhookSender(), mapper);
+                qrisRepository(), qrisWebhookSender(), qrisWebhookSubscriptions(), mapper);
     }
 
     @Bean
@@ -159,7 +167,7 @@ public class QrisProductConfig {
         SimulatorServerManager servers = new SimulatorServerManager(
                 SCHEMA, qrisEndpointRegistry(), handlers, eventPublishers(sharedPublishers));
         return new ProductRuntime(qrisCatalog(), qrisSimulatorAdmin(ports), qrisScenarioConfig(),
-                qrisEndpointRegistry(), qrisPartnerAdmin(), servers, handlers);
+                qrisEndpointRegistry(), qrisPartnerAdmin(), qrisWebhookSubscriptions(), servers, handlers);
     }
 
     /** Lihat catatan di BankProductConfig: writer log sengaja bukan bean agar tak tercampur produk. */

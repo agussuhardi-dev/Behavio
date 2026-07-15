@@ -59,6 +59,22 @@ public class QrisAdminController {
                 "note", r.reason()));
     }
 
+    /**
+     * Kirim ulang Payment Notify memakai status AKTIF QR — retry/test (design.md §9.2).
+     * Tidak mengubah status: pengiriman normal sudah otomatis saat QR dibayar.
+     */
+    @PostMapping("/{referenceNo}/resend-notification")
+    public ResponseEntity<?> resend(@PathVariable UUID id, @PathVariable String referenceNo) {
+        QrisService.PayResult r = service.resendNotification(id, referenceNo);
+        if (!r.found()) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(Map.of(
+                "referenceNo", referenceNo,
+                "webhookSent", r.webhookSent(),
+                "note", r.reason()));
+    }
+
     @PostMapping("/{referenceNo}/expire")
     public ResponseEntity<?> expire(@PathVariable UUID id, @PathVariable String referenceNo) {
         QrisService.PayResult r = service.adminExpire(id, referenceNo);
@@ -68,14 +84,19 @@ public class QrisAdminController {
         return ResponseEntity.ok(Map.of("referenceNo", referenceNo, "note", r.reason()));
     }
 
-    /** Ringkasan QR untuk tampilan dashboard. */
+    /**
+     * Ringkasan QR untuk tampilan dashboard.
+     *
+     * Tanpa {@code hasCallback}: sejak §9.1 URL notifikasi milik PARTNER (registrasi),
+     * bukan milik QR — menandainya per-QR jadi menyesatkan.
+     */
     record QrView(String referenceNo, String partnerReferenceNo, String merchantId, String qrType,
-                 String amount, String currency, String status, boolean hasCallback) {
+                 String amount, String currency, String status) {
         static QrView from(QrisTransaction qr) {
             BigDecimal shown = qr.status().name().equals("PAID") ? qr.paidAmount() : qr.amount();
             return new QrView(qr.referenceNo(), qr.partnerReferenceNo(), qr.merchantId(),
                     qr.qrType().name(), shown == null ? null : shown.toPlainString(), qr.currency(),
-                    qr.status().name(), qr.callbackUrl() != null && !qr.callbackUrl().isBlank());
+                    qr.status().name());
         }
     }
 }

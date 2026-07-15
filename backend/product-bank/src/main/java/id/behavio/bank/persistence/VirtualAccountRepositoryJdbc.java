@@ -103,7 +103,8 @@ public class VirtualAccountRepositoryJdbc implements VirtualAccountRepository {
         n.put("virtualAccountTrxType", va.virtualAccountTrxType());
         n.put("expiredDate", va.expiredDate());
         n.put("trxId", va.trxId());
-        n.put("callbackUrl", va.callbackUrl());
+        // callbackUrl tak ditulis lagi (design.md §9.1). Baris VA lama yang masih memuat
+        // field itu tetap terbaca — field-nya diabaikan, bukan bikin parse gagal.
         n.put("createdAt", va.createdAt().toString());
         return n.toString();
     }
@@ -119,7 +120,7 @@ public class VirtualAccountRepositoryJdbc implements VirtualAccountRepository {
                     text(n, "virtualAccountName"), text(n, "virtualAccountEmail"), text(n, "virtualAccountPhone"),
                     n.hasNonNull("totalAmount") ? new BigDecimal(n.get("totalAmount").asText()) : null,
                     text(n, "currency"), text(n, "virtualAccountTrxType"), text(n, "expiredDate"),
-                    text(n, "trxId"), text(n, "callbackUrl"),
+                    text(n, "trxId"),
                     status,
                     n.hasNonNull("createdAt") ? Instant.parse(n.get("createdAt").asText()) : Instant.now());
         } catch (Exception e) {

@@ -148,6 +148,13 @@ public final class ScenarioCodec {
                 n.path("corrupt").asBoolean(false));
     }
 
+    /**
+     * Definisi lama memakai {@code urlHeader} (era X-CALLBACK-URL, dibuang di §9.1).
+     * Definisi itu masih ada di DB user, jadi field-nya diabaikan dan event jatuh ke
+     * {@code ALL} — registrasi umum partner. Konfigurasi tersimpan tak boleh pecah hanya
+     * karena mesinnya berubah; kalau pecah, user kehilangan editan yang mereka tulis
+     * sendiri dan tak punya cara memulihkannya.
+     */
     @SuppressWarnings("unchecked")
     private WebhookSpec parseWebhook(JsonNode n) {
         if (n == null || n.isNull()) return null;
@@ -156,7 +163,7 @@ public final class ScenarioCodec {
         if (bodyNode != null && !bodyNode.isNull()) {
             body = mapper.convertValue(bodyNode, Map.class);
         }
-        return new WebhookSpec(text(n, "urlHeader", "X-CALLBACK-URL"),
+        return new WebhookSpec(text(n, "event", WebhookSpec.EVENT_ALL),
                 n.path("delayMillis").asLong(0), body);
     }
 
@@ -229,7 +236,7 @@ public final class ScenarioCodec {
         }
         if (o.webhook() != null) {
             ObjectNode w = mapper.createObjectNode();
-            w.put("urlHeader", o.webhook().urlHeader());
+            w.put("event", o.webhook().event());
             w.put("delayMillis", o.webhook().delayMillis());
             w.set("bodyTemplate", mapper.valueToTree(o.webhook().bodyTemplate()));
             n.set("webhook", w);

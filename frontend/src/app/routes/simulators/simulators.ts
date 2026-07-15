@@ -18,6 +18,7 @@ import { AccountView, BankApi, SCENARIOS, VirtualAccountView } from '../../core/
 import { EndpointConfig, PartnerView, Scenario, Simulator } from '../../core/api/product-api';
 import { SimulatorFormDialog, SimulatorFormResult } from './simulator-form-dialog';
 import { EndpointUrlPanel } from '../../shared/components/endpoint-url-panel/endpoint-url-panel';
+import { WebhookPanel } from '../../shared/components/webhook-panel/webhook-panel';
 import { ConfirmDialog } from '../../shared/components/confirm-dialog/confirm-dialog';
 import { LocalStorageService } from '../../shared/services/storage.service';
 import { OpenApiService } from '../../shared/services/openapi.service';
@@ -63,6 +64,7 @@ interface LiveEvent {
     MatExpansionModule, MatFormFieldModule, MatIconModule, MatInputModule,
     MatMenuModule, MatProgressBarModule, MatSelectModule, MatTooltipModule,
     EndpointUrlPanel,
+    WebhookPanel,
   ],
   templateUrl: './simulators.html',
   styleUrl: './simulators.scss',
@@ -246,8 +248,10 @@ export class Simulators implements OnInit, OnDestroy {
   }
 
   curlVaCreate(): string {
+    // Tanpa X-CALLBACK-URL (design.md §9.1): URL notifikasi didaftarkan partner di panel
+    // Webhook, bukan dititipkan per-request — header itu tak ada di spec SNAP mana pun.
     return `curl -X POST http://localhost:${this.port()}/v1.0/transfer-va/create-va \\
-  -H "X-PARTNER-ID: PARTNER001" -H "X-CALLBACK-URL: http://localhost:8080/api/admin/v1/webhook-sink" \\
+  -H "X-PARTNER-ID: PARTNER001" \\
   -d '{"partnerServiceId":"12345","customerNo":"001","virtualAccountNo":"12345001",
        "virtualAccountName":"Budi","totalAmount":{"value":"150000.00","currency":"IDR"},"trxId":"INV-001"}'`;
   }
@@ -548,11 +552,23 @@ export class Simulators implements OnInit, OnDestroy {
     });
   }
 
+  /**
+   * Kirim ulang notifikasi memakai status aktif VA — retry/test (design.md §9.2).
+   * Tanpa konfirmasi: tak ada data yang berubah, jadi tak ada yang perlu dikonfirmasi.
+   */
+  resendVaNotification(va: VirtualAccountView) {
+    this.api.resendVirtualAccountNotification(this.selectedSimId(), va.virtualAccountNo).subscribe({
+      next: r => this.vaMsg.set(r.note),
+      error: err => this.vaMsg.set(err?.error?.error ?? 'Gagal mengirim ulang notifikasi.'),
+    });
+  }
+
   payVa(va: VirtualAccountView) {
     this.confirmDialog({
       title: 'Tandai VA sebagai dibayar?',
-      message: `VA "${va.virtualAccountNo}" akan berstatus PAID sebesar ${va.amount} ${va.currency}`
-        + (va.hasCallback ? ', dan Payment Notification (webhook) dikirim ke callback URL-nya.' : '. Tidak ada callback URL tersimpan, jadi webhook tidak dikirim.'),
+      message: `VA "${va.virtualAccountNo}" akan berstatus PAID sebesar ${va.amount} ${va.currency},`
+        + ' dan Payment Notification dikirim otomatis ke URL yang didaftarkan partner.'
+        + ' Partner tanpa registrasi tidak menerima notifikasi.',
       confirmText: 'Tandai Dibayar',
     }).subscribe(ok => {
       if (!ok) return;

@@ -79,6 +79,7 @@
         @if (epuOpen()) {
           <div class="qris-epu">
             <app-endpoint-url-panel [api]="api" [simulatorId]="selectedSimId()" [operations]="qrisOperations" />
+            <app-webhook-panel [api]="api" [simulatorId]="selectedSimId()" [partners]="partnerList()" />
           </div>
           <mat-divider />
         }
@@ -181,6 +182,11 @@
                 @if (qr.status === 'PAID') {
                   <span class="qris-row__hint">Gunakan curl refund/cancel di sebelah kiri.</span>
                 }
+                <button mat-icon-button
+                  matTooltip="Kirim ulang Payment Notify dengan status saat ini (tidak mengubah data)"
+                  (click)="resendNotification(qr)">
+                  <mat-icon>send</mat-icon>
+                </button>
               </div>
             </div>
           }

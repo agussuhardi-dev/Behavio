@@ -84,6 +84,7 @@
         @if (epuOpen()) {
           <div class="sim-epu">
             <app-endpoint-url-panel [api]="api" [simulatorId]="selectedSimId()" [operations]="bankOperations" (endpointAdded)="loadCustomEndpoints()" />
+            <app-webhook-panel [api]="api" [simulatorId]="selectedSimId()" [partners]="partnerList()" />
           </div>
           <mat-divider />
         }
@@ -275,12 +276,17 @@
                 <div class="sim-row__actions">
                   @if (va.status === 'ACTIVE') {
                     <button mat-flat-button color="primary"
-                      [matTooltip]="va.hasCallback ? 'Simulasikan pembayaran & kirim Payment Notification' : 'VA dibuat tanpa X-CALLBACK-URL'"
+                      matTooltip="Simulasikan pembayaran — Payment Notification dikirim otomatis"
                       (click)="payVa(va)">
                       <mat-icon>payments</mat-icon> Tandai Dibayar
                     </button>
                   }
                   @if (va.status === 'PAID') { <span class="sim-row__paid">Sudah dibayar.</span> }
+                  <button mat-icon-button
+                    matTooltip="Kirim ulang notifikasi dengan status saat ini (tidak mengubah data)"
+                    (click)="resendVaNotification(va)">
+                    <mat-icon>send</mat-icon>
+                  </button>
                 </div>
               </div>
             }

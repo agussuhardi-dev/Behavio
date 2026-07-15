@@ -13,3 +13,10 @@ databaseChangeLog:
       file: db/changelog/bank/002-drop-unused.sql
   - include:
       file: db/changelog/qris/002-drop-unused.sql
+  # Registrasi URL notifikasi (design.md §9.1) — menghidupkan kembali tabel yang dihapus
+  # 002, kali ini BENAR-BENAR dibaca engine sebagai satu-satunya sumber URL webhook
+  # (X-CALLBACK-URL dibuang). Changeset baru, sekali lagi: jangan edit yang lama.
+  - include:
+      file: db/changelog/bank/003-webhook-subscriptions.sql
+  - include:
+      file: db/changelog/qris/003-webhook-subscriptions.sql

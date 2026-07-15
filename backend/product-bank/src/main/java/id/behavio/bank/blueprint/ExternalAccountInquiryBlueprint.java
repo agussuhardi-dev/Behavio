@@ -11,26 +11,42 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Blueprint SNAP BI untuk endpoint Internal Account Inquiry (service 15).
- * Tiga scenario: Normal, Bank Down (503), Timeout (delay 5 detik).
+ * Blueprint SNAP BI untuk **External Account Inquiry** (service 16) — cek nama pemilik
+ * rekening di BANK LAIN sebelum {@code transfer-interbank}, pasangan yang selama ini
+ * hilang (intrabank punya service 15, interbank tak punya apa-apa).
+ *
+ * <p>Terverifikasi ke portal ASPI 2026-07-15 (design.md Lampiran A.6): path
+ * {@code /v1.0/account-inquiry-external}, sukses {@code 2001600}. Beda dari service 15:
+ * request WAJIB membawa {@code beneficiaryBankCode}, dan response membawa
+ * {@code beneficiaryBankCode}/{@code beneficiaryBankName} — **tanpa**
+ * {@code beneficiaryAccountStatus} maupun {@code beneficiaryAccountType}.
+ *
+ * <p><b>Kenapa nama pemiliknya literal, bukan {@code {{holderName}}}:</b> rekening yang
+ * ditanya ada di bank LAIN, jadi ia memang tak ada di state simulator ini — enrichment
+ * dari {@code bank.accounts} akan selalu gagal dan merender string kosong untuk field
+ * yang WAJIB. Nilai di sini preset yang **di-override per-simulator** dari dashboard
+ * (design.md §2), atau dipilih lewat rule per {@code beneficiaryAccountNo}. Menyimpan
+ * rekening bank lain ke `bank.accounts` demi ini akan mengaburkan arti tabel itu.
  */
-public final class AccountInquiryInternalBlueprint {
+public final class ExternalAccountInquiryBlueprint {
 
     public static final String METHOD = "POST";
-    public static final String PATH = "/v1.0/account-inquiry-internal";
-    public static final String RC_SUCCESS = "2001500";
+    public static final String PATH = "/v1.0/account-inquiry-external";
+    public static final String RC_SUCCESS = "2001600";
     public static final String RC_SERVICE_DOWN = "5030000";
 
-    private AccountInquiryInternalBlueprint() {}
+    private ExternalAccountInquiryBlueprint() {}
 
     /**
-     * Contoh request untuk export OpenAPI (design.md §15.5, Lampiran A.3). Rekening
-     * merujuk data seed agar contoh langsung sukses dari Postman.
+     * Contoh request untuk export OpenAPI (design.md §15.5). Sengaja memakai rekening &
+     * kode bank yang SAMA dengan contoh {@code transfer-interbank}, sehingga di Postman
+     * keduanya membentuk satu alur utuh: inquiry nama dulu → baru transfer.
      */
     public static Map<String, Object> requestExample() {
         Map<String, Object> body = new LinkedHashMap<>();
-        body.put("partnerReferenceNo", "2026071500000000000002");
-        body.put("beneficiaryAccountNo", "9876543210");
+        body.put("partnerReferenceNo", "2026071500000000000007");
+        body.put("beneficiaryBankCode", "014");
+        body.put("beneficiaryAccountNo", "8877665544");
         body.put("additionalInfo", Map.of());
         return body;
     }
@@ -60,15 +76,11 @@ public final class AccountInquiryInternalBlueprint {
         body.put("responseMessage", "{{responseMessage}}");
         body.put("referenceNo", "{{referenceNo}}");
         body.put("partnerReferenceNo", "{{partnerReferenceNo}}");
-        body.put("beneficiaryAccountName", "{{holderName}}");
-        // {{beneficiaryAccountNo}}, BUKAN {{accountNo}}: request service 15 tak pernah
-        // mengirim field bernama accountNo, jadi template lama selalu merender string
-        // kosong untuk field yang WAJIB di ASPI.
+        body.put("beneficiaryAccountName", "Citra Penerima");
         body.put("beneficiaryAccountNo", "{{beneficiaryAccountNo}}");
-        body.put("beneficiaryAccountStatus", "Rekening aktif");
-        body.put("beneficiaryAccountType", "S");
+        body.put("beneficiaryBankCode", "{{beneficiaryBankCode}}");
+        body.put("beneficiaryBankName", "Bank Penerima");
         body.put("currency", "{{currency}}");
-
         return new ResponseSpec(200, RC_SUCCESS, "Successful", body);
     }
 

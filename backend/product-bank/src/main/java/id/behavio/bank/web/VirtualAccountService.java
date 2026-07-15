@@ -12,6 +12,7 @@ import id.behavio.core.port.ConfigRepository;
 import id.behavio.core.port.SignatureVerifier;
 import id.behavio.bank.port.VirtualAccountRepository;
 import id.behavio.core.port.WebhookSender;
+import id.behavio.core.port.WebhookSubscriptions;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
@@ -38,23 +39,28 @@ public class VirtualAccountService {
     private static final String H_TIMESTAMP = "X-TIMESTAMP";
     private static final String H_SIGNATURE = "X-SIGNATURE";
     private static final String H_AUTH = "Authorization";
-    private static final String H_CALLBACK = "X-CALLBACK-URL";
+
+    /** Event notifikasi VA — kunci registrasi URL partner (design.md §9.1). */
+    public static final String EVENT = "va-payment";
 
     private final ConfigRepository config;
     private final SignatureVerifier verifier;
     private final VirtualAccountRepository vaRepo;
     private final WebhookSender webhookSender;
+    private final WebhookSubscriptions subscriptions;
     private final AccessTokenStore accessTokenStore;
     private final ObjectMapper mapper;
 
     public VirtualAccountService(ConfigRepository config, SignatureVerifier verifier,
                                  VirtualAccountRepository vaRepo, WebhookSender webhookSender,
+                                 WebhookSubscriptions subscriptions,
                                  AccessTokenStore accessTokenStore, ObjectMapper mapper) {
         this.config = config;
         this.verifier = verifier;
         this.vaRepo = vaRepo;
         this.accessTokenStore = accessTokenStore;
         this.webhookSender = webhookSender;
+        this.subscriptions = subscriptions;
         this.mapper = mapper;
     }
 
@@ -100,7 +106,7 @@ public class VirtualAccountService {
                 UUID.randomUUID(), simulatorId, partner.id(), partnerServiceId, customerNo, vaNo,
                 text(n, "virtualAccountName"), text(n, "virtualAccountEmail"), text(n, "virtualAccountPhone"),
                 amount, currency, text(n, "virtualAccountTrxType"), text(n, "expiredDate"),
-                text(n, "trxId"), header(headers, H_CALLBACK), VirtualAccountStatus.ACTIVE, Instant.now());
+                text(n, "trxId"), VirtualAccountStatus.ACTIVE, Instant.now());
         vaRepo.save(va);
 
         return ok(200, "2002700", "Successful", va);
@@ -154,24 +160,51 @@ public class VirtualAccountService {
     public record PayResult(boolean found, boolean webhookSent, String reason) {}
 
     /**
-     * Aksi dashboard "tandai dibayar": ubah status → PAID, lalu kirim Payment
-     * Notification (design.md A2.3) via outbox webhook ke callbackUrl VA (dicatat
-     * dari X-CALLBACK-URL saat create-va).
+     * Aksi dashboard "tandai dibayar": ubah status → PAID, lalu **otomatis** kirim
+     * Payment Notification (design.md A2.3, §9.2). Ini jalur utamanya — notifikasi
+     * terkirim karena statusnya berubah, seperti bank sungguhan.
      */
     @Transactional
     public PayResult markPaid(UUID simulatorId, String vaNo) {
-        Optional<VirtualAccount> vaOpt = vaRepo.list(simulatorId).stream()
-                .filter(v -> v.virtualAccountNo().equals(vaNo))
-                .findFirst();
+        Optional<VirtualAccount> vaOpt = findVa(simulatorId, vaNo);
         if (vaOpt.isEmpty()) {
             return new PayResult(false, false, "VA tidak ditemukan");
         }
         VirtualAccount va = vaOpt.get();
         va.markPaid();
         vaRepo.save(va);
+        return notify(simulatorId, va, "Payment Notification");
+    }
 
-        if (va.callbackUrl() == null || va.callbackUrl().isBlank()) {
-            return new PayResult(true, false, "Tidak ada X-CALLBACK-URL tersimpan saat create-va");
+    /**
+     * Kirim ulang notifikasi memakai status **aktif** VA — retry/test dari dashboard
+     * (§9.2). Tidak mengubah VA-nya: kalau tombol ini jadi satu-satunya cara notifikasi
+     * terkirim, berarti auto-send di {@link #markPaid} rusak dan itu bug, bukan alur normal.
+     *
+     * BUKAN {@code readOnly}: menjadwalkan webhook tetap menulis baris ke outbox. "Tak
+     * mengubah data" di sini berarti tak mengubah VA, bukan tak menulis apa pun.
+     */
+    @Transactional
+    public PayResult resendNotification(UUID simulatorId, String vaNo) {
+        Optional<VirtualAccount> vaOpt = findVa(simulatorId, vaNo);
+        if (vaOpt.isEmpty()) {
+            return new PayResult(false, false, "VA tidak ditemukan");
+        }
+        return notify(simulatorId, vaOpt.get(), "Notifikasi ulang");
+    }
+
+    private Optional<VirtualAccount> findVa(UUID simulatorId, String vaNo) {
+        return vaRepo.list(simulatorId).stream()
+                .filter(v -> v.virtualAccountNo().equals(vaNo))
+                .findFirst();
+    }
+
+    /** Bangun & jadwalkan Payment Notification dari status VA saat ini (A2.3 + A2.4). */
+    private PayResult notify(UUID simulatorId, VirtualAccount va, String label) {
+        Optional<String> url = subscriptions.resolveUrl(simulatorId, va.partnerId(), EVENT);
+        if (url.isEmpty()) {
+            return new PayResult(true, false,
+                    "Partner belum mendaftarkan URL notifikasi untuk event '" + EVENT + "' (design.md §9.1)");
         }
 
         ObjectNode paidAmount = mapper.createObjectNode();
@@ -182,8 +215,10 @@ public class VirtualAccountService {
         additionalInfo.put("paymentDate", Instant.now().toString());
         additionalInfo.put("channelCode", "TEST");
         additionalInfo.put("merchantId", va.partnerServiceId());
-        additionalInfo.put("latestTransactionStatus", "00");
-        additionalInfo.put("transactionStatusDesc", "success");
+        // Status notifikasi mengikuti status AKTIF VA (A2.4), bukan selalu "00" —
+        // mengirim "success" untuk VA yang belum dibayar itu berbohong ke klien.
+        additionalInfo.put("latestTransactionStatus", snapStatus(va.status()));
+        additionalInfo.put("transactionStatusDesc", statusDesc(va.status()));
 
         ObjectNode notif = mapper.createObjectNode();
         notif.put("partnerServiceId", va.partnerServiceId());
@@ -196,9 +231,26 @@ public class VirtualAccountService {
         notif.put("referenceNo", "REF-" + UUID.randomUUID().toString().substring(0, 12));
         notif.set("additionalInfo", additionalInfo);
 
-        webhookSender.schedule(simulatorId, va.callbackUrl(), Map.of("Content-Type", "application/json"),
+        webhookSender.schedule(simulatorId, url.get(), Map.of("Content-Type", "application/json"),
                 notif.toString(), Duration.ZERO);
-        return new PayResult(true, true, "Payment Notification dijadwalkan");
+        return new PayResult(true, true, label + " dijadwalkan ke " + url.get());
+    }
+
+    /** Status VA → latestTransactionStatus SNAP (design.md A2.4). */
+    private static String snapStatus(VirtualAccountStatus status) {
+        return switch (status) {
+            case PAID -> "00";      // success
+            case ACTIVE -> "03";    // pending
+            case EXPIRED -> "07";   // expired
+        };
+    }
+
+    private static String statusDesc(VirtualAccountStatus status) {
+        return switch (status) {
+            case PAID -> "success";
+            case ACTIVE -> "pending";
+            case EXPIRED -> "expired";
+        };
     }
 
     // ---- helper ----

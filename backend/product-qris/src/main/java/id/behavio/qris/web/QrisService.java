@@ -16,6 +16,7 @@ import id.behavio.core.port.ConfigRepository;
 import id.behavio.qris.port.QrisRepository;
 import id.behavio.core.port.SignatureVerifier;
 import id.behavio.core.port.WebhookSender;
+import id.behavio.core.port.WebhookSubscriptions;
 import id.behavio.core.rule.FaultSpec;
 import id.behavio.core.rule.Outcome;
 import id.behavio.core.rule.Rule;
@@ -48,13 +49,16 @@ public class QrisService {
     private static final String H_TIMESTAMP = "X-TIMESTAMP";
     private static final String H_SIGNATURE = "X-SIGNATURE";
     private static final String H_AUTH = "Authorization";
-    private static final String H_CALLBACK = "X-CALLBACK-URL";
+
+    /** Event Payment Notify (service 52) — kunci registrasi URL partner (design.md §9.1). */
+    public static final String EVENT = "qris-payment";
 
     private final ConfigRepository config;
     private final SignatureVerifier verifier;
     private final AccessTokenStore accessTokenStore;
     private final QrisRepository qrisRepo;
     private final WebhookSender webhookSender;
+    private final WebhookSubscriptions subscriptions;
     private final ObjectMapper mapper;
     private final ConditionEvaluator evaluator = new ConditionEvaluator();
     private final ResponseRenderer renderer = new ResponseRenderer();
@@ -68,12 +72,14 @@ public class QrisService {
     }
 
     public QrisService(ConfigRepository config, SignatureVerifier verifier, AccessTokenStore accessTokenStore,
-                       QrisRepository qrisRepo, WebhookSender webhookSender, ObjectMapper mapper) {
+                       QrisRepository qrisRepo, WebhookSender webhookSender,
+                       WebhookSubscriptions subscriptions, ObjectMapper mapper) {
         this.config = config;
         this.verifier = verifier;
         this.accessTokenStore = accessTokenStore;
         this.qrisRepo = qrisRepo;
         this.webhookSender = webhookSender;
+        this.subscriptions = subscriptions;
         this.mapper = mapper;
     }
 
@@ -136,7 +142,7 @@ public class QrisService {
             QrisTransaction qr = new QrisTransaction(UUID.randomUUID(), simulatorId, partner.id(),
                     str(fields.get("partnerReferenceNo")), referenceNo, merchantId, str(fields.get("terminalId")),
                     qrType, amount, vars.get("currency").toString(), qrContent,
-                    header(headers, H_CALLBACK), QrisStatus.ACTIVE, null, null, Instant.now());
+                    QrisStatus.ACTIVE, null, null, Instant.now());
             qrisRepo.save(qr);
         } else {
             vars.put("qrContent", "");
@@ -381,20 +387,50 @@ public class QrisService {
         qr.markPaid(paid, paidAt);
         qrisRepo.save(qr);
 
-        if (qr.callbackUrl() == null || qr.callbackUrl().isBlank()) {
-            return new PayResult(true, false, "Tidak ada X-CALLBACK-URL tersimpan saat generate");
+        // Notifikasi terkirim OTOMATIS karena status berubah (design.md §9.2) — itu
+        // jalur utamanya, meniru acquirer sungguhan.
+        return notify(simulatorId, qr, "Payment Notify");
+    }
+
+    /**
+     * Kirim ulang Payment Notify memakai status **aktif** QR — retry/test dari dashboard
+     * (§9.2). Tidak mengubah QR-nya.
+     *
+     * BUKAN {@code readOnly}: menjadwalkan webhook tetap menulis baris ke outbox.
+     */
+    @Transactional
+    public PayResult resendNotification(UUID simulatorId, String referenceNo) {
+        Optional<QrisTransaction> qrOpt = qrisRepo.findAny(simulatorId, referenceNo);
+        if (qrOpt.isEmpty()) {
+            return new PayResult(false, false, "QR tidak ditemukan");
         }
+        return notify(simulatorId, qrOpt.get(), "Notifikasi ulang");
+    }
+
+    /** Bangun & jadwalkan Payment Notify (service 52) dari status QR saat ini. */
+    private PayResult notify(UUID simulatorId, QrisTransaction qr, String label) {
+        Optional<String> url = subscriptions.resolveUrl(simulatorId, qr.partnerId(), EVENT);
+        if (url.isEmpty()) {
+            return new PayResult(true, false,
+                    "Partner belum mendaftarkan URL notifikasi untuk event '" + EVENT + "' (design.md §9.1)");
+        }
+        BigDecimal notified = qr.paidAmount() != null ? qr.paidAmount() : qr.amount();
+
         Map<String, Object> notif = new LinkedHashMap<>();
         notif.put("originalReferenceNo", qr.referenceNo());
         notif.put("originalPartnerReferenceNo", strOrEmpty(qr.partnerReferenceNo()));
-        notif.put("latestTransactionStatus", "00");
-        notif.put("transactionStatusDesc", "success");
-        notif.put("amount", Map.of("value", paid.toPlainString(), "currency", qr.currency()));
+        // Status mengikuti status AKTIF QR (A3.4), bukan selalu "00" — mengirim "success"
+        // untuk QR yang belum dibayar itu berbohong ke klien. Memakai statusCode/statusDesc
+        // yang sudah dipakai qr-mpm-query, jadi notifikasi & query tak mungkin berbeda cerita.
+        notif.put("latestTransactionStatus", statusCode(qr.status()));
+        notif.put("transactionStatusDesc", statusDesc(qr.status()));
+        notif.put("amount", Map.of("value", notified == null ? "0.00" : notified.toPlainString(),
+                "currency", qr.currency()));
         notif.put("merchantId", strOrEmpty(qr.merchantId()));
-        notif.put("paidTime", ts(paidAt));
-        webhookSender.schedule(simulatorId, qr.callbackUrl(), Map.of("Content-Type", "application/json"),
+        notif.put("paidTime", qr.paidAt() != null ? ts(qr.paidAt()) : "");
+        webhookSender.schedule(simulatorId, url.get(), Map.of("Content-Type", "application/json"),
                 writeJson(notif), Duration.ZERO);
-        return new PayResult(true, true, "Payment Notify dijadwalkan");
+        return new PayResult(true, true, label + " dijadwalkan ke " + url.get());
     }
 
     @Transactional

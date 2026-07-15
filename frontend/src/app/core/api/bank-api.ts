@@ -19,7 +19,8 @@ export interface VirtualAccountView {
   currency: string;
   status: 'ACTIVE' | 'PAID' | 'EXPIRED';
   trxId: string;
-  hasCallback: boolean;
+  // Tanpa hasCallback: sejak design.md §9.1 URL notifikasi milik PARTNER (registrasi),
+  // bukan milik VA — menandainya per-VA jadi menyesatkan.
 }
 
 /** Scenario preset Transfer Intrabank beserta penjelasan ramah end-user. */
@@ -68,10 +69,24 @@ export class BankApi extends ProductApi {
     return this.http.get<VirtualAccountView[]>(`${this.base}/${id}/virtual-accounts`);
   }
 
-  /** Tandai VA dibayar — memicu Payment Notification (webhook) ke callback URL-nya. */
+  /**
+   * Tandai VA dibayar → status PAID, dan Payment Notification terkirim **otomatis** ke
+   * URL yang didaftarkan partner (design.md §9.2). Ini jalur normalnya.
+   */
   payVirtualAccount(id: string, vaNo: string) {
     return this.http.post<{ webhookSent: boolean; note: string }>(
       `${this.base}/${id}/virtual-accounts/${encodeURIComponent(vaNo)}/pay`,
+      {}
+    );
+  }
+
+  /**
+   * Kirim ulang notifikasi memakai status AKTIF VA — retry/test (§9.2). Tidak mengubah
+   * data: kalau ini jadi satu-satunya cara notifikasi terkirim, auto-send-nya bug.
+   */
+  resendVirtualAccountNotification(id: string, vaNo: string) {
+    return this.http.post<{ webhookSent: boolean; note: string }>(
+      `${this.base}/${id}/virtual-accounts/${encodeURIComponent(vaNo)}/resend-notification`,
       {}
     );
   }

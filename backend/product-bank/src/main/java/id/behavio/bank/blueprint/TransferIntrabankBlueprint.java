@@ -130,12 +130,17 @@ public final class TransferIntrabankBlueprint {
                 Outcome.withFault(successActions(), successResponse(), FaultSpec.corruptAfter()));
     }
 
+    /** Event notifikasi transfer — kunci registrasi URL partner (design.md §9.1). */
+    public static final String EVENT = "transfer-notify";
+
     /**
      * Async Callback (design.md §9): transfer diterima (respons PENDING), lalu 2 detik
-     * kemudian simulator mengirim webhook status SUCCESS ke URL di header X-CALLBACK-URL.
+     * kemudian simulator mengirim webhook status SUCCESS ke URL yang **didaftarkan**
+     * partner untuk event {@code transfer-notify} (§9.1). Partner tanpa registrasi →
+     * webhook dilewati.
      */
     public static Scenario asyncCallback() {
-        WebhookSpec webhook = new WebhookSpec("X-CALLBACK-URL", 2000, notificationBody());
+        WebhookSpec webhook = new WebhookSpec(EVENT, 2000, notificationBody());
         return new Scenario("Async Callback", List.of(),
                 Outcome.withWebhook(successActions(), pendingResponse(), webhook));
     }

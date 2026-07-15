@@ -4,6 +4,7 @@ import id.behavio.core.port.EndpointRegistry;
 import id.behavio.core.port.PartnerAdmin;
 import id.behavio.core.port.ScenarioConfigPort;
 import id.behavio.core.port.SimulatorAdmin;
+import id.behavio.core.port.WebhookSubscriptions;
 import id.behavio.core.product.OperationHandler;
 import id.behavio.core.product.ProductCatalog;
 
@@ -23,6 +24,7 @@ public record ProductRuntime(
         ScenarioConfigPort scenarios,
         EndpointRegistry endpoints,
         PartnerAdmin partners,
+        WebhookSubscriptions webhooks,
         SimulatorServerManager servers,
         Map<String, OperationHandler> handlers
 ) {

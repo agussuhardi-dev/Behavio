@@ -21,4 +21,5 @@ dependencies {
     implementation("com.fasterxml.jackson.core:jackson-databind")  // codec definisi scenario
     runtimeOnly(libs.postgresql)
     testImplementation(libs.spring.boot.starter.test)
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }

@@ -41,14 +41,36 @@ public class VirtualAccountAdminController {
                 "note", r.reason()));
     }
 
-    /** Ringkasan VA untuk tampilan dashboard. */
+    /**
+     * Kirim ulang Payment Notification memakai status AKTIF VA — retry/test (design.md
+     * §9.2). Tidak mengubah status: pengiriman normal sudah otomatis saat VA jadi PAID,
+     * dan tombol ini hanya jaring pengaman untuk menguji ulang tanpa membuat VA baru.
+     */
+    @PostMapping("/{vaNo}/resend-notification")
+    public ResponseEntity<?> resend(@PathVariable UUID id, @PathVariable String vaNo) {
+        VirtualAccountService.PayResult r = service.resendNotification(id, vaNo);
+        if (!r.found()) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(Map.of(
+                "virtualAccountNo", vaNo,
+                "webhookSent", r.webhookSent(),
+                "note", r.reason()));
+    }
+
+    /**
+     * Ringkasan VA untuk tampilan dashboard.
+     *
+     * Tanpa {@code hasCallback}: sejak §9.1, URL notifikasi milik PARTNER (registrasi),
+     * bukan milik VA. Menandai "VA ini punya callback" jadi menyesatkan — dua VA milik
+     * partner yang sama selalu punya tujuan yang sama.
+     */
     record VaView(String virtualAccountNo, String virtualAccountName, String amount,
-                 String currency, String status, String trxId, boolean hasCallback) {
+                 String currency, String status, String trxId) {
         static VaView from(VirtualAccount va) {
             return new VaView(va.virtualAccountNo(), va.virtualAccountName(),
                     va.totalAmount() == null ? "0.00" : va.totalAmount().toPlainString(),
-                    va.currency(), va.status().name(), va.trxId(),
-                    va.callbackUrl() != null && !va.callbackUrl().isBlank());
+                    va.currency(), va.status().name(), va.trxId());
         }
     }
 }
