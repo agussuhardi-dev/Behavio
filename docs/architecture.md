@@ -429,6 +429,23 @@ kompilasi, tapi:
   QRIS *bisa* `SELECT * FROM bank.accounts`; yang mencegah hanya tak ada yang menulis
   begitu. Schema memisahkan *namespace*, bukan *hak akses*.
 
+**Endpoint kustom 404 saat dipanggil — "configuration over code" belum berlaku untuk
+operasi baru.** Dashboard bisa membuat endpoint kustom (`EndpointRegistry.addEndpoint`,
+operation `custom-xxxxxxxx`), dan baris + scenario "Normal"-nya benar tersimpan. Tapi
+`SimulatorServerManager` meresolusi handler lewat `handlers.get(operation)`, sedangkan
+`BankProductConfig` hanya mendaftarkan handler untuk operasi **katalog** — tak ada
+fallback. Hasilnya endpoint kustom selalu membalas
+`404 {"responseCode":"4040400","responseMessage":"Operation not implemented"}`.
+
+Konsekuensinya nyata: menambah operasi baru (mis. daftar operasi di `addon.md`) **tak
+bisa lewat konfigurasi** — tiap satu butuh entri katalog + blueprint + handler Java.
+Untuk endpoint yang cuma perlu balas statis, ini kejutan yang mahal.
+
+**`AccountService` & `TransactionHistoryService` adalah kode mati** (±386 baris). Bean-nya
+dibuat dan variabelnya di-assign di `BankProductConfig`, tapi tak satu pun method-nya
+dipanggil — handler `balance-inquiry`, `account-inquiry-internal`, dan
+`transaction-history-list` semuanya dialihkan ke engine (§6.1), bukan ke service ini.
+
 **SPI masih ber-cetakan HTTP.** `Operation` punya `method` + `defaultPath`;
 `OperationHandler.Request` punya `method/path/headers/body`; `Result` punya `status`
 (HTTP); server-nya `com.sun.net.httpserver.HttpServer`. Rencana ISO-8583 (design.md §2A

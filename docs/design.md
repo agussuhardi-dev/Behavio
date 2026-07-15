@@ -1132,6 +1132,52 @@ tanpa memecahkan checksum; `/webhooks/subscriptions` → 404, `/webhooks/outbox`
 regresi nol — Payment Notify QRIS tetap terkirim (outbox `SENT`), transfer bank `2001700`,
 editor scenario tetap memuat rule dari `scenarios.definition`.
 
+### Pembersihan dashboard: auth & sisa starter dibuang ✅ (2026-07-15)
+
+Dashboard lahir dari template **ng-matero** (§7), dan sisa scaffold-nya masih hidup
+berdampingan dengan kode Behavio. Dibuang seluruhnya: **251 file, −11.324 baris**;
+bundle awal **1,94 MB → 1,36 MB** (transfer 406 kB → 276 kB).
+
+**Bug yang ditutup:** dashboard **terkunci di browser baru**. `auth.guard.ts` (versi
+Behavio yang selalu mengizinkan, sesuai §6.2 "tanpa auth") **tak pernah di-export**;
+yang aktif justru `auth-guard.ts` bawaan starter yang memblokir dan redirect ke
+`/auth/login` — endpoint yang tak ada di backend dan tak diproxy. Kemungkinan tak
+terasa karena token sisa demo masih tersimpan di localStorage.
+
+Dibuang: seluruh `core/authentication`, halaman login/register, `AuthLayout`,
+`tokenInterceptor`, redirect `401 → /auth/login`, widget user (avatar/logout),
+7 route demo, `shared/in-mem`, folder `e2e` Protractor, serta dependency
+`angular-in-memory-web-api`, `base64-js`, `apexcharts`, `protractor`.
+
+**Penghematan bundle terbesar bukan dari route:** `angular.json` memuat **apexcharts
+sebagai script global** — 580 kB terunduh di setiap muat halaman, padahal satu-satunya
+jejaknya cuma `/// <reference types="apexcharts" />`.
+
+**`ng test` ternyata rusak sejak lama** dan tak pernah ketahuan: `karma.conf.js`
+memanggil plugin `@angular-devkit/build-angular` yang tak terpasang (projek memakai
+builder `@angular/build:karma`). Setelah diperbaiki, dua spec terbukti menguji perilaku
+yang sudah lama tak ada (`startup.service.spec` masih menguji `/user/menu` berbasis
+token padahal `StartupService` sudah lama membaca `data/menu.json`) — ditulis ulang.
+**Pelajarannya: tes yang tak pernah dijalankan tidak melindungi apa pun.**
+
+**Dipertahankan:** `ngx-permissions` (dipakai `sidemenu`/`topmenu`, infrastruktur menu —
+bukan auth) dan `parse5` (berbau pin versi transitif).
+
+### Panduan Skenario QRIS kosong — kopling indeks ✅ (2026-07-15)
+
+Dilaporkan user: kartu "Panduan Skenario QRIS" di `/qris` tak menampilkan apa-apa.
+
+**Bukan** penghapusan — kartunya selalu ada, **isinya** yang kosong. Template membaca
+`endpointMeta()[0].scenarioList`, dan sejak `access-token` (yang `scenarioList`-nya
+sengaja `[]`) menempati urutan **pertama** pada pemisahan produk (§3.4), `@for`-nya
+melahap daftar kosong. Panduan itu diam-diam mati sejak saat itu — tanpa error, tanpa
+jejak, karena `@for` atas list kosong memang sah.
+
+Perbaikan: tunjuk konstanta `QRIS_SCENARIOS` lewat field `qrisScenarios`, cermin
+`transferScenarios` di halaman bank yang memang tak pernah rusak karena tak memakai
+indeks. **Pelajarannya:** UI jangan mengalamati data lewat posisi array — urutan kartu
+itu keputusan tampilan, dan mengubahnya tak boleh mengosongkan panduan.
+
 ### External Account Inquiry + perbaikan nama kosong ✅ (2026-07-15)
 
 Berangkat dari catatan operasi milik user (`addon.md`), disaring dengan aturannya

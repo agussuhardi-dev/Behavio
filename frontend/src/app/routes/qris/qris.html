@@ -275,7 +275,7 @@
       </div>
       <mat-divider />
       <div class="qris-legend__grid">
-        @for (sc of endpointMeta()[0].scenarioList; track sc.name) {
+        @for (sc of qrisScenarios; track sc.name) {
           <div class="qris-legend__item">
             <mat-icon class="opt-ico opt-ico--{{ sc.tone }}">{{ sc.icon }}</mat-icon>
             <div>

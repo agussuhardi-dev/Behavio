@@ -65,6 +65,16 @@ export class Qris implements OnInit, OnDestroy {
 
   readonly qrisOperations = ['access-token', 'qris-generate', 'qris-query', 'qris-refund', 'qris-cancel', 'qris-decode', 'qris-payment', 'qris-apply-ott'];
 
+  /**
+   * Dipakai kartu "Panduan Skenario QRIS" — cermin `transferScenarios` di halaman bank.
+   *
+   * Sebelumnya template membaca `endpointMeta()[0].scenarioList`, dan sejak `access-token`
+   * (yang scenario-nya kosong) masuk ke urutan PERTAMA, panduannya jadi kosong tanpa
+   * jejak apa pun. Menunjuk konstanta, bukan indeks: urutan kartu boleh berubah tanpa
+   * diam-diam mengosongkan panduan.
+   */
+  readonly qrisScenarios = QRIS_SCENARIOS;
+
   readonly sims = signal<Simulator[]>([]);
   readonly loading = signal(true);
   readonly selectedSimId = signal<string>('');
