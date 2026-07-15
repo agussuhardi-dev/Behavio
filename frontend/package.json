@@ -55,6 +55,7 @@
     "@types/jasmine": "~5.1.0",
     "@types/node": "^24.5.0",
     "angular-eslint": "^20.3.0",
+    "baseline-browser-mapping": "^2.10.43",
     "eslint": "^9.36.0",
     "husky": "^9.1.6",
     "is-ci": "^4.1.0",

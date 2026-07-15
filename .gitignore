@@ -7,6 +7,13 @@ frontend/node_modules/
 frontend/dist/
 frontend/.angular/
 
+# rahasia — .env memuat kredensial DB & token tunnel (lihat .env.example)
+# JANGAN dilonggarkan: deploy/.gitignore hanya menutup deploy/, sedangkan deploy.sh
+# membaca .env dari ROOT repo — tanpa baris ini, satu `git add .` membocorkannya.
+.env
+.env.*
+!.env.example
+
 # misc
 *.log
 .DS_Store

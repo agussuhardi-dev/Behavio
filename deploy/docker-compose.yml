@@ -1,0 +1,52 @@
+services:
+  backend:
+    image: behavio-backend:latest
+    container_name: behavio-backend
+    restart: unless-stopped
+    env_file: .env
+    # Port per-simulator (design.md §6.1): tiap simulator membuka portnya SENDIRI —
+    # bank mulai 9001, QRIS 9101, dialokasikan platform.port_registry. Inilah port
+    # yang dipanggil klien/Postman; Admin API (8080) hanya untuk dashboard dan
+    # diproxy nginx. Tanpa pemetaan ini simulator hidup di dalam container tapi tak
+    # bisa dihubungi siapa pun — dan "connection refused" itu justru fitur yang
+    # disengaja saat simulator di-stop, sehingga bug ini menyamar jadi perilaku benar.
+    ports:
+      - "${SIM_PORT_START:-9000}-${SIM_PORT_END:-9199}:${SIM_PORT_START:-9000}-${SIM_PORT_END:-9199}"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:${SERVER_PORT:-8080}/actuator/health || exit 1"]
+      interval: 20s
+      timeout: 10s
+      retries: 10
+      start_period: 120s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  frontend:
+    image: behavio-frontend:latest
+    container_name: behavio-frontend
+    restart: unless-stopped
+    ports:
+      - "81:80"
+    depends_on:
+      - backend
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
+
+  cloudflared:
+     image: cloudflare/cloudflared:latest
+     container_name: behavio-cloudflared
+     restart: unless-stopped
+     command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+     depends_on:
+       - frontend
+     logging:
+       driver: json-file
+       options:
+         max-size: "5m"
+         max-file: "3"
