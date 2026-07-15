@@ -37,9 +37,15 @@ import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
+import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Supplier;
 
@@ -49,6 +55,9 @@ import java.util.function.Supplier;
  * langkah aksi (debit + create txn + idempotensi) atomik (§4.1).
  */
 public final class DefaultBehaviorEngine implements BehaviorEngine {
+
+    /** Nama koleksi {@code @each} yang bisa disediakan engine bank (lihat enrichCollections). */
+    private static final String VAR_TRANSACTIONS = "transactions";
 
     private static final String H_PARTNER = "X-PARTNER-ID";
     private static final String H_EXTERNAL = "X-EXTERNAL-ID";
@@ -305,8 +314,87 @@ public final class DefaultBehaviorEngine implements BehaviorEngine {
         vars.putIfAbsent("currency", "IDR");
         vars.put("transactionDate", OffsetDateTime.now(clock).format(SNAP_TS));
         enrichAccountVars(simulatorId, partnerId, vars);
+        enrichCollections(simulatorId, partnerId, spec, request, vars);
         String body = renderer.render(spec.bodyTemplate(), vars);
         return new SimResponse(spec.httpStatus(), spec.responseCode(), JSON_HEADERS, body);
+    }
+
+    /**
+     * Sediakan koleksi yang DIMINTA template lewat {@code @each}. Templatelah yang
+     * mendeklarasikan kebutuhannya, jadi engine tak perlu menebak dari path/operasi —
+     * penting karena path endpoint boleh diganti user (design.md §7). Template yang tak
+     * meminta apa pun = nol query.
+     */
+    private void enrichCollections(UUID simulatorId, UUID partnerId, ResponseSpec spec,
+                                   SimRequest request, Map<String, Object> vars) {
+        Set<String> needed = ResponseRenderer.requiredCollections(spec.bodyTemplate());
+        if (needed.contains(VAR_TRANSACTIONS) && !vars.containsKey(VAR_TRANSACTIONS)) {
+            vars.put(VAR_TRANSACTIONS, transactionRows(simulatorId, partnerId, request));
+        }
+    }
+
+    /**
+     * Riwayat transaksi (service 12) sebagai baris siap-render. Rentang & paging diambil
+     * dari request; bila {@code fromDateTime}/{@code toDateTime} tak dikirim, dipakai
+     * 30 hari terakhir — sama seperti bank sungguhan yang punya rentang bawaan.
+     */
+    private List<Map<String, Object>> transactionRows(UUID simulatorId, UUID partnerId, SimRequest request) {
+        int pageSize = intOr(request, "pageSize", 10);
+        if (pageSize <= 0) pageSize = 10;
+        pageSize = Math.min(50, pageSize);
+        int pageNumber = Math.max(0, intOr(request, "pageNumber", 0));
+
+        Instant now = Instant.now(clock);
+        Instant from = parseInstant(str(request, "fromDateTime"), now.minus(30, ChronoUnit.DAYS));
+        Instant to = parseInstant(str(request, "toDateTime"), now);
+
+        List<Transaction> found = state.findTransactions(
+                simulatorId, partnerId, from, to, pageSize, pageNumber * pageSize);
+
+        List<Map<String, Object>> rows = new ArrayList<>(found.size());
+        for (Transaction txn : found) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("dateTime", txn.createdAt() == null ? ""
+                    : OffsetDateTime.ofInstant(txn.createdAt(), SNAP_ZONE).format(SNAP_TS));
+            row.put("amountValue", txn.amount() == null ? "0" : txn.amount().toPlainString());
+            row.put("currency", txn.currency() == null ? "IDR" : txn.currency());
+            row.put("remark", "Transfer " + txn.referenceNo());
+            row.put("referenceNo", txn.referenceNo());
+            row.put("partnerReferenceNo", strOrEmpty(txn.partnerReferenceNo()));
+            row.put("sourceAccountNo", strOrEmpty(txn.sourceAccountNo()));
+            row.put("beneficiaryAccountNo", strOrEmpty(txn.beneficiaryAccountNo()));
+            // Status transaksi GAGAL dilaporkan CANCELLED (kosakata SNAP service 12);
+            // selain itu SUCCESS. Tak boleh melaporkan status yang bukan status aslinya.
+            boolean failed = txn.status() != null && "FAILED".equals(txn.status().name());
+            row.put("txnStatus", failed ? "CANCELLED" : "SUCCESS");
+            row.put("txnType", "PAYMENT");
+            rows.add(row);
+        }
+        return rows;
+    }
+
+    private Instant parseInstant(String value, Instant fallback) {
+        if (value == null || value.isBlank()) return fallback;
+        try {
+            return OffsetDateTime.parse(value).toInstant();
+        } catch (DateTimeParseException e) {
+            return fallback;
+        }
+    }
+
+    private static int intOr(SimRequest request, String field, int fallback) {
+        Object v = request.fields().get(field);
+        if (v instanceof Number n) return n.intValue();
+        if (v == null) return fallback;
+        try {
+            return Integer.parseInt(v.toString().trim());
+        } catch (NumberFormatException e) {
+            return fallback;
+        }
+    }
+
+    private static String strOrEmpty(String s) {
+        return s == null ? "" : s;
     }
 
     /**
@@ -330,6 +418,15 @@ public final class DefaultBehaviorEngine implements BehaviorEngine {
             state.findAccount(simulatorId, partnerId, accountNo).ifPresent(acc -> {
                 vars.putIfAbsent("holderName", acc.holderName());
                 vars.putIfAbsent("accountNo", acc.accountNo());
+                // Saldo HANYA bisa datang dari state — request balance-inquiry (service 11)
+                // tak punya field `amount`. Blueprint dulu memakai {{amountValue}}, yang
+                // diikat dari request, sehingga saldo SELALU dirender "" walau rekening
+                // berisi: satu-satunya endpoint yang gunanya melaporkan saldo tak pernah
+                // bisa melaporkannya. Var terpisah, bukan menumpang `amountValue`, supaya
+                // "nominal yang diminta request" dan "saldo rekening" tak pernah tertukar.
+                vars.putIfAbsent("balanceValue", acc.balance() == null
+                        ? "0" : acc.balance().toPlainString());
+                vars.putIfAbsent("balanceCurrency", acc.currency());
             });
         }
         String source = (String) vars.get("sourceAccountNo");

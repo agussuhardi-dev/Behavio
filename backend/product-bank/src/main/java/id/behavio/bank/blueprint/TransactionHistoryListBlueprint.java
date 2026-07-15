@@ -56,7 +56,12 @@ public final class TransactionHistoryListBlueprint {
     }
 
     private static ResponseSpec normalResponse() {
+        // "@each" membuat baris ini diulang sekali per transaksi nyata di state
+        // (ResponseRenderer). Tanpa ini, template merender SATU baris dari var request —
+        // dan karena request service 12 tak punya dateTime/amount/remark, seluruh isinya
+        // selalu "": riwayat yang tak pernah memuat riwayat. Nol transaksi → array kosong.
         Map<String, Object> item = new LinkedHashMap<>();
+        item.put("@each", "transactions");
         item.put("dateTime", "{{dateTime}}");
         item.put("amount", Map.of("value", "{{amountValue}}", "currency", "{{currency}}"));
         item.put("remark", "{{remark}}");

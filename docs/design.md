@@ -461,6 +461,59 @@ kasus), node ekspresi menambal kasus sulit. **Tanpa** transpile dua arah.
 }
 ```
 
+### 8.2.1 Var template: dari request, dari state, dan koleksi (`@each`)
+
+Template response diisi `{{var}}`. Var datang dari tiga sumber, dan **membedakannya itu
+wajib** — mencampurnya sudah pernah melahirkan dua bug diam:
+
+| Sumber | Contoh var | Diikat oleh |
+|---|---|---|
+| Field request | `amountValue`, `partnerReferenceNo` | `renderResponse` dari `request.fields()` |
+| Rekening di state | `holderName`, **`balanceValue`**, `balanceCurrency` | `enrichAccountVars` |
+| Koleksi dari state | `transactions` | `enrichCollections` (hanya bila diminta `@each`) |
+
+> **Bug yang melahirkan aturan ini (fix 2026-07-15).** `BalanceInquiryBlueprint` (service
+> 11) merender saldo dari `{{amountValue}}` — var **request**. Request balance-inquiry tak
+> punya field `amount`, jadi saldo **selalu** terender `""`: satu-satunya endpoint yang
+> gunanya melaporkan saldo tak pernah bisa melaporkannya, walau rekening berisi. Saldo
+> HANYA boleh dari `{{balanceValue}}`. Var terpisah dipilih justru supaya "nominal yang
+> diminta request" dan "saldo rekening" tak pernah bisa tertukar lagi.
+
+**Pengulangan `@each`.** Template berbentuk struktur JSON (Map/List), bukan teks — jadi
+blok gaya Handlebars tak punya tempat. Sebagai gantinya, satu elemen array yang memuat
+kunci `"@each"` adalah *template baris*, diulang sekali per item koleksi:
+
+```jsonc
+"detailData": [ { "@each": "transactions",
+                  "dateTime": "{{dateTime}}",
+                  "amount": { "value": "{{amountValue}}", "currency": "{{currency}}" } } ]
+```
+
+- Tiap item **di-overlay** di atas var luar → `{{amountValue}}` di dalam baris = nominal
+  **baris itu**, bukan nominal request. Item skalar dirujuk `{{@this}}`.
+- Koleksi kosong/absen → **array kosong**, bukan satu baris berisi `""`. (Itu bug lama
+  `transaction-history-list`: riwayat kosong dilaporkan sebagai satu transaksi hampa.)
+- Template **mendeklarasikan** kebutuhannya; `enrichCollections` hanya query state untuk
+  koleksi yang benar-benar diminta. Engine sengaja **tidak** menebak dari path/operasi —
+  path endpoint boleh diganti user (§7), jadi menebak dari path pasti pecah.
+- Template tanpa `@each` berperilaku persis seperti sebelumnya (aditif, nol regresi).
+- **Override tetap berkuasa:** `@each` lolos round-trip `ScenarioCodec`, tampil & bisa
+  diedit lewat "Edit Response". Ini alasan jalur engine dipilih ketimbang memanggil
+  service khusus — `withScenario` hanya mendukung "Bank Down"/"Timeout" hardcode dan
+  **membuang** kemampuan override.
+
+Koleksi yang tersedia saat ini: **`transactions`** (produk bank; rentang dari
+`fromDateTime`/`toDateTime`, default 30 hari terakhir, paging `pageSize`/`pageNumber`).
+
+> **Kode mati yang harus dihapus:** `AccountService` (`internalInquiry`, `balanceInquiry`)
+> dan `TransactionHistoryService` (`historyList`) — **nol pemanggil**, tapi masih
+> dibuatkan bean di `BankProductConfig`. Semua operasi bank dirutekan ke engine
+> (`BankProductConfig` baris ~201-204); service ini ditinggal yatim saat migrasi itu.
+> Bahayanya nyata dan sudah terbukti: keduanya berisi logika yang **terlihat benar**
+> (`acc.balance()`, `state.findTransactions()`), sehingga pembaca menyangka endpoint sudah
+> membaca state — padahal jalur hidupnya tidak. Ini persis pola yang §9.1 larang:
+> *"fitur yang bisa diatur tapi tak berefek lebih buruk daripada tak ada fitur."*
+
 ### 8.3 Evaluator ekspresi
 - **Mulai:** Apache **JEXL** (ringan, mudah dibatasi, aman-dari-kecelakaan).
 - **Nanti:** migrasi ke **evaluator mini khusus finansial** (hanya operator &

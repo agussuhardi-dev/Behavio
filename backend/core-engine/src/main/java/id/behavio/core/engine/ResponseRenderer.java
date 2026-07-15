@@ -2,15 +2,42 @@ package id.behavio.core.engine;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Merender body response dari template: mengganti placeholder {@code {{var}}} dengan
  * nilai dari {@code vars} (field request + hasil: referenceNo, responseCode, dll),
  * lalu menulisnya jadi JSON. Template boleh bersarang (Map/List).
+ *
+ * <p><b>Pengulangan ({@code @each}).</b> Template ini berbentuk struktur (Map/List), bukan
+ * teks, jadi sintaks blok gaya Handlebars ({@code {{#each}}…{{/each}}}) tak punya tempat
+ * untuk hidup. Sebagai gantinya: satu elemen List yang memuat kunci {@code "@each"}
+ * diperlakukan sebagai <i>template baris</i> dan diulang sebanyak isi koleksi yang
+ * disebut nilainya:
+ *
+ * <pre>{@code
+ * "detailData": [ { "@each": "transactions",
+ *                   "dateTime": "{{dateTime}}",
+ *                   "amount": {"value": "{{amountValue}}", "currency": "{{currency}}"} } ]
+ * }</pre>
+ *
+ * Tiap item koleksi ditumpangkan (overlay) di atas {@code vars}, sehingga field item
+ * membayangi var luar — {@code {{amountValue}}} di atas berarti nominal <i>baris itu</i>,
+ * bukan nominal request. Bentuk template = bentuk output (tetap array), jadi masih enak
+ * dibaca & diedit lewat "Edit Response" di dashboard.
+ *
+ * <p>Koleksi tak ada / bukan List → array kosong (BUKAN baris berisi string kosong).
+ * Itu jujur: "tak ada transaksi" harus terlihat sebagai tak ada, bukan satu baris hampa.
+ * Item non-Map bisa dirujuk sebagai {@code {{@this}}}. Template tanpa {@code @each}
+ * dirender persis seperti sebelumnya.
  */
 public final class ResponseRenderer {
+
+    /** Kunci penanda pengulangan; nilainya = nama var koleksi di {@code vars}. */
+    public static final String EACH = "@each";
 
     /** @return body JSON string hasil render. */
     public String render(Map<String, Object> template, Map<String, Object> vars) {
@@ -18,7 +45,29 @@ public final class ResponseRenderer {
         return Json.write(rendered);
     }
 
-    @SuppressWarnings("unchecked")
+    /**
+     * Nama koleksi yang diminta template lewat {@code @each} — dipakai engine untuk tahu
+     * data apa yang perlu diambil dari state. Template yang mendeklarasikan kebutuhannya
+     * sendiri membuat engine tak perlu menebak dari path/operasi (yang bisa diganti user).
+     */
+    public static Set<String> requiredCollections(Object template) {
+        Set<String> names = new LinkedHashSet<>();
+        collectEach(template, names);
+        return names;
+    }
+
+    private static void collectEach(Object node, Set<String> out) {
+        switch (node) {
+            case Map<?, ?> m -> {
+                Object each = m.get(EACH);
+                if (each instanceof String s && !s.isBlank()) out.add(s.trim());
+                for (Object v : m.values()) collectEach(v, out);
+            }
+            case List<?> l -> { for (Object item : l) collectEach(item, out); }
+            default -> { }
+        }
+    }
+
     private Object renderValue(Object node, Map<String, Object> vars) {
         return switch (node) {
             case null -> null;
@@ -26,17 +75,41 @@ public final class ResponseRenderer {
             case Map<?, ?> m -> {
                 Map<String, Object> out = new LinkedHashMap<>();
                 for (Map.Entry<?, ?> e : m.entrySet()) {
+                    if (EACH.equals(String.valueOf(e.getKey()))) continue;
                     out.put(String.valueOf(e.getKey()), renderValue(e.getValue(), vars));
                 }
                 yield out;
             }
             case List<?> l -> {
                 List<Object> out = new ArrayList<>(l.size());
-                for (Object item : l) out.add(renderValue(item, vars));
+                for (Object item : l) {
+                    if (item instanceof Map<?, ?> m && m.get(EACH) instanceof String name) {
+                        expand(m, name.trim(), vars, out);
+                    } else {
+                        out.add(renderValue(item, vars));
+                    }
+                }
                 yield out;
             }
             default -> node;
         };
+    }
+
+    /** Ulang {@code rowTemplate} sekali per item koleksi {@code name}. */
+    private void expand(Map<?, ?> rowTemplate, String name, Map<String, Object> vars, List<Object> out) {
+        if (!(vars.get(name) instanceof List<?> items)) {
+            return; // koleksi tak ada/kosong → tak ada baris sama sekali
+        }
+        for (Object item : items) {
+            Map<String, Object> scope = new LinkedHashMap<>(vars);
+            scope.put("@this", item);
+            if (item instanceof Map<?, ?> fields) {
+                for (Map.Entry<?, ?> e : fields.entrySet()) {
+                    scope.put(String.valueOf(e.getKey()), e.getValue());
+                }
+            }
+            out.add(renderValue(rowTemplate, scope));
+        }
     }
 
     /**

@@ -56,14 +56,17 @@ public final class BalanceInquiryBlueprint {
     }
 
     private static ResponseSpec normalResponse() {
+        // {{balanceValue}}/{{balanceCurrency}} diikat dari rekening di state (engine
+        // enrichAccountVars), BUKAN dari request — request service 11 tak punya `amount`.
+        // Memakai {{amountValue}} di sini adalah bug lama: saldo selalu terender "".
         Map<String, Object> accountInfo = new LinkedHashMap<>();
         accountInfo.put("balanceType", "Cash");
-        accountInfo.put("amount", Map.of("value", "{{amountValue}}", "currency", "{{currency}}"));
-        accountInfo.put("floatAmount", Map.of("value", "0", "currency", "{{currency}}"));
-        accountInfo.put("holdAmount", Map.of("value", "0", "currency", "{{currency}}"));
-        accountInfo.put("availableBalance", Map.of("value", "{{amountValue}}", "currency", "{{currency}}"));
-        accountInfo.put("ledgerBalance", Map.of("value", "{{amountValue}}", "currency", "{{currency}}"));
-        accountInfo.put("currentMultilateralLimit", Map.of("value", "0", "currency", "{{currency}}"));
+        accountInfo.put("amount", Map.of("value", "{{balanceValue}}", "currency", "{{balanceCurrency}}"));
+        accountInfo.put("floatAmount", Map.of("value", "0", "currency", "{{balanceCurrency}}"));
+        accountInfo.put("holdAmount", Map.of("value", "0", "currency", "{{balanceCurrency}}"));
+        accountInfo.put("availableBalance", Map.of("value", "{{balanceValue}}", "currency", "{{balanceCurrency}}"));
+        accountInfo.put("ledgerBalance", Map.of("value", "{{balanceValue}}", "currency", "{{balanceCurrency}}"));
+        accountInfo.put("currentMultilateralLimit", Map.of("value", "0", "currency", "{{balanceCurrency}}"));
         accountInfo.put("registrationStatusCode", "0001");
         accountInfo.put("status", "0001");
 
