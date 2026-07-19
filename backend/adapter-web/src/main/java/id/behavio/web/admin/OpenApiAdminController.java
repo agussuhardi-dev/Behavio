@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import com.fasterxml.jackson.dataformat.yaml.YAMLGenerator;
 import id.behavio.web.ProductRegistry;
+import id.behavio.web.PublicHost;
 import id.behavio.web.openapi.OpenApiExporter;
 import id.behavio.web.openapi.OpenApiImporter;
 import org.springframework.http.HttpHeaders;
@@ -41,8 +42,11 @@ public class OpenApiAdminController {
                     .disable(YAMLGenerator.Feature.WRITE_DOC_START_MARKER)
                     .enable(YAMLGenerator.Feature.MINIMIZE_QUOTES));
 
-    public OpenApiAdminController(ProductRegistry products) {
+    private final PublicHost publicHost;
+
+    public OpenApiAdminController(ProductRegistry products, PublicHost publicHost) {
         this.products = products;
+        this.publicHost = publicHost;
     }
 
     /** Unduh spec. Default YAML: bentuk lazim OpenAPI, dan Postman menerima keduanya. */
@@ -51,7 +55,7 @@ public class OpenApiAdminController {
                                          @PathVariable UUID id,
                                          @RequestParam(defaultValue = "yaml") String format) throws Exception {
         var runtime = products.require(product);
-        Map<String, Object> doc = exporter.export(runtime, id);
+        Map<String, Object> doc = exporter.export(runtime, id, publicHost.resolve());
 
         boolean asJson = "json".equalsIgnoreCase(format);
         String body = asJson

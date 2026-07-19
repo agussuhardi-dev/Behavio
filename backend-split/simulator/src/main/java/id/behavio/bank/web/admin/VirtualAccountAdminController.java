@@ -1,0 +1,76 @@
+package id.behavio.bank.web.admin;
+
+import id.behavio.bank.domain.VirtualAccount;
+import id.behavio.bank.web.VirtualAccountService;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+
+/**
+ * Admin API untuk memantau Virtual Account & memicu Payment Notification
+ * (design.md Lampiran A2.3) — mensimulasikan "VA dibayar" dari dashboard.
+ */
+@RestController
+@RequestMapping("/api/admin/v1/bank/simulators/{id}/virtual-accounts")
+public class VirtualAccountAdminController {
+
+    private final VirtualAccountService service;
+
+    public VirtualAccountAdminController(VirtualAccountService service) {
+        this.service = service;
+    }
+
+    @GetMapping
+    public List<VaView> list(@PathVariable UUID id) {
+        return service.list(id).stream().map(VaView::from).toList();
+    }
+
+    @PostMapping("/{vaNo}/pay")
+    public ResponseEntity<?> markPaid(@PathVariable UUID id, @PathVariable String vaNo) {
+        VirtualAccountService.PayResult r = service.markPaid(id, vaNo);
+        if (!r.found()) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(Map.of(
+                "virtualAccountNo", vaNo,
+                "status", "PAID",
+                "webhookSent", r.webhookSent(),
+                "note", r.reason()));
+    }
+
+    /**
+     * Kirim ulang Payment Notification memakai status AKTIF VA — retry/test (design.md
+     * §9.2). Tidak mengubah status: pengiriman normal sudah otomatis saat VA jadi PAID,
+     * dan tombol ini hanya jaring pengaman untuk menguji ulang tanpa membuat VA baru.
+     */
+    @PostMapping("/{vaNo}/resend-notification")
+    public ResponseEntity<?> resend(@PathVariable UUID id, @PathVariable String vaNo) {
+        VirtualAccountService.PayResult r = service.resendNotification(id, vaNo);
+        if (!r.found()) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(Map.of(
+                "virtualAccountNo", vaNo,
+                "webhookSent", r.webhookSent(),
+                "note", r.reason()));
+    }
+
+    /**
+     * Ringkasan VA untuk tampilan dashboard.
+     *
+     * Tanpa {@code hasCallback}: sejak §9.1, URL notifikasi milik PARTNER (registrasi),
+     * bukan milik VA. Menandai "VA ini punya callback" jadi menyesatkan — dua VA milik
+     * partner yang sama selalu punya tujuan yang sama.
+     */
+    record VaView(String virtualAccountNo, String virtualAccountName, String amount,
+                 String currency, String status, String trxId) {
+        static VaView from(VirtualAccount va) {
+            return new VaView(va.virtualAccountNo(), va.virtualAccountName(),
+                    va.totalAmount() == null ? "0.00" : va.totalAmount().toPlainString(),
+                    va.currency(), va.status().name(), va.trxId());
+        }
+    }
+}

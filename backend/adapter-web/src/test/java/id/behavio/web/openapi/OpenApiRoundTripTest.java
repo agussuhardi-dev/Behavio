@@ -37,6 +37,14 @@ class OpenApiRoundTripTest {
 
     private static final String TRANSFER_PATH = "/v1.0/transfer-intrabank";
 
+    /**
+     * Sengaja BUKAN "localhost": host harus datang dari pemanggil (PublicHost →
+     * DEPLOY_HOST/X-Forwarded-Host). Kalau nilai ini sampai tak muncul di servers[].url,
+     * berarti hardcode "localhost" hidup lagi — dan spec yang diimpor ke Postman di mesin
+     * lain akan menunjuk mesin itu sendiri.
+     */
+    private static final String HOST = "behavio.example.test";
+
     /** Definisi scenario berformat ScenarioCodec, lengkap dengan rule + fault + webhook. */
     private static final String NORMAL_DEF = """
             {
@@ -100,13 +108,13 @@ class OpenApiRoundTripTest {
 
     @Test
     void exportMenghasilkanSpecOpenApiYangBisaDibacaToolLain() {
-        Map<String, Object> doc = exporter.export(runtime, SIM);
+        Map<String, Object> doc = exporter.export(runtime, SIM, HOST);
 
         assertThat(doc.get("openapi")).isEqualTo("3.0.3");
 
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> servers = (List<Map<String, Object>>) doc.get("servers");
-        assertThat(servers.get(0).get("url")).isEqualTo("http://localhost:9001");
+        assertThat(servers.get(0).get("url")).isEqualTo("http://" + HOST + ":9001");
 
         @SuppressWarnings("unchecked")
         Map<String, Object> paths = (Map<String, Object>) doc.get("paths");
@@ -119,7 +127,7 @@ class OpenApiRoundTripTest {
 
     @Test
     void requestBodyMempertahankanBentukBersarangSnap() {
-        Map<String, Object> post = operation(exporter.export(runtime, SIM), TRANSFER_PATH, "post");
+        Map<String, Object> post = operation(exporter.export(runtime, SIM, HOST), TRANSFER_PATH, "post");
 
         @SuppressWarnings("unchecked")
         Map<String, Object> body = (Map<String, Object>) post.get("requestBody");
@@ -139,7 +147,7 @@ class OpenApiRoundTripTest {
 
     @Test
     void headerDideklarasikanKatalogPerOperasi() {
-        Map<String, Object> doc = exporter.export(runtime, SIM);
+        Map<String, Object> doc = exporter.export(runtime, SIM, HOST);
 
         assertThat(headerNames(operation(doc, TRANSFER_PATH, "post")))
                 .contains("Authorization", "X-PARTNER-ID", "X-EXTERNAL-ID");
@@ -155,7 +163,7 @@ class OpenApiRoundTripTest {
      */
     @Test
     void contohResponseDirenderJadiNilaiKonkretBukanTemplateMentah() {
-        Map<String, Object> post = operation(exporter.export(runtime, SIM), TRANSFER_PATH, "post");
+        Map<String, Object> post = operation(exporter.export(runtime, SIM, HOST), TRANSFER_PATH, "post");
 
         @SuppressWarnings("unchecked")
         Map<String, Object> responses = (Map<String, Object>) post.get("responses");
@@ -170,7 +178,7 @@ class OpenApiRoundTripTest {
 
     @Test
     void tiapScenarioJadiContohResponsePadaStatusnyaSendiri() {
-        Map<String, Object> post = operation(exporter.export(runtime, SIM), TRANSFER_PATH, "post");
+        Map<String, Object> post = operation(exporter.export(runtime, SIM, HOST), TRANSFER_PATH, "post");
 
         @SuppressWarnings("unchecked")
         Map<String, Object> responses = (Map<String, Object>) post.get("responses");
@@ -190,7 +198,7 @@ class OpenApiRoundTripTest {
      */
     @Test
     void kredensialTidakIkutDiekspor() throws Exception {
-        Map<String, Object> doc = exporter.export(runtime, SIM);
+        Map<String, Object> doc = exporter.export(runtime, SIM, HOST);
         String spec = YAML.writeValueAsString(doc);
 
         assertThat(spec).doesNotContain("clientSecret", "client_secret", "publicKey", "public_key");
@@ -215,7 +223,7 @@ class OpenApiRoundTripTest {
                  "response": {"httpStatus": 200, "responseCode": "2005100",
                               "responseMessage": "Successful", "body": {"responseCode": "2005100"}}}}""";
 
-        Map<String, Object> post = operation(exporter.export(runtime, SIM), "/v1.0/qr/qr-mpm-query", "post");
+        Map<String, Object> post = operation(exporter.export(runtime, SIM, HOST), "/v1.0/qr/qr-mpm-query", "post");
 
         @SuppressWarnings("unchecked")
         Map<String, Object> responses = (Map<String, Object>) post.get("responses");
@@ -233,7 +241,7 @@ class OpenApiRoundTripTest {
 
     @Test
     void roundTripMemulihkanRuleFaultDanWebhookUtuh() throws Exception {
-        String spec = YAML.writeValueAsString(exporter.export(runtime, SIM));
+        String spec = YAML.writeValueAsString(exporter.export(runtime, SIM, HOST));
 
         // Simulator tujuan: kosong, path masih default, tanpa definisi custom apa pun.
         FakeEndpoints targetEndpoints = new FakeEndpoints();
@@ -269,7 +277,7 @@ class OpenApiRoundTripTest {
     void importOperasiKatalogMengOverridePathDariSpecBank() throws Exception {
         // Dokumen "bank lain": path BRI, tapi operasi yang sama.
         String briPath = "/intrabank/snap/v2.0/transfer-intrabank";
-        String spec = YAML.writeValueAsString(exporter.export(runtime, SIM))
+        String spec = YAML.writeValueAsString(exporter.export(runtime, SIM, HOST))
                 .replace(TRANSFER_PATH, briPath);
 
         var result = importer.apply(runtime, SIM, spec,
@@ -283,7 +291,7 @@ class OpenApiRoundTripTest {
 
     @Test
     void pratinjauTidakMengubahApaPun() throws Exception {
-        String spec = YAML.writeValueAsString(exporter.export(runtime, SIM));
+        String spec = YAML.writeValueAsString(exporter.export(runtime, SIM, HOST));
         String pathSebelum = endpoints.byOperation.get("transfer").path();
         int tulisSebelum = scenarios.writes;
 
@@ -297,7 +305,7 @@ class OpenApiRoundTripTest {
 
     @Test
     void tebakanXBehavioLebihDipercayaDaripadaTebakanPath() throws Exception {
-        String spec = YAML.writeValueAsString(exporter.export(runtime, SIM));
+        String spec = YAML.writeValueAsString(exporter.export(runtime, SIM, HOST));
 
         var row = rowOf(importer.preview(runtime, spec), TRANSFER_PATH);
         assertThat(row.suggestedOperation()).isEqualTo("transfer");
@@ -344,7 +352,7 @@ class OpenApiRoundTripTest {
 
     @Test
     void barisYangGagalTidakMembatalkanBarisLain() throws Exception {
-        String spec = YAML.writeValueAsString(exporter.export(runtime, SIM));
+        String spec = YAML.writeValueAsString(exporter.export(runtime, SIM, HOST));
 
         var result = importer.apply(runtime, SIM, spec, List.of(
                 new OpenApiImporter.Mapping(TRANSFER_PATH, "POST", OpenApiImporter.Action.CATALOG, "tidak-ada"),

@@ -10,9 +10,7 @@ import id.behavio.bank.persistence.VirtualAccountRepositoryJdbc;
 import id.behavio.bank.port.AccountAdmin;
 import id.behavio.bank.port.StateRepository;
 import id.behavio.bank.port.VirtualAccountRepository;
-import id.behavio.bank.web.AccountService;
 import id.behavio.bank.web.SimulationExecutor;
-import id.behavio.bank.web.TransactionHistoryService;
 import id.behavio.bank.web.VirtualAccountService;
 import id.behavio.core.engine.SimRequest;
 import id.behavio.core.engine.SimResponse;
@@ -161,18 +159,6 @@ public class BankProductConfig {
     }
 
     @Bean
-    public AccountService bankAccountService(SignatureVerifier verifier, ObjectMapper mapper) {
-        return new AccountService(bankConfigRepository(), bankStateRepository(), verifier,
-                bankAccessTokenStore(), mapper);
-    }
-
-    @Bean
-    public TransactionHistoryService bankTransactionHistoryService(SignatureVerifier verifier, ObjectMapper mapper) {
-        return new TransactionHistoryService(bankConfigRepository(), bankStateRepository(), verifier,
-                bankAccessTokenStore(), mapper);
-    }
-
-    @Bean
     public VirtualAccountService bankVirtualAccountService(SignatureVerifier verifier, ObjectMapper mapper) {
         return new VirtualAccountService(bankConfigRepository(), verifier, bankVaRepository(),
                 bankWebhookSender(), bankWebhookSubscriptions(), bankAccessTokenStore(), mapper);
@@ -189,8 +175,6 @@ public class BankProductConfig {
         ConfigRepository config = bankConfigRepository();
         AccessTokenService tokens = bankAccessTokenService(verifier);
         SimulationExecutor executor = bankSimulationExecutor(verifier);
-        AccountService accounts = bankAccountService(verifier, mapper);
-        TransactionHistoryService history = bankTransactionHistoryService(verifier, mapper);
         VirtualAccountService va = bankVirtualAccountService(verifier, mapper);
 
         Map<String, OperationHandler> handlers = new LinkedHashMap<>();
@@ -258,14 +242,6 @@ public class BankProductConfig {
     }
 
     private static OperationHandler.Result result(AccessTokenService.Result r) {
-        return new OperationHandler.Result(r.status(), r.body());
-    }
-
-    private static OperationHandler.Result result(AccountService.Result r) {
-        return new OperationHandler.Result(r.status(), r.body());
-    }
-
-    private static OperationHandler.Result result(TransactionHistoryService.Result r) {
         return new OperationHandler.Result(r.status(), r.body());
     }
 

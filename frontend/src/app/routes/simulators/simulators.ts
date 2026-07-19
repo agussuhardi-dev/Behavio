@@ -16,6 +16,7 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 
 import { AccountView, BankApi, SCENARIOS, VirtualAccountView } from '../../core/api/bank-api';
 import { EndpointConfig, PartnerView, Scenario, Simulator } from '../../core/api/product-api';
+import { PublicHost } from '../../core/api/public-host';
 import { SimulatorFormDialog, SimulatorFormResult } from './simulator-form-dialog';
 import { EndpointUrlPanel } from '../../shared/components/endpoint-url-panel/endpoint-url-panel';
 import { WebhookPanel } from '../../shared/components/webhook-panel/webhook-panel';
@@ -103,7 +104,7 @@ export class Simulators implements OnInit, OnDestroy {
       method: cfg.method,
       desc: `Custom endpoint — ${cfg.method} ${cfg.path}`,
       operation: cfg.operation,
-      curl: `curl -X ${cfg.method} http://localhost:${this.port()}${cfg.path}`,
+      curl: `curl -X ${cfg.method} http://${this.host()}:${this.port()}${cfg.path}`,
       curlKey: `cust-${cfg.operation}`,
       scenarioList: [{ name: 'Normal', desc: 'Response HTTP 200 OK default.', icon: 'check_circle', tone: 'ok' as const }],
     }));
@@ -140,6 +141,11 @@ export class Simulators implements OnInit, OnDestroy {
   readonly newAccHolder = signal('');
   readonly newAccBalance = signal('0');
   readonly balanceEdits = signal<Record<string, string>>({});
+
+  private readonly publicHost = inject(PublicHost);
+
+  /** Host untuk contoh curl — DEPLOY_HOST dari backend, jatuh ke host browser. */
+  private host(): string { return this.publicHost.host(); }
 
   private port(): number | string { return this.selectedSim?.port ?? '<port>'; }
 
@@ -209,38 +215,38 @@ export class Simulators implements OnInit, OnDestroy {
   }
 
   curlToken(): string {
-    return `curl -X POST http://localhost:${this.port()}/v1.0/access-token/b2b \\
+    return `curl -X POST http://${this.host()}:${this.port()}/v1.0/access-token/b2b \\
   -H "X-CLIENT-KEY: PARTNER001" -H "X-TIMESTAMP: 2026-01-01T00:00:00+07:00" \\
   -d '{"grantType":"client_credentials"}'`;
   }
 
   curlBalance(): string {
-    return `curl -X POST http://localhost:${this.port()}/v1.0/balance-inquiry \\
+    return `curl -X POST http://${this.host()}:${this.port()}/v1.0/balance-inquiry \\
   -H "X-PARTNER-ID: PARTNER001" -H "CHANNEL-ID: 95221" \\
   -d '{"accountNo":"1234567890","partnerReferenceNo":"REF-BAL-001"}'`;
   }
 
   curlAccountInquiry(): string {
-    return `curl -X POST http://localhost:${this.port()}/v1.0/account-inquiry-internal \\
+    return `curl -X POST http://${this.host()}:${this.port()}/v1.0/account-inquiry-internal \\
   -H "X-PARTNER-ID: PARTNER001" -H "CHANNEL-ID: 95221" \\
   -d '{"beneficiaryAccountNo":"1234567890","partnerReferenceNo":"REF-INQ-001"}'`;
   }
 
   curlTxHistory(): string {
-    return `curl -X POST http://localhost:${this.port()}/v1.0/transaction-history-list \\
+    return `curl -X POST http://${this.host()}:${this.port()}/v1.0/transaction-history-list \\
   -H "X-PARTNER-ID: PARTNER001" -H "CHANNEL-ID: 95221" \\
   -d '{"partnerReferenceNo":"REF-HIST-001","pageSize":5,"pageNumber":0}'`;
   }
 
   curlTransfer(): string {
-    return `curl -X POST http://localhost:${this.port()}/v1.0/transfer-intrabank \\
+    return `curl -X POST http://${this.host()}:${this.port()}/v1.0/transfer-intrabank \\
   -H "X-PARTNER-ID: PARTNER001" -H "X-EXTERNAL-ID: TRX-001" \\
   -d '{"partnerReferenceNo":"PREF-001","amount":{"value":"50000.00","currency":"IDR"},
        "sourceAccountNo":"1234567890","beneficiaryAccountNo":"9876543210"}'`;
   }
 
   curlInterbank(): string {
-    return `curl -X POST http://localhost:${this.port()}/v1.0/transfer-interbank \\
+    return `curl -X POST http://${this.host()}:${this.port()}/v1.0/transfer-interbank \\
   -H "X-PARTNER-ID: PARTNER001" -H "X-EXTERNAL-ID: IB-001" \\
   -d '{"partnerReferenceNo":"IB-REF-001","amount":{"value":"50000.00","currency":"IDR"},
        "sourceAccountNo":"1234567890","beneficiaryAccountNo":"888801000157508",
@@ -250,27 +256,27 @@ export class Simulators implements OnInit, OnDestroy {
   curlVaCreate(): string {
     // Tanpa X-CALLBACK-URL (design.md §9.1): URL notifikasi didaftarkan partner di panel
     // Webhook, bukan dititipkan per-request — header itu tak ada di spec SNAP mana pun.
-    return `curl -X POST http://localhost:${this.port()}/v1.0/transfer-va/create-va \\
+    return `curl -X POST http://${this.host()}:${this.port()}/v1.0/transfer-va/create-va \\
   -H "X-PARTNER-ID: PARTNER001" \\
   -d '{"partnerServiceId":"12345","customerNo":"001","virtualAccountNo":"12345001",
        "virtualAccountName":"Budi","totalAmount":{"value":"150000.00","currency":"IDR"},"trxId":"INV-001"}'`;
   }
 
   curlVaStatus(): string {
-    return `curl -X POST http://localhost:${this.port()}/v1.0/transfer-va/status \\
+    return `curl -X POST http://${this.host()}:${this.port()}/v1.0/transfer-va/status \\
   -H "X-PARTNER-ID: PARTNER001" \\
   -d '{"partnerServiceId":"12345","customerNo":"001","virtualAccountNo":"12345001","inquiryRequestId":"INQ-001"}'`;
   }
 
   curlVaDelete(): string {
-    return `curl -X DELETE http://localhost:${this.port()}/v1.0/transfer-va/delete-va \\
+    return `curl -X DELETE http://${this.host()}:${this.port()}/v1.0/transfer-va/delete-va \\
   -H "X-PARTNER-ID: PARTNER001" \\
   -d '{"partnerServiceId":"12345","customerNo":"001","virtualAccountNo":"12345001","trxId":"INV-001"}'`;
   }
 
   // ---- lifecycle ----
 
-  ngOnInit() { this.reload(); }
+  ngOnInit() { this.publicHost.load(); this.reload(); }
 
   ngOnDestroy() { this.disconnectLive(); }
 

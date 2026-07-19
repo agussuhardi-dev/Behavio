@@ -1,0 +1,29 @@
+server:
+  port: ${SERVER_PORT:8080}   # Admin API + dashboard. API simulasi memakai port per-simulator.
+  # Hormati X-Forwarded-* di belakang reverse proxy (dipakai PublicHost saat DEPLOY_HOST kosong).
+  forward-headers-strategy: framework
+
+behavio:
+  # Host publik untuk contoh curl & servers[].url export OpenAPI. Kosong = turunkan dari request.
+  public-host: ${DEPLOY_HOST:}
+
+spring:
+  application:
+    name: behavio
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/behavio}
+    username: ${DB_USERNAME:behavio}
+    password: ${DB_PASSWORD:behavio}
+  jpa:
+    hibernate:
+      ddl-auto: none        # skema dikelola Liquibase, bukan Hibernate
+    open-in-view: false
+  liquibase:
+    # Master main-app: platform + bank + qris (tiap changelog di jar module-nya).
+    change-log: classpath:db/changelog/db.changelog-main.yaml
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

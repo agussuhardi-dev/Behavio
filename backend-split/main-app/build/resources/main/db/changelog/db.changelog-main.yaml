@@ -1,0 +1,19 @@
+databaseChangeLog:
+  # Master changelog main-app: merakit schema semua module. platform dulu (port_registry
+  # milik main-app), lalu bank (module simulator) & qris (module qris) — file changelog-nya
+  # ikut di jar module masing-masing, tersedia di classpath karena main-app depend keduanya.
+  # Path & isi changeset IDENTIK dengan backend/ lama → checksum cocok, tak re-run.
+  - include:
+      file: db/changelog/platform/001-platform.sql
+  - include:
+      file: db/changelog/bank/001-bank.sql
+  - include:
+      file: db/changelog/qris/001-qris.sql
+  - include:
+      file: db/changelog/bank/002-drop-unused.sql
+  - include:
+      file: db/changelog/qris/002-drop-unused.sql
+  - include:
+      file: db/changelog/bank/003-webhook-subscriptions.sql
+  - include:
+      file: db/changelog/qris/003-webhook-subscriptions.sql

@@ -16,6 +16,7 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 
 import { QRIS_SCENARIOS, QrisApi, QrisView } from '../../core/api/qris-api';
 import { PartnerView, Scenario, Simulator } from '../../core/api/product-api';
+import { PublicHost } from '../../core/api/public-host';
 import { SimulatorFormDialog, SimulatorFormResult } from '../simulators/simulator-form-dialog';
 import { EndpointUrlPanel } from '../../shared/components/endpoint-url-panel/endpoint-url-panel';
 import { WebhookPanel } from '../../shared/components/webhook-panel/webhook-panel';
@@ -107,6 +108,11 @@ export class Qris implements OnInit, OnDestroy {
   readonly editorSaved = signal(false);
   readonly editorLoading = signal(false);
 
+  private readonly publicHost = inject(PublicHost);
+
+  /** Host untuk contoh curl — DEPLOY_HOST dari backend, jatuh ke host browser. */
+  private host(): string { return this.publicHost.host(); }
+
   private port(): number | string { return this.selectedSim?.port ?? '<port>'; }
 
   get selectedSim(): Simulator | undefined { return this.sims().find(s => s.id === this.selectedSimId()); }
@@ -164,7 +170,7 @@ export class Qris implements OnInit, OnDestroy {
   }
 
   curlToken(): string {
-    return `curl -X POST http://localhost:${this.port()}/v1.0/access-token/b2b \\
+    return `curl -X POST http://${this.host()}:${this.port()}/v1.0/access-token/b2b \\
   -H "X-CLIENT-KEY: PARTNER001" -H "Content-Type: application/json" \\
   -d '{"grantType":"client_credentials"}'`;
   }
@@ -172,50 +178,50 @@ export class Qris implements OnInit, OnDestroy {
   curlDynamic(): string {
     // Tanpa X-CALLBACK-URL (design.md §9.1): URL notifikasi didaftarkan partner di panel
     // Webhook, bukan dititipkan per-request.
-    return `curl -X POST http://localhost:${this.port()}/v1.0/qr/qr-mpm-generate \\
+    return `curl -X POST http://${this.host()}:${this.port()}/v1.0/qr/qr-mpm-generate \\
   -H "X-PARTNER-ID: PARTNER001" \\
   -d '{"partnerReferenceNo":"PR-001","merchantId":"MERCHANT01","amount":{"value":"25000.00","currency":"IDR"}}'`;
   }
 
   curlQuery(): string {
-    return `curl -X POST http://localhost:${this.port()}/v1.0/qr/qr-mpm-query \\
+    return `curl -X POST http://${this.host()}:${this.port()}/v1.0/qr/qr-mpm-query \\
   -H "X-PARTNER-ID: PARTNER001" \\
   -d '{"originalReferenceNo":"<referenceNo>","serviceCode":"47"}'`;
   }
 
   curlRefund(): string {
-    return `curl -X POST http://localhost:${this.port()}/v1.0/qr/qr-mpm-refund \\
+    return `curl -X POST http://${this.host()}:${this.port()}/v1.0/qr/qr-mpm-refund \\
   -H "X-PARTNER-ID: PARTNER001" \\
   -d '{"originalReferenceNo":"<refNo>","partnerRefundNo":"RF-001","refundAmount":{"value":"25000.00","currency":"IDR"}}'`;
   }
 
   curlCancel(): string {
-    return `curl -X POST http://localhost:${this.port()}/v1.0/qr/qr-mpm-cancel \\
+    return `curl -X POST http://${this.host()}:${this.port()}/v1.0/qr/qr-mpm-cancel \\
   -H "X-PARTNER-ID: PARTNER001" \\
   -d '{"originalReferenceNo":"<refNo>","merchantId":"MERCHANT01","reason":"cancel reason"}'`;
   }
 
   curlDecode(): string {
-    return `curl -X POST http://localhost:${this.port()}/v1.0/qr/qr-mpm-decode \\
+    return `curl -X POST http://${this.host()}:${this.port()}/v1.0/qr/qr-mpm-decode \\
   -H "X-PARTNER-ID: PARTNER001" \\
   -d '{"partnerReferenceNo":"PR-003","qrContent":"0002010102...","merchantId":"MERCHANT01","scanTime":"2023-01-15T10:00:00+07:00"}'`;
   }
 
   curlPayment(): string {
-    return `curl -X POST http://localhost:${this.port()}/v1.0/qr/qr-mpm-payment \\
+    return `curl -X POST http://${this.host()}:${this.port()}/v1.0/qr/qr-mpm-payment \\
   -H "X-PARTNER-ID: PARTNER001" \\
   -d '{"partnerReferenceNo":"PAY-001","merchantId":"MERCHANT01","amount":{"value":"25000.00","currency":"IDR"}}'`;
   }
 
   curlOtt(): string {
-    return `curl -X POST http://localhost:${this.port()}/v1.0/qr/apply-ott \\
+    return `curl -X POST http://${this.host()}:${this.port()}/v1.0/qr/apply-ott \\
   -H "X-PARTNER-ID: PARTNER001" \\
   -d '{"userResources":["OTT"]}'`;
   }
 
   // ---- lifecycle ----
 
-  ngOnInit() { this.reload(); }
+  ngOnInit() { this.publicHost.load(); this.reload(); }
 
   ngOnDestroy() { this.disconnectLive(); }
 

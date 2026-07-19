@@ -365,6 +365,39 @@ per port, semua mengarah ke satu mesin eksekusi). Menangani:
 - Start/stop; setelah restart aplikasi → semua simulator mulai **STOPPED**
   (dinyalakan manual).
 
+### 6.4 Host publik — contoh curl & `servers[].url` (keputusan 2026-07-15)
+
+Contoh `curl` di dashboard dan `servers[].url` di export OpenAPI harus menyebut alamat
+yang **bisa dijangkau klien**, bukan alamat mesin yang menjalankan Behavio. Resolusinya
+di satu tempat: `PublicHost` (`:adapter-web`), dipakai `OpenApiAdminController` dan
+diekspos ke dashboard lewat `GET /api/admin/v1/config` → `{"publicHost": "..."}`.
+
+Urutan (pertama yang menang):
+
+| # | Sumber | Kapan menang |
+|---|---|---|
+| 1 | `DEPLOY_HOST` (→ properti `behavio.public-host`) | Selalu, bila di-set. Hanya operator yang tahu alamat publik saat port simulator dipetakan lewat container/NAT/proxy. |
+| 2 | Host request (`X-Forwarded-Host` bila ada) | Default. Butuh `server.forward-headers-strategy: framework`. |
+| 3 | `localhost` | Hanya bila tak ada request terikat (job/test). |
+
+> **Kenapa dicatat.** `localhost` dulu **string harfiah** di 19 template curl frontend dan
+> di `OpenApiExporter`, jadi contoh curl cuma berguna di mesin yang menjalankan Behavio —
+> padahal gunanya justru ditempel ke Postman/klien di mesin lain. Menambahkan
+> `forward-headers-strategy` saja **tidak menyembuhkan apa pun**: setelan itu hanya
+> berlaku saat Spring merekonstruksi URL dari request, sementara tak ada yang bertanya.
+> Setelan itu baru berguna setelah §6.4 ini ada.
+>
+> **Batas yang tak bisa ditembus:** hanya **host** yang diperbaiki, bukan **port**. Contoh
+> curl menunjuk port simulator (mis. 9101) yang dilayani `HttpServer` JDK sendiri dan tak
+> pernah lewat Spring. Kalau reverse proxy hanya meneruskan `:8080`, host benar pun tak
+> membuat port itu terjangkau — petakan port simulator di proxy, atau set `DEPLOY_HOST`
+> ke alamat yang memang menjangkaunya.
+
+Frontend (`core/api/public-host.ts`) memakai `publicHost` dari backend, dan jatuh ke
+`window.location.hostname` bila `/config` gagal — tetap jauh lebih berguna daripada
+`localhost`. Tes `OpenApiRoundTripTest` sengaja memakai host **bukan** localhost, supaya
+hardcode yang hidup lagi langsung ketahuan.
+
 ---
 
 ## 7. Dashboard (Angular)
@@ -463,10 +496,17 @@ kasus), node ekspresi menambal kasus sulit. **Tanpa** transpile dua arah.
 
 ### 8.2.1 Var template: dari request, dari state, dan koleksi (`@each`)
 
-Template response diisi `{{var}}`. Var datang dari tiga sumber, dan **membedakannya itu
-wajib** — mencampurnya sudah pernah melahirkan dua bug diam:
+> **Batas produk (bank vs QRIS).** Mekanisme `@each` di bawah HIDUP di **core-engine**,
+> jadi milik BERSAMA — bank & QRIS sama-sama bisa memakainya. Tapi *sumber data* yang
+> mengisinya spesifik produk: pengikat `enrichAccountVars`/`enrichCollections`, var
+> `balanceValue`/`transactions`, dan blueprint service 11/12 semuanya **khusus BANK**
+> (`product-bank`; QRIS tak punya konsep rekening/saldo). QRIS mengikat koleksinya sendiri
+> di `QrisService`. Jadi: `@each` = kontrak bersama; daftar koleksi = per produk.
 
-| Sumber | Contoh var | Diikat oleh |
+Template response diisi `{{var}}`. Var datang dari tiga sumber, dan **membedakannya itu
+wajib** — mencampurnya sudah pernah melahirkan dua bug diam (contoh di bawah = jalur BANK):
+
+| Sumber | Contoh var | Diikat oleh (bank) |
 |---|---|---|
 | Field request | `amountValue`, `partnerReferenceNo` | `renderResponse` dari `request.fields()` |
 | Rekening di state | `holderName`, **`balanceValue`**, `balanceCurrency` | `enrichAccountVars` |
@@ -505,14 +545,17 @@ kunci `"@each"` adalah *template baris*, diulang sekali per item koleksi:
 Koleksi yang tersedia saat ini: **`transactions`** (produk bank; rentang dari
 `fromDateTime`/`toDateTime`, default 30 hari terakhir, paging `pageSize`/`pageNumber`).
 
-> **Kode mati yang harus dihapus:** `AccountService` (`internalInquiry`, `balanceInquiry`)
-> dan `TransactionHistoryService` (`historyList`) — **nol pemanggil**, tapi masih
-> dibuatkan bean di `BankProductConfig`. Semua operasi bank dirutekan ke engine
-> (`BankProductConfig` baris ~201-204); service ini ditinggal yatim saat migrasi itu.
-> Bahayanya nyata dan sudah terbukti: keduanya berisi logika yang **terlihat benar**
-> (`acc.balance()`, `state.findTransactions()`), sehingga pembaca menyangka endpoint sudah
-> membaca state — padahal jalur hidupnya tidak. Ini persis pola yang §9.1 larang:
-> *"fitur yang bisa diatur tapi tak berefek lebih buruk daripada tak ada fitur."*
+> **Kode mati — DIHAPUS TOTAL 2026-07-15.** `AccountService` & `TransactionHistoryService`
+> (di `product-bank/.../web/`) dulu **nol pemanggil** tapi masih dibuatkan bean di
+> `BankProductConfig` — semua operasi bank sebenarnya dirutekan ke engine. Keduanya berisi
+> logika yang **terlihat benar** (`acc.balance()`, `state.findTransactions()`), sehingga
+> pembaca menyangka endpoint membaca state lewat service itu — padahal jalur hidupnya
+> tidak; justru ini yang sempat menyesatkan investigasi bug saldo di atas. Dihapus: kedua
+> file + bean `bankAccountService`/`bankTransactionHistoryService` + var lokal tak terpakai
+> + overload `result(...Result)` di `BankProductConfig`. Diverifikasi HTTP setelah hapus:
+> balance-inquiry `2001100` (saldo utuh), account-inquiry `2001500`, history `2001200` —
+> semua tetap jalan lewat engine. Pola yang dilanggarnya (§9.1): *"fitur yang bisa diatur
+> tapi tak berefek lebih buruk daripada tak ada fitur."*
 
 ### 8.3 Evaluator ekspresi
 - **Mulai:** Apache **JEXL** (ringan, mudah dibatasi, aman-dari-kecelakaan).

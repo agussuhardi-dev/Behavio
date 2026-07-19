@@ -1,6 +1,14 @@
 server:
   port: ${SERVER_PORT:8080}   # Admin API + dashboard. API simulasi memakai port per-simulator.
+  # Hormati X-Forwarded-* di belakang reverse proxy. Dipakai PublicHost saat DEPLOY_HOST
+  # tak di-set, agar contoh curl memakai host yang diketik user, bukan loopback server.
+  forward-headers-strategy: framework
 
+behavio:
+  # Host publik untuk contoh curl & servers[].url di export OpenAPI. Kosong = turunkan
+  # dari request (lihat PublicHost). Set bila port simulator dipetakan lewat alamat lain
+  # (container/NAT/proxy) — hanya operator yang tahu alamat itu.
+  public-host: ${DEPLOY_HOST:}
 spring:
   application:
     name: behavio

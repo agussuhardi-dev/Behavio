@@ -67,14 +67,15 @@ public class OpenApiExporter {
     private final ObjectMapper mapper = new ObjectMapper();
     private final ResponseRenderer renderer = new ResponseRenderer();
 
-    public Map<String, Object> export(ProductRuntime runtime, UUID simulatorId) {
+    /** @param host host publik untuk {@code servers[].url} — lihat {@code PublicHost}. */
+    public Map<String, Object> export(ProductRuntime runtime, UUID simulatorId, String host) {
         SimulatorAdmin.SimulatorView sim = runtime.admin().find(simulatorId)
                 .orElseThrow(() -> new IllegalArgumentException("Simulator tidak ditemukan: " + simulatorId));
 
         Map<String, Object> doc = new LinkedHashMap<>();
         doc.put("openapi", OPENAPI_VERSION);
         doc.put("info", info(sim, runtime.catalog()));
-        doc.put("servers", servers(sim));
+        doc.put("servers", servers(sim, host));
         doc.put("paths", paths(runtime, simulatorId));
         // Tanpa components.securitySchemes: Authorization/X-CLIENT-KEY sudah didaftarkan
         // eksplisit sebagai header parameter oleh katalog (HeaderSpec). Mendeklarasikannya
@@ -95,9 +96,14 @@ public class OpenApiExporter {
         return info;
     }
 
-    private List<Map<String, Object>> servers(SimulatorAdmin.SimulatorView sim) {
+    /**
+     * {@code host} datang dari {@code PublicHost} (DEPLOY_HOST → host request →
+     * localhost). Dulu dihardcode "localhost", sehingga spec yang diimpor ke Postman di
+     * mesin lain menunjuk ke mesin itu sendiri dan selalu gagal konek.
+     */
+    private List<Map<String, Object>> servers(SimulatorAdmin.SimulatorView sim, String host) {
         Map<String, Object> server = new LinkedHashMap<>();
-        server.put("url", "http://localhost:" + sim.port());
+        server.put("url", "http://" + (host == null || host.isBlank() ? "localhost" : host) + ":" + sim.port());
         server.put("description", "Simulator '" + sim.name() + "' (status saat diekspor: " + sim.status() + ")");
         return List.of(server);
     }
