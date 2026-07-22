@@ -39,8 +39,15 @@ public final class VirtualAccountStatusBlueprint {
         data.put("customerNo", "{{customerNo}}");
         data.put("virtualAccountNo", "{{virtualAccountNo}}");
         data.put("virtualAccountName", "{{virtualAccountName}}");
+        data.put("virtualAccountEmail", "{{virtualAccountEmail}}");
+        data.put("virtualAccountPhone", "{{virtualAccountPhone}}");
+        // ASPI service 26 menandai inquiryRequestId Mandatory ("From Inquiry Request").
+        data.put("inquiryRequestId", "{{inquiryRequestId}}");
         data.put("totalAmount", Map.of("value", "{{amountValue}}", "currency", "{{currency}}"));
+        data.put("virtualAccountTrxType", "{{virtualAccountTrxType}}");
+        data.put("expiredDate", "{{expiredDate}}");
         data.put("virtualAccountStatus", "{{vaStatus}}");
+        data.put("trxId", "{{trxId}}");
 
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("responseCode", "{{responseCode}}");
@@ -72,8 +79,15 @@ public final class VirtualAccountStatusBlueprint {
         data.put("customerNo", "{{customerNo}}");
         data.put("virtualAccountNo", "{{virtualAccountNo}}");
         data.put("virtualAccountName", "{{virtualAccountName}}");
+        data.put("virtualAccountEmail", "{{virtualAccountEmail}}");
+        data.put("virtualAccountPhone", "{{virtualAccountPhone}}");
+        // ASPI service 26 menandai inquiryRequestId Mandatory ("From Inquiry Request").
+        data.put("inquiryRequestId", "{{inquiryRequestId}}");
         data.put("totalAmount", Map.of("value", "{{amountValue}}", "currency", "{{currency}}"));
-        data.put("virtualAccountStatus", "ACTIVE");
+        data.put("virtualAccountTrxType", "{{virtualAccountTrxType}}");
+        data.put("expiredDate", "{{expiredDate}}");
+        data.put("virtualAccountStatus", "{{vaStatus}}");
+        data.put("trxId", "{{trxId}}");
 
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("responseCode", "{{responseCode}}");

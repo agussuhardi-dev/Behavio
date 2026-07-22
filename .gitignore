@@ -1,6 +1,10 @@
-# backend
-backend/.gradle/
-backend/**/build/
+# Gradle — pola GENERIK, berlaku untuk semua modul: backend/, backend-split/, dan yang
+# menyusul. Sebelumnya polanya dipatok ke "backend/" saja, sehingga saat backend-split/
+# lahir seluruh artefak build-nya ikut ter-commit (357 file / 67 MB).
+**/.gradle/
+**/build/
+# Kecuali wrapper: gradle-wrapper.jar WAJIB ter-track supaya ./gradlew jalan di mesin lain.
+!**/gradle/wrapper/gradle-wrapper.jar
 
 # frontend
 frontend/node_modules/

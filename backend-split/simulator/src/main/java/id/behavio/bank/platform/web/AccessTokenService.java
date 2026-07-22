@@ -7,6 +7,7 @@ import id.behavio.bank.platform.core.port.ConfigRepository;
 import id.behavio.bank.platform.core.port.SignatureVerifier;
 
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -21,6 +22,9 @@ import java.util.UUID;
  */
 public class AccessTokenService {
 
+    /** Masa berlaku token (detik). Satu sumber untuk penyimpanan, body, dan var template. */
+    private static final long TOKEN_TTL_SECONDS = 900;
+
     private final ConfigRepository config;
     private final SignatureVerifier verifier;
     private final AccessTokenStore tokenStore;
@@ -31,7 +35,18 @@ public class AccessTokenService {
         this.tokenStore = tokenStore;
     }
 
-    public record Result(int status, String body) {}
+    /**
+     * @param vars variabel untuk merender template scenario aktif — inilah yang membuat
+     *             "Edit Response" berlaku untuk access-token. {@code null} = hasil final
+     *             yang TIDAK boleh dirender ulang (error auth: client tak dikenal,
+     *             signature invalid) — template sukses tak boleh menimpa pesan error.
+     */
+    public record Result(int status, String body, Map<String, Object> vars) {
+        /** Hasil tanpa var — dipakai jalur error yang body-nya final. */
+        public Result(int status, String body) {
+            this(status, body, null);
+        }
+    }
 
     public Result issue(UUID simulatorId, Map<String, String> headers, String body) {
         String clientKey = header(headers, "X-CLIENT-KEY");
@@ -56,11 +71,20 @@ public class AccessTokenService {
 
         String token = "BHV-" + UUID.randomUUID().toString().replace("-", "");
         Instant now = Instant.now();
-        tokenStore.save(simulatorId, partner.id(), token, now, now.plusSeconds(900));
+        tokenStore.save(simulatorId, partner.id(), token, now, now.plusSeconds(TOKEN_TTL_SECONDS));
 
         String json = "{\"responseCode\":\"2007300\",\"responseMessage\":\"Successful\","
-                + "\"accessToken\":\"" + token + "\",\"tokenType\":\"Bearer\",\"expiresIn\":\"900\"}";
-        return new Result(200, json);
+                + "\"accessToken\":\"" + token + "\",\"tokenType\":\"Bearer\","
+                + "\"expiresIn\":\"" + TOKEN_TTL_SECONDS + "\"}";
+
+        // Var untuk template scenario: body di atas tetap jadi fallback, tapi bila ada
+        // scenario aktif dengan template, handler merender dari sini (lihat vaHandler/
+        // renderableHandler di *ProductConfig) sehingga "Edit Response" berlaku.
+        Map<String, Object> vars = new LinkedHashMap<>();
+        vars.put("accessToken", token);
+        vars.put("tokenType", "Bearer");
+        vars.put("expiresIn", String.valueOf(TOKEN_TTL_SECONDS));
+        return new Result(200, json, vars);
     }
 
     private Result error(int status, String code, String message) {

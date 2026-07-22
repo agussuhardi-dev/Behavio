@@ -1634,9 +1634,15 @@ Response: `responseCode`, `responseMessage`, `referenceNo`, `partnerReferenceNo`
 |---|---|---|---|---|
 | Create VA | POST | `/v1.0/transfer-va/create-va` | 27 | `2002700` |
 | Inquiry/Status VA | POST | `/v1.0/transfer-va/status` | 26 | `2002600` |
-| Update VA | PUT | `/v1.0/transfer-va/update-va` | — | — |
-| Delete VA | DELETE | `/v1.0/transfer-va/delete-va` | 25 | `2002500` |
+| Update VA | PUT | `/v1.0/transfer-va/update-va` | 28 | `2002800` (belum dibangun) |
+| **Delete VA** | DELETE | `/v1.0/transfer-va/delete-va` | **31** | **`2003100`** |
 | **Payment Notification** (bank→merchant callback) | POST | `{merchantUrl}/v1.0/transfer-va/payment` | 25 | merchant balas `2002500` |
+
+> **Koreksi 2026-07-19.** Baris Delete VA sebelumnya tertulis service **25 / `2002500`** —
+> itu kode **VA Payment**, service yang sama sekali berbeda. Grup Virtual Account ASPI
+> memberi nomor: 24 Inquiry · **25 Payment** · 26 Inquiry Status · 27 Create · 28 Update ·
+> 29 Update Status · 30 Inquiry VA · **31 Delete VA** · 32–35 lainnya. Kekeliruan doc ini
+> ikut turun ke kode (`VirtualAccountService.delete()` & blueprint) dan sudah diperbaiki.
 
 ### A2.2 Create VA — request
 ```jsonc
@@ -1680,6 +1686,81 @@ Merchant membalas `responseCode: 2002500` + echo `virtualAccountData`.
 ### A2.4 latestTransactionStatus (VA)
 `00` success · `01` paying · `03` pending · `04` refunded · `05` canceled ·
 `06` failed · `07` expired/not found.
+
+### A2.5 Status kesesuaian response default BANK vs ASPI (audit 2026-07-19)
+
+Audit menyeluruh module bank terhadap portal ASPI — **path & HTTP method 10/10 cocok**,
+diverifikasi dari HTML mentah portal (bukan ringkasan), lalu diuji lewat HTTP nyata:
+
+| Service | Endpoint | rc sukses | Status |
+|---|---|---|---|
+| 73 | `access-token/b2b` | `2007300` | ✅ `accessToken`/`tokenType`/`expiresIn` |
+| 11 | `balance-inquiry` | `2001100` | ✅ `accountInfos[]` lengkap 9 field |
+| 12 | `transaction-history-list` | `2001200` | ✅ `detailData[]` + `sourceOfFunds[]` |
+| 15 | `account-inquiry-internal` | `2001500` | ✅ |
+| 16 | `account-inquiry-external` | `2001600` | ✅ `beneficiaryBankCode`/`beneficiaryBankName` |
+| 17 | `transfer-intrabank` | `2001700` | ✅ semua field Mandatory ada |
+| 18 | `transfer-interbank` | `2001800` | ✅ `sourceAccountNo`/`traceNo` |
+| 27 | `transfer-va/create-va` | `2002700` | ✅ `virtualAccountData` + 4 field M |
+| 26 | `transfer-va/status` | `2002600` | ✅ **diperbaiki**: `inquiryRequestId` (M) ditambahkan |
+| 31 | `transfer-va/delete-va` | `2003100` | ✅ **diperbaiki**: rc (dari `2002500`) + `virtualAccountData` (M) |
+
+**Tiga cacat yang ditemukan & ditutup:** (1) rc Delete VA salah service, (2) Delete VA tak
+mengirim `virtualAccountData` yang Mandatory, (3) Inquiry Status tak mengirim
+`inquiryRequestId` yang Mandatory. Semua diverifikasi HTTP; sisir null bersih
+(`inquiryRequestId` → `""` bukan `null` pada request minimal).
+
+> **Jebakan yang HAMPIR menyesatkan.** *Sample JSON* ASPI service 17 menulis
+> `sourceAccount`, sedangkan *tabel field*-nya menulis `sourceAccountNo` — keduanya di
+> halaman yang sama. **Tabel field yang normatif**; implementasi kita (`sourceAccountNo`)
+> sudah benar. Aturan yang berlaku sejak audit QRIS berlaku lagi di sini: **verifikasi ke
+> tabel field, jangan ke sample.**
+
+### A2.6 Modifiability response VA (`vaHandler`, 2026-07-19)
+
+Endpoint VA (26/27/31) dulu membangun body **hardcoded di `VirtualAccountService`**,
+sehingga definisi custom user tersimpan rapi (`status: saved`) tapi **diam-diam diabaikan**
+saat request datang — persis pola yang §9.1 larang: *bisa diatur tapi tak berefek*.
+
+**Sekarang:** `BankProductConfig.vaHandler` menjalankan logika state di service, lalu
+**merender body dari template scenario aktif**. Service mengembalikan `Result.vars` (data
+VA nyata); template yang menentukan bentuk. Jadi:
+
+| Aspek | Perilaku |
+|---|---|
+| Default | Sama seperti sebelumnya, bentuk ASPI (field opsional = `""`, konvensi SNAP) |
+| "Edit Response" | **Berlaku penuh** — field bisa ditambah/dibuang/diganti nama, terisi data nyata |
+| Error bisnis (VA tak ada, field wajib kosong) | **TIDAK** dirender ulang — template sukses tak boleh menimpa pesan error |
+| Bank Down / Timeout | Tetap berlaku (503 / delay 5s) |
+
+Terverifikasi HTTP: override memunculkan field custom berisi data nyata; error tetap
+`4040012`/`4000002`; Bank Down `503`; Timeout `5.01s`; sisir null bersih.
+
+**`access-token` menyusul (2026-07-19).** Mekanismenya digeneralisasi jadi
+`renderableHandler` + record `Renderable` — satu jalur untuk VA **dan** access-token,
+bukan dua salinan. `AccessTokenService.Result` kini membawa `vars`
+(`accessToken`/`tokenType`/`expiresIn`), dan TTL token dijadikan satu konstanta
+`TOKEN_TTL_SECONDS` (sebelumnya angka `900` tersebar di 3 tempat). Terverifikasi: default
+`2007300` tetap sama; override memunculkan field custom berisi token nyata; error auth
+`4017300` tidak ditimpa.
+
+**Status modifiability per endpoint bank:**
+
+| Endpoint | Override "Edit Response" |
+|---|---|
+| transfer, balance, history, account-inquiry (jalur engine) | ✅ sejak awal |
+| VA create/status/delete | ✅ sejak `vaHandler`/`renderableHandler` |
+| access-token | ✅ |
+
+> **Lingkup yang dijaga (keputusan 2026-07-19).** Sejak `backend-split/` ada, **seluruh
+> pekerjaan dilakukan di sana** — `backend/` lama TIDAK lagi disentuh (ia akan dipensiunkan
+> saat switchover, jadi menambalnya = kerja dua kali untuk kode yang akan dibuang).
+> Perbaikan VA + access-token di atas **hanya** ada di `backend-split/simulator`.
+>
+> Module `qris` **sengaja belum dikerjakan** atas permintaan. Gap yang sama masih ada di
+> sana: `QrisProductConfig` memanggil `AccessTokenService` langsung tanpa render template,
+> jadi "Edit Response" belum berlaku untuk access-token QRIS. Endpoint QRIS lain sudah
+> merender template di dalam `QrisService`. Kerjakan saat qris dibuka.
 
 ---
 

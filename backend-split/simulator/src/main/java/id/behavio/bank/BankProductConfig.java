@@ -28,6 +28,8 @@ import id.behavio.bank.platform.core.product.FaultSpecs;
 import id.behavio.bank.platform.core.product.OperationHandler;
 import id.behavio.bank.platform.core.product.ProductCatalog;
 import id.behavio.bank.platform.core.rule.FaultSpec;
+import id.behavio.bank.platform.core.engine.ResponseRenderer;
+import id.behavio.bank.platform.core.rule.ResponseSpec;
 import id.behavio.bank.platform.core.rule.Scenario;
 import id.behavio.bank.platform.persistence.PortRegistry;
 import id.behavio.bank.platform.persistence.SchemaAccessTokenStore;
@@ -52,7 +54,9 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.HashMap;
 import java.util.Map;
+import java.util.function.Function;
 
 /**
  * Perakitan produk BANK: mesin generik ({@code :adapter-persistence}, {@code :adapter-web})
@@ -178,20 +182,28 @@ public class BankProductConfig {
         VirtualAccountService va = bankVirtualAccountService(verifier, mapper);
 
         Map<String, OperationHandler> handlers = new LinkedHashMap<>();
-        handlers.put("access-token", withScenario(config, r ->
-                result(tokens.issue(r.simulatorId(), r.headers(), r.body()))));
+        handlers.put("access-token", renderableHandler(config, r -> {
+            var t = tokens.issue(r.simulatorId(), r.headers(), r.body());
+            return new Renderable(t.status(), t.body(), t.vars());
+        }));
         handlers.put("transfer", r -> transfer(executor, snapMapper, r));
         handlers.put("transfer-interbank", r -> transfer(executor, snapMapper, r));
         handlers.put("balance-inquiry", r -> transfer(executor, snapMapper, r));
         handlers.put("account-inquiry-internal", r -> transfer(executor, snapMapper, r));
         handlers.put("account-inquiry-external", r -> transfer(executor, snapMapper, r));
         handlers.put("transaction-history-list", r -> transfer(executor, snapMapper, r));
-        handlers.put("va-create", withScenario(config, r ->
-                result(va.create(r.simulatorId(), r.method(), r.path(), r.headers(), r.body()))));
-        handlers.put("va-status", withScenario(config, r ->
-                result(va.inquiry(r.simulatorId(), r.method(), r.path(), r.headers(), r.body()))));
-        handlers.put("va-delete", withScenario(config, r ->
-                result(va.delete(r.simulatorId(), r.method(), r.path(), r.headers(), r.body()))));
+        handlers.put("va-create", renderableHandler(config, r -> {
+            var x = va.create(r.simulatorId(), r.method(), r.path(), r.headers(), r.body());
+            return new Renderable(x.status(), x.body(), x.vars());
+        }));
+        handlers.put("va-status", renderableHandler(config, r -> {
+            var x = va.inquiry(r.simulatorId(), r.method(), r.path(), r.headers(), r.body());
+            return new Renderable(x.status(), x.body(), x.vars());
+        }));
+        handlers.put("va-delete", renderableHandler(config, r -> {
+            var x = va.delete(r.simulatorId(), r.method(), r.path(), r.headers(), r.body());
+            return new Renderable(x.status(), x.body(), x.vars());
+        }));
 
         SimulatorServerManager servers = new SimulatorServerManager(
                 SCHEMA, bankEndpointRegistry(), handlers, eventPublishers(sharedPublishers));
@@ -204,6 +216,61 @@ public class BankProductConfig {
      * Timeout tambah delay 5 detik setelah handler selesai. Scenario Normal dan lainnya
      * (termasuk custom definition) diferuskan ke handler asli.
      */
+    /**
+     * Hasil handler non-engine yang body-nya boleh dirender ulang dari template scenario.
+     * Jembatan seragam untuk {@code VirtualAccountService.Result} & {@code
+     * AccessTokenService.Result} — dua record berbeda dengan bentuk yang sama.
+     *
+     * @param vars {@code null} = hasil final (error), tak boleh dirender ulang.
+     */
+    private record Renderable(int status, String body, Map<String, Object> vars) {}
+
+    /**
+     * Handler endpoint non-engine (VA & access-token): logika tetap di service, tapi
+     * <b>body dirender dari template scenario aktif</b> — inilah yang membuat "Edit
+     * Response" berlaku di sana.
+     *
+     * <p>Sebelum 2026-07-19 body-nya dihardcode di service, sehingga definisi custom yang
+     * disimpan user tersimpan rapi (<i>status: saved</i>) tapi <b>diam-diam diabaikan</b>
+     * saat request datang — persis pola yang §9.1 larang: bisa diatur tapi tak berefek.
+     *
+     * <p>Error bisnis/auth (VA tak ditemukan, field wajib kosong, signature invalid) TIDAK
+     * dirender ulang: template sukses tak boleh menimpa pesan error.
+     */
+    private static OperationHandler renderableHandler(
+            ConfigRepository config,
+            Function<OperationHandler.Request, Renderable> call) {
+        ResponseRenderer renderer = new ResponseRenderer();
+        return r -> {
+            Scenario active = config.findActiveScenario(r.simulatorId(), r.method(), r.path()).orElse(null);
+            if (active != null && "Bank Down".equalsIgnoreCase(active.name())) {
+                return new OperationHandler.Result(503,
+                        "{\"responseCode\":\"5030000\",\"responseMessage\":\"Service Unavailable\"}");
+            }
+            Renderable svc = call.apply(r);
+            OperationHandler.Result out = renderFromScenario(renderer, active, svc);
+            if (active != null && "Timeout".equalsIgnoreCase(active.name())) {
+                return new OperationHandler.Result(out.status(), out.body(), out.headers(),
+                        FaultSpec.delayAfter(5000));
+            }
+            return out;
+        };
+    }
+
+    /** Render body dari template scenario; jatuh ke body service bila tak memungkinkan. */
+    private static OperationHandler.Result renderFromScenario(ResponseRenderer renderer, Scenario active,
+                                                              Renderable svc) {
+        if (svc.vars() == null || active == null || active.fallback() == null
+                || active.fallback().response() == null) {
+            return new OperationHandler.Result(svc.status(), svc.body());
+        }
+        ResponseSpec spec = active.fallback().response();
+        Map<String, Object> vars = new HashMap<>(svc.vars());
+        vars.put("responseCode", spec.responseCode());
+        vars.put("responseMessage", spec.responseMessage());
+        return new OperationHandler.Result(spec.httpStatus(), renderer.render(spec.bodyTemplate(), vars));
+    }
+
     private static OperationHandler withScenario(ConfigRepository config, OperationHandler handler) {
         return r -> {
             Scenario active = config.findActiveScenario(r.simulatorId(), r.method(), r.path()).orElse(null);

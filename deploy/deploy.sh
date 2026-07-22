@@ -17,7 +17,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKSPACE_DIR="$(dirname "$SCRIPT_DIR")"
-BACKEND_DIR="$WORKSPACE_DIR/backend"
+# backend-split: struktur 3 module (simulator=bank, qris, main-app). Menggantikan
+# backend/ lama yang dihapus 2026-07-19 setelah migrasi penuh.
+BACKEND_DIR="$WORKSPACE_DIR/backend-split"
 FRONTEND_DIR="$WORKSPACE_DIR/frontend"
 LOCAL_DEPLOY_DIR="$SCRIPT_DIR"
 ENV_FILE="$WORKSPACE_DIR/.env"
@@ -65,9 +67,10 @@ if [[ "$BUILD_BACKEND" == true ]]; then
   info "=== Build Backend (Spring Boot / Gradle) ==="
   cd "$BACKEND_DIR"
   # Gradle, bukan Maven: repo ini tak punya pom.xml. bootJar menamai artefaknya
-  # `behavio.jar` (backend/app/build.gradle.kts), jadi path-nya pasti — tak perlu glob.
-  ./gradlew :app:bootJar -x test --console=plain -q
-  JAR_FILE="$BACKEND_DIR/app/build/libs/behavio.jar"
+  # `behavio.jar` (main-app/build.gradle.kts), jadi path-nya pasti — tak perlu glob.
+  # Modulnya :main-app (launcher yang merakit simulator+qris), bukan :app seperti dulu.
+  ./gradlew :main-app:bootJar -x test --console=plain -q
+  JAR_FILE="$BACKEND_DIR/main-app/build/libs/behavio.jar"
   [[ -f "$JAR_FILE" ]] || error "JAR tidak ditemukan: $JAR_FILE"
   JAR_SHA=$(sha256sum "$JAR_FILE" | cut -c1-16)
   success "JAR siap: $(du -sh "$JAR_FILE" | cut -f1)  sha256:${JAR_SHA}..."
@@ -125,7 +128,7 @@ docker ps -aq --filter "name=behavio-" | xargs -r docker rm -f 2>/dev/null || tr
 if [[ "\$DO_BACKEND" == true ]]; then
   echo "  → Build backend image on server..."
   docker rmi behavio-backend:latest 2>/dev/null || true
-  # JRE 25, BUKAN 21: toolchain projek Java 25 (backend/build.gradle.kts). JRE 21
+  # JRE 25, BUKAN 21: toolchain projek Java 25 (backend-split/build.gradle.kts). JRE 21
   # akan menolak jar-nya dengan UnsupportedClassVersionError saat start — gagal
   # setelah deploy "berhasil", jenis kegagalan yang paling membingungkan.
   cat > /tmp/behavio-build-backend/Dockerfile <<'DOCKERFILE'

@@ -54,8 +54,14 @@ public final class VirtualAccountCreateBlueprint {
         data.put("customerNo", "{{customerNo}}");
         data.put("virtualAccountNo", "{{virtualAccountNo}}");
         data.put("virtualAccountName", "{{virtualAccountName}}");
+        // Field opsional ASPI ikut dirender (kosong = ""), supaya bentuk template = bentuk
+        // response dan semuanya terlihat/bisa diedit lewat "Edit Response".
+        data.put("virtualAccountEmail", "{{virtualAccountEmail}}");
+        data.put("virtualAccountPhone", "{{virtualAccountPhone}}");
         data.put("totalAmount", Map.of("value", "{{amountValue}}", "currency", "{{currency}}"));
-        data.put("virtualAccountStatus", "ACTIVE");
+        data.put("virtualAccountTrxType", "{{virtualAccountTrxType}}");
+        data.put("expiredDate", "{{expiredDate}}");
+        data.put("virtualAccountStatus", "{{vaStatus}}");
         data.put("trxId", "{{trxId}}");
 
         Map<String, Object> body = new LinkedHashMap<>();
@@ -88,8 +94,13 @@ public final class VirtualAccountCreateBlueprint {
         data.put("customerNo", "{{customerNo}}");
         data.put("virtualAccountNo", "{{virtualAccountNo}}");
         data.put("virtualAccountName", "{{virtualAccountName}}");
+        data.put("virtualAccountEmail", "{{virtualAccountEmail}}");
+        data.put("virtualAccountPhone", "{{virtualAccountPhone}}");
         data.put("totalAmount", Map.of("value", "{{amountValue}}", "currency", "{{currency}}"));
-        data.put("virtualAccountStatus", "ACTIVE");
+        data.put("virtualAccountTrxType", "{{virtualAccountTrxType}}");
+        data.put("expiredDate", "{{expiredDate}}");
+        data.put("virtualAccountStatus", "{{vaStatus}}");
+        data.put("trxId", "{{trxId}}");
 
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("responseCode", "{{responseCode}}");

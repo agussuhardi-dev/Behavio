@@ -19,5 +19,7 @@ dependencies {
 }
 
 tasks.named<org.springframework.boot.gradle.tasks.bundling.BootJar>("bootJar") {
-    archiveFileName.set("behavio-bank.jar")
+    // Tetap "behavio.jar": main-app merakit SEMUA produk (bank + qris), bukan bank saja.
+    // Nama ini juga yang dipakai deploy/deploy.sh — jangan diubah tanpa menyesuaikannya.
+    archiveFileName.set("behavio.jar")
 }

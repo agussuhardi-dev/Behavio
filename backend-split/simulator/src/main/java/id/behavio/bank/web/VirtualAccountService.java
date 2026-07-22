@@ -18,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -64,7 +65,18 @@ public class VirtualAccountService {
         this.mapper = mapper;
     }
 
-    public record Result(int status, String body) {}
+    /**
+     * @param vars variabel untuk merender template scenario aktif — inilah yang membuat
+     *             "Edit Response" berlaku untuk endpoint VA. {@code null} berarti hasil
+     *             ini TIDAK boleh dirender ulang (error bisnis: VA tak ada, field wajib
+     *             kosong) — template sukses tak boleh menimpa pesan error.
+     */
+    public record Result(int status, String body, Map<String, Object> vars) {
+        /** Hasil tanpa var — dipakai jalur error yang body-nya final. */
+        public Result(int status, String body) {
+            this(status, body, null);
+        }
+    }
 
     /** Hasil autentikasi: salah satu dari partner (sukses) atau error (gagal). */
     private record AuthResult(Partner partner, Result error) {
@@ -127,7 +139,12 @@ public class VirtualAccountService {
         if (vaOpt.isEmpty()) {
             return error(404, "4040012", "Invalid Bill/Virtual Account");
         }
-        return ok(200, "2002600", "Successful", vaOpt.get());
+        // ASPI service 26 menandai `inquiryRequestId` Mandatory di response ("From Inquiry
+        // Request") — jadi digemakan dari request. Konvensi SNAP: kirim "" bila tak diisi,
+        // JANGAN null.
+        String inquiryRequestId = text(n, "inquiryRequestId");
+        return ok(200, "2002600", "Successful", vaOpt.get(),
+                inquiryRequestId == null ? "" : inquiryRequestId);
     }
 
     @Transactional
@@ -141,14 +158,29 @@ public class VirtualAccountService {
         if (vaNo == null || vaNo.isBlank()) {
             return error(400, "4000002", "Invalid Mandatory Field virtualAccountNo");
         }
-        if (vaRepo.find(simulatorId, partner.id(), vaNo).isEmpty()) {
+        Optional<VirtualAccount> vaOpt = vaRepo.find(simulatorId, partner.id(), vaNo);
+        if (vaOpt.isEmpty()) {
             return error(404, "4040012", "Invalid Bill/Virtual Account");
         }
+        // VA dibaca DULU sebelum dihapus: responseCode 2003100 wajib memuat identitasnya.
+        VirtualAccount va = vaOpt.get();
         vaRepo.delete(simulatorId, partner.id(), vaNo);
-        ObjectNode body2 = mapper.createObjectNode();
-        body2.put("responseCode", "2002500");
-        body2.put("responseMessage", "Successful");
-        return new Result(200, body2.toString());
+
+        // ASPI service 31 (Delete VA): `virtualAccountData` bertanda Mandatory, dengan
+        // partnerServiceId/customerNo/virtualAccountNo Mandatory di dalamnya. Sebelum
+        // 2026-07-19 kita hanya membalas responseCode+responseMessage dengan kode 2002500
+        // — itu kode service 25 (VA Payment), bukan Delete. Keduanya salah dan diperbaiki.
+        ObjectNode data = mapper.createObjectNode();
+        data.put("partnerServiceId", va.partnerServiceId());
+        data.put("customerNo", va.customerNo());
+        data.put("virtualAccountNo", va.virtualAccountNo());
+        data.put("trxId", va.trxId() == null ? "" : va.trxId());
+
+        ObjectNode root = mapper.createObjectNode();
+        root.put("responseCode", "2003100");
+        root.put("responseMessage", "Successful");
+        root.set("virtualAccountData", data);
+        return new Result(200, root.toString(), vaVars(va, null));
     }
 
     /** Untuk Admin API/dashboard: daftar VA pada simulator (lintas partner). */
@@ -294,6 +326,16 @@ public class VirtualAccountService {
     }
 
     private Result ok(int status, String code, String message, VirtualAccount va) {
+        return ok(status, code, message, va, null);
+    }
+
+    /**
+     * @param inquiryRequestId digemakan dari request; hanya dipakai service 26 (Inquiry
+     *                         Status) yang menandainya Mandatory. {@code null} = tak
+     *                         disertakan (mis. service 27 Create yang tak memerlukannya).
+     */
+    private Result ok(int status, String code, String message, VirtualAccount va,
+                      String inquiryRequestId) {
         ObjectNode data = mapper.createObjectNode();
         data.put("partnerServiceId", va.partnerServiceId());
         data.put("customerNo", va.customerNo());
@@ -301,6 +343,7 @@ public class VirtualAccountService {
         data.put("virtualAccountName", va.virtualAccountName());
         if (va.virtualAccountEmail() != null) data.put("virtualAccountEmail", va.virtualAccountEmail());
         if (va.virtualAccountPhone() != null) data.put("virtualAccountPhone", va.virtualAccountPhone());
+        if (inquiryRequestId != null) data.put("inquiryRequestId", inquiryRequestId);
         ObjectNode amount = data.putObject("totalAmount");
         amount.put("value", va.totalAmount() == null ? "0.00" : va.totalAmount().toPlainString());
         amount.put("currency", va.currency());
@@ -313,8 +356,33 @@ public class VirtualAccountService {
         root.put("responseCode", code);
         root.put("responseMessage", message);
         root.set("virtualAccountData", data);
-        return new Result(status, root.toString());
+        return new Result(status, root.toString(), vaVars(va, inquiryRequestId));
     }
+
+    /**
+     * Variabel template untuk endpoint VA. Field opsional dikirim sebagai {@code ""}
+     * (konvensi SNAP), BUKAN null — template statis tak bisa menghilangkan field secara
+     * kondisional, dan "" jauh lebih aman dibaca klien daripada null.
+     */
+    private static Map<String, Object> vaVars(VirtualAccount va, String inquiryRequestId) {
+        Map<String, Object> v = new LinkedHashMap<>();
+        v.put("partnerServiceId", nz(va.partnerServiceId()));
+        v.put("customerNo", nz(va.customerNo()));
+        v.put("virtualAccountNo", nz(va.virtualAccountNo()));
+        v.put("virtualAccountName", nz(va.virtualAccountName()));
+        v.put("virtualAccountEmail", nz(va.virtualAccountEmail()));
+        v.put("virtualAccountPhone", nz(va.virtualAccountPhone()));
+        v.put("inquiryRequestId", nz(inquiryRequestId));
+        v.put("amountValue", va.totalAmount() == null ? "0.00" : va.totalAmount().toPlainString());
+        v.put("currency", nz(va.currency()));
+        v.put("virtualAccountTrxType", nz(va.virtualAccountTrxType()));
+        v.put("expiredDate", nz(va.expiredDate()));
+        v.put("trxId", nz(va.trxId()));
+        v.put("vaStatus", va.status() == null ? "" : va.status().name());
+        return v;
+    }
+
+    private static String nz(String s) { return s == null ? "" : s; }
 
     private Result error(int status, String code, String message) {
         ObjectNode n = mapper.createObjectNode();

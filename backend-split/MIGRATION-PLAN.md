@@ -1,7 +1,28 @@
 # Rencana Migrasi — Pemisahan Penuh per Simulator
 
-> **Status: SEDANG DIEKSEKUSI.** Direktori `backend-split/` ini **baru & terpisah** —
-> `backend/` dan `frontend/` yang lama **tidak disentuh**.
+> # ✅ MIGRASI SELESAI (switchover 2026-07-19)
+>
+> **`backend/` lama sudah DIHAPUS.** `backend-split/` kini satu-satunya backend.
+> Dokumen ini disimpan sebagai catatan bagaimana migrasi dilakukan.
+>
+> **Switchover yang dilakukan:**
+> - 7 file test dipindah (4 generik + 2 bank → `simulator`; 1 EMV QR → `qris`).
+>   **44 test jalan, 0 gagal** — sama persis dengan `backend/` lama.
+> - `deploy/deploy.sh` diarahkan: `BACKEND_DIR` → `backend-split`, modul `:app` →
+>   `:main-app`, jar → `main-app/build/libs/behavio.jar`.
+> - Nama bootJar dikembalikan ke `behavio.jar` (bukan `behavio-bank.jar`) — main-app
+>   merakit SEMUA produk, dan deploy.sh memang mencari nama itu.
+> - `.gitignore` digeneralisasi (`**/build/`, `**/.gradle/`) + 357 file artefak build
+>   (67 MB) di-untrack.
+>
+> **Verifikasi sebelum hapus:** setiap kelas `backend/` dicek punya padanan — hanya
+> `CoreBeansConfig` yang tidak, dan itu memang digantikan `PlatformBeansConfig` per produk.
+> Sesudah hapus: `clean build` hijau, 44 test lulus, boot hijau 0 ERROR, HTTP bank
+> (`2001100`, VA 404 `4040012`) & qris (`2004700`) normal.
+>
+> **⚠️ Disimpan manual:** `backend/.env` memuat `CLOUDFLARE_TUNNEL_TOKEN` yang **berbeda**
+> dari root `.env` (kunci lain identik). Diamankan sebagai `.env.backup-backend-lama`
+> (ter-gitignore). Pastikan token mana yang benar, lalu hapus berkas cadangan itu.
 >
 > ### Progres
 > - ✅ **Bank + QRIS SELESAI & TERGABUNG 2026-07-19.** Tiga module berdiri:
