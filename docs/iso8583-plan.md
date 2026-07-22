@@ -583,3 +583,24 @@ sertakan `operation=`, atau `parent=shinhan-default`.
 curl -X POST ".../spec-profiles?name=host-anda&version=1.0&parent=shinhan-default" \
   -H 'Content-Type: application/xml' --data-binary @cfg/packager.xml
 ```
+
+### 13.1 Menyusun request: DE apa saja yang perlu (2026-07-23)
+
+Tab **Rekening & Kartu** kini punya panel **informasi request** per kartu (ikon tanda tanya)
+— berisi nilai siap salin: PAN, contoh Track 2, rekening sumber & tujuan, contoh nominal,
+PIN block, nomor telepon, STAN, kode DE70, plus **processing code seluruh operasi profil**.
+
+**Apakah Track 2 perlu?** Tidak wajib. Rekening sumber dicari berurutan:
+
+```
+DE102 (rekening)  →  DE2 (PAN)  →  DE35 (Track 2)
+```
+
+Cukup salah satu. Kalau klien Anda terminal kartu-hadir (ATM/EDC) yang mengirim **hanya
+track tanpa DE2**, kini tetap terlayani — sebelumnya pesan sah seperti itu selalu dibalas
+`DE39=14` dan penyebabnya tak terlihat di mana pun. PAN diambil dari bagian sebelum
+pemisah; `=` maupun `D` sama-sama diterima karena keduanya ditemui di lapangan.
+
+**Kedaluwarsa & service code di dalam Track 2 TIDAK diperiksa.** Simulator tak menyimpan
+tanggal kedaluwarsa kartu, jadi memeriksanya hanya akan berpura-pura. "Kartu kedaluwarsa"
+diuji lewat **scenario** (DE39=54) — di situlah kendalinya.

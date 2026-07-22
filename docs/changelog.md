@@ -30,6 +30,46 @@ adapter-web (kena kedua simulator) · **[DASHBOARD]** frontend ·
 - **Perhatian:** profil XML yang diunggah sebelum perbaikan tetap BINARY (profil
   immutable) — unggah ulang sebagai versi baru lalu alihkan simulatornya.
 
+### [ISO-8583] **Defect:** inquiry transfer on-us menuntut DE103, klien mengirim DE102
+- **Gejala:** pesan `0200` DE3=`330000` dari klien nyata dibalas `DE39=30` (format error),
+  padahal pesannya sah dan ter-parse bersih (18 DE, termasuk DE55 EMV).
+- **Sebab:** `transfer-on-us-inquiry` hanya membaca **DE103**. Pada inquiry cuma ada SATU
+  rekening yang ditanyakan — milik penerima — dan klien menaruhnya di **DE102**; DE103
+  baru terpakai saat eksekusi. Varian off-us sudah benar sejak awal, yang on-us terlewat.
+- **Perbaikan:** DE103 dulu, lalu DE102 — sama seperti varian off-us.
+- **Diuji:** pesan asli pemakai (398 byte) diputar ulang ke socket → dari `30` menjadi
+  `00` + DE48 `"1111111111 TSM CAFE"` (nama penerima). Boot 0 ERROR.
+
+### [ISO-8583] Panel informasi request + Track 2 (DE35) kini dipakai
+- **Dashboard:** tiap kartu di tab Rekening & Kartu punya panel informasi request —
+  PAN, contoh Track 2, rekening sumber/tujuan, nominal, PIN block, telepon, STAN, DE70,
+  dan **processing code seluruh operasi profil**, semuanya siap salin.
+- **Track 2 tak wajib.** Rekening sumber dicari berurutan `DE102 → DE2 → DE35`.
+- **Perbaikan nyata:** DE35 sebelumnya **tak pernah dibaca**, jadi terminal kartu-hadir
+  yang mengirim hanya track tanpa DE2 selalu dibalas `DE39=14` tanpa petunjuk apa pun.
+  Pemisah `=` maupun `D` sama-sama diterima (keduanya ditemui di lapangan).
+- **Sengaja tidak diperiksa:** kedaluwarsa & service code di dalam track — simulator tak
+  menyimpan tanggal kedaluwarsa, jadi memeriksanya hanya berpura-pura. "Kartu kedaluwarsa"
+  tetap lewat scenario (DE39=54).
+- **Diuji:** balance-inquiry dengan **hanya DE35** (pemisah `=` dan `D`) → `00` + saldo
+  benar; PAN asing di track → `14`. Boot 0 ERROR.
+
+### [ISO-8583] **Defect:** status simulator berbohong setelah restart aplikasi
+- **Gejala:** setelah backend restart, dashboard tetap menampilkan `RUNNING` padahal tak
+  ada listener TCP sama sekali — klien ditolak *connection refused* sambil melihat status
+  hijau. Gejalanya menyerupai kerusakan jaringan, padahal cukup ditekan Start.
+- **Sebab:** `RUNNING` disimpan di database, sedangkan yang membuka port adalah listener di
+  memori. Restart menghapus yang kedua, tak menyentuh yang pertama.
+- **Perbaikan:** saat boot, semua simulator dikembalikan ke `STOPPED` dan dijalankan ulang
+  **manual**. Menyalakannya otomatis dipertimbangkan lalu ditolak: port bisa sudah dipakai
+  proses lain setelah restart, dan gagal diam-diam saat boot lebih buruk daripada tombol
+  Start yang jelas.
+- **Diuji:** simulator RUNNING + listener `:3000` aktif → restart → status `STOPPED`, tak
+  ada listener, log mencatat `1 simulator dikembalikan ke STOPPED`; Start manual
+  menghidupkan `:3000` lagi. Boot 0 ERROR.
+- **Belum disentuh:** produk bank & QRIS kemungkinan punya celah yang sama — di luar
+  lingkup permintaan ini.
+
 ### [ISO-8583] **Defect:** profil bawaan simulator baru menunjuk versi yang tak ada
 - **Gejala:** membuat simulator tanpa menyebut profil → `Profil 'iso8583-1987' versi '1.0'
   tidak ada`. Versi bawaannya dihardcode `1.0`, padahal baseline sudah naik ke `1.1` dan

@@ -260,7 +260,14 @@ public class IsoOperationHandler {
      * (nasabah mengonfirmasi nama sebelum lanjut). <b>Tidak</b> memindahkan dana.
      */
     private IsoMessage transferInquiryOnUs(UUID simulatorId, IsoMessage req, IsoMessage resp) {
+        // DE103 dulu, lalu DE102. Pada INQUIRY hanya ada satu rekening yang ditanyakan —
+        // milik penerima — dan klien nyata lazim menaruhnya di DE102 (Account
+        // Identification 1), bukan DE103 yang baru terpakai saat eksekusi. Menuntut DE103
+        // membuat inquiry yang sah dibalas DE39=30 tanpa petunjuk apa yang kurang.
         String toNo = req.raw(103);
+        if (toNo == null || toNo.isBlank()) {
+            toNo = req.raw(102);
+        }
         if (toNo == null || toNo.isBlank()) {
             return resp.set(39, FORMAT_ERROR);
         }
@@ -403,6 +410,13 @@ public class IsoOperationHandler {
      * Urutan ini penting — transaksi dari ATM menyertakan DE102, sedangkan POS umumnya
      * hanya membawa PAN.
      */
+    /**
+     * Menentukan rekening sumber dari pesan: <b>DE102 → DE2 → DE35</b>.
+     *
+     * <p>DE35 (Track 2) ikut dipakai karena terminal kartu-hadir (ATM/EDC) lazim mengirim
+     * HANYA track, tanpa DE2. Tanpa jalur ini pesan yang sah dari EDC selalu dibalas
+     * DE39=14 — dan penyebabnya tak akan terlihat di mana pun.
+     */
     private Optional<IsoStateRepository.Account> resolveAccount(UUID simulatorId, IsoMessage req) {
         String acct = req.raw(102);
         if (acct != null && !acct.isBlank()) {
@@ -410,9 +424,33 @@ public class IsoOperationHandler {
         }
         String pan = req.raw(2);
         if (pan == null || pan.isBlank()) {
+            pan = panFromTrack2(req.raw(35));
+        }
+        if (pan == null || pan.isBlank()) {
             return Optional.empty();
         }
         return state.findAccountByPan(simulatorId, pan.trim());
+    }
+
+    /**
+     * PAN dari Track 2: bagian sebelum pemisah. Pemisahnya {@code =} pada track ASCII,
+     * atau {@code D} bila track sudah "di-ASCII-kan" dari nibble heksadesimal — dua-duanya
+     * ditemui di lapangan, jadi keduanya diterima.
+     */
+    private static String panFromTrack2(String track2) {
+        if (track2 == null || track2.isBlank()) {
+            return null;
+        }
+        String t = track2.trim();
+        int sep = t.indexOf('=');
+        if (sep < 0) {
+            sep = t.indexOf('D');
+        }
+        if (sep < 0) {
+            sep = t.indexOf('d');
+        }
+        String pan = sep > 0 ? t.substring(0, sep) : t;
+        return pan.chars().allMatch(Character::isDigit) ? pan : null;
     }
 
     /** DE4 bernilai n12 tanpa desimal — 2 digit terakhir adalah sen. */

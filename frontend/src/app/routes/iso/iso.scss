@@ -436,3 +436,17 @@
   background: var(--mat-sys-primary-container);
   color: var(--mat-sys-on-primary-container);
 }
+
+.iso-reqinfo {
+  padding: 8px 4px 16px;
+}
+
+.iso-table--kv td {
+  vertical-align: middle;
+  padding: 4px 10px;
+}
+
+.iso-table--kv td:first-child {
+  white-space: nowrap;
+  width: 1%;
+}

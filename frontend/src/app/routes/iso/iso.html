@@ -508,11 +508,130 @@
                       }
                     </td>
                     <td>
+                      <button mat-icon-button matTooltip="Informasi untuk menyusun request"
+                              (click)="toggleReqInfo(c.pan)">
+                        <mat-icon>{{ reqInfoFor() === c.pan ? 'expand_less' : 'help_outline' }}</mat-icon>
+                      </button>
                       <button mat-icon-button matTooltip="Hapus kartu" (click)="removeCard(c)">
                         <mat-icon color="warn">delete</mat-icon>
                       </button>
                     </td>
                   </tr>
+                  @if (reqInfoFor() === c.pan) {
+                    <tr>
+                      <td colspan="5">
+                        <div class="iso-reqinfo">
+                          <p class="iso-hint iso-hint--small">
+                            <mat-icon>info</mat-icon>
+                            Nilai untuk menyusun pesan ke kartu ini. Rekening sumber dicari
+                            berurutan: <b>DE102</b> → <b>DE2</b> → <b>DE35</b>. Cukup salah satu.
+                          </p>
+                          <table class="iso-table iso-table--kv">
+                            <tbody>
+                              <tr>
+                                <td><code>DE2</code></td>
+                                <td>PAN (nomor kartu)</td>
+                                <td><code>{{ c.pan }}</code></td>
+                                <td>
+                                  <button mat-icon-button matTooltip="Salin"
+                                          (click)="copy(c.pan, 'de2-' + c.pan)">
+                                    <mat-icon>{{ copiedKey() === 'de2-' + c.pan ? 'check' : 'content_copy' }}</mat-icon>
+                                  </button>
+                                </td>
+                              </tr>
+                              <tr>
+                                <td><code>DE35</code></td>
+                                <td>Track 2 — <b>opsional</b>, contoh</td>
+                                <td><code>{{ track2Example(c.pan) }}</code></td>
+                                <td>
+                                  <button mat-icon-button matTooltip="Salin"
+                                          (click)="copy(track2Example(c.pan), 'de35-' + c.pan)">
+                                    <mat-icon>{{ copiedKey() === 'de35-' + c.pan ? 'check' : 'content_copy' }}</mat-icon>
+                                  </button>
+                                </td>
+                              </tr>
+                              <tr>
+                                <td><code>DE102</code></td>
+                                <td>Rekening sumber</td>
+                                <td><code>{{ c.accountNo }}</code></td>
+                                <td>
+                                  <button mat-icon-button matTooltip="Salin"
+                                          (click)="copy(c.accountNo, 'de102-' + c.pan)">
+                                    <mat-icon>{{ copiedKey() === 'de102-' + c.pan ? 'check' : 'content_copy' }}</mat-icon>
+                                  </button>
+                                </td>
+                              </tr>
+                              <tr>
+                                <td><code>DE103</code></td>
+                                <td>Rekening tujuan (transfer)</td>
+                                <td><code>{{ otherAccountNo(c.pan) }}</code></td>
+                                <td>
+                                  <button mat-icon-button matTooltip="Salin"
+                                          (click)="copy(otherAccountNo(c.pan), 'de103-' + c.pan)">
+                                    <mat-icon>{{ copiedKey() === 'de103-' + c.pan ? 'check' : 'content_copy' }}</mat-icon>
+                                  </button>
+                                </td>
+                              </tr>
+                              <tr>
+                                <td><code>DE4</code></td>
+                                <td>Nominal — 12 digit, <b>2 desimal tanpa titik</b></td>
+                                <td><code>000000050000</code> = 500,00</td>
+                                <td></td>
+                              </tr>
+                              <tr>
+                                <td><code>DE53</code></td>
+                                <td>PIN block BARU — hanya untuk change-pin</td>
+                                <td><code>0123456789ABCDEF</code></td>
+                                <td></td>
+                              </tr>
+                              <tr>
+                                <td><code>DE48</code></td>
+                                <td>Nomor telepon baru — hanya untuk change-phone</td>
+                                <td><code>081298765432</code></td>
+                                <td></td>
+                              </tr>
+                              <tr>
+                                <td><code>DE11</code></td>
+                                <td>STAN — 6 digit, <b>unik</b> per transaksi (dipakai reversal)</td>
+                                <td><code>000001</code></td>
+                                <td></td>
+                              </tr>
+                              <tr>
+                                <td><code>DE70</code></td>
+                                <td>Kode network (MTI 0800)</td>
+                                <td><code>001</code> sign-on · <code>002</code> sign-off ·
+                                    <code>101</code> key exchange · <code>301</code> echo</td>
+                                <td></td>
+                              </tr>
+                            </tbody>
+                          </table>
+
+                          @if (operationRoutes().length > 0) {
+                            <div class="iso-log__label">Processing code (DE3) per operasi</div>
+                            <table class="iso-table iso-table--kv">
+                              <tbody>
+                                @for (o of operationRoutes(); track o.name) {
+                                  <tr>
+                                    <td><code>{{ o.mti }}</code></td>
+                                    <td><code>{{ o.processingCode || '—' }}</code></td>
+                                    <td>{{ o.name }}</td>
+                                    <td>
+                                      @if (o.processingCode) {
+                                        <button mat-icon-button matTooltip="Salin processing code"
+                                                (click)="copy(o.processingCode, 'pc-' + o.name)">
+                                          <mat-icon>{{ copiedKey() === 'pc-' + o.name ? 'check' : 'content_copy' }}</mat-icon>
+                                        </button>
+                                      }
+                                    </td>
+                                  </tr>
+                                }
+                              </tbody>
+                            </table>
+                          }
+                        </div>
+                      </td>
+                    </tr>
+                  }
                 }
               </tbody>
             </table>

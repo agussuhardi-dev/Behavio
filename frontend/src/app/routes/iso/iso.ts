@@ -104,6 +104,8 @@ export class Iso implements OnInit, OnDestroy {
 
   // scenario
   readonly operations = signal<string[]>([]);
+  /** Operasi + processing code-nya — dipakai panel "informasi request" di tab Rekening. */
+  readonly operationRoutes = signal<{ name: string; mti: string; processingCode: string }[]>([]);
   readonly scenarioNames = signal<Record<string, string[]>>({});
   readonly activeScenarios = signal<Record<string, string>>({});
   readonly editingOp = signal('');
@@ -351,9 +353,13 @@ export class Iso implements OnInit, OnDestroy {
         this.profileDetail.set(d);
         const ops = d.operations.map(o => o.name);
         this.operations.set(ops);
+        this.operationRoutes.set(d.operations);
         ops.forEach(op => this.loadScenario(op));
       },
-      error: () => this.operations.set([]),
+      error: () => {
+        this.operations.set([]);
+        this.operationRoutes.set([]);
+      },
     });
   }
 
@@ -714,6 +720,38 @@ export class Iso implements OnInit, OnDestroy {
   }
 
   // ── util ────────────────────────────────────────────────────────────────
+
+  // ── panel "informasi request" (tab Rekening & Kartu) ────────────────────
+
+  readonly reqInfoFor = signal<string>('');
+
+  toggleReqInfo(pan: string) {
+    this.reqInfoFor.set(this.reqInfoFor() === pan ? '' : pan);
+  }
+
+  /**
+   * Contoh Track 2 (DE35) dari sebuah PAN.
+   *
+   * <p>Formatnya {@code PAN=YYMM SVC DISCRETIONARY}. Kedaluwarsa & service code di sini
+   * <b>nilai contoh</b> — simulator tak menyimpannya dan tak memeriksanya; yang dibacanya
+   * hanya bagian PAN sebelum tanda {@code =}. Kartu kedaluwarsa diuji lewat scenario
+   * (DE39=54), bukan lewat tanggal di track ini.
+   */
+  track2Example(pan: string): string {
+    return `${pan}=49121011234567890`;
+  }
+
+  /** Rekening yang tertaut ke sebuah kartu — untuk DE102 di panel informasi. */
+  accountOf(pan: string): IsoAccount | undefined {
+    const card = this.cards().find(c => c.pan === pan);
+    return card ? this.accounts().find(a => a.accountNo === card.accountNo) : undefined;
+  }
+
+  /** Rekening LAIN sebagai contoh tujuan transfer (DE103). */
+  otherAccountNo(pan: string): string {
+    const own = this.accountOf(pan)?.accountNo;
+    return this.accounts().find(a => a.accountNo !== own)?.accountNo ?? '9876543210';
+  }
 
   toggleLog(row: LogRow) {
     this.logs.update(list => list.map(r => (r === row ? { ...r, open: !r.open } : r)));
