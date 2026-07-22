@@ -1,4 +1,6 @@
 import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
+import { MatSnackBar } from '@angular/material/snack-bar';
+import { ClipboardService } from '../../shared/services/clipboard.service';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
@@ -72,6 +74,8 @@ interface LiveEvent {
 })
 export class Simulators implements OnInit, OnDestroy {
   /** Produk BANK (schema `bank`, design.md §3.4) — halaman ini tak pernah menyentuh QRIS. */
+  private readonly clipboard = inject(ClipboardService);
+  private readonly snackBar = inject(MatSnackBar);
   readonly api = inject(BankApi);
   private readonly openApi = inject(OpenApiService);
   private readonly dialog = inject(MatDialog);
@@ -208,7 +212,15 @@ export class Simulators implements OnInit, OnDestroy {
   ]; }
 
   copy(text: string, key: string) {
-    navigator.clipboard?.writeText(text).then(() => {
+    // Lewat ClipboardService, BUKAN navigator.clipboard langsung: API itu undefined di
+    // halaman non-HTTPS (mis. http://<ip>:81), sehingga tombol salin diam-diam tak
+    // berfungsi tanpa error apa pun.
+    this.clipboard.copy(text).then(ok => {
+      if (!ok) {
+        this.snackBar.open('Gagal menyalin — salin manual dari teks di layar.', 'Tutup',
+          { duration: 4000 });
+        return;
+      }
       this.copiedKey.set(key);
       setTimeout(() => this.copiedKey.set(null), 1500);
     });

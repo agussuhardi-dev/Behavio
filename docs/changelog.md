@@ -30,6 +30,92 @@ adapter-web (kena kedua simulator) · **[DASHBOARD]** frontend ·
 - **Perhatian:** profil XML yang diunggah sebelum perbaikan tetap BINARY (profil
   immutable) — unggah ulang sebagai versi baru lalu alihkan simulatornya.
 
+### [DASHBOARD] Tombol salin tak berfungsi di halaman non-HTTPS
+- **Gejala:** tombol salin di tab Koneksi (dan semua tombol salin lain) tak melakukan
+  apa-apa — tanpa error, tanpa umpan balik.
+- **Sebab:** `navigator.clipboard` hanya tersedia di **secure context** (HTTPS atau
+  localhost). Dashboard juga diakses lewat `http://<ip>:81`, dan di sana objek itu
+  `undefined` — sehingga `navigator.clipboard?.writeText(...)` **diam-diam tidak melakukan
+  apa pun**. Tanda tanya opsional itulah yang menelan kegagalannya. Lewat tunnel Cloudflare
+  (HTTPS) tombolnya bekerja, jadi gejalanya tampak acak.
+- **Perbaikan:** `ClipboardService` baru dengan jalur cadangan
+  `document.execCommand('copy')` atas textarea sementara — usang, tapi satu-satunya yang
+  bekerja di konteks tak aman. "Usang tapi jalan" mengalahkan "modern tapi diam".
+- **Tak lagi gagal senyap:** bila kedua jalur gagal, pemakai diberi tahu (pesan error di
+  ISO, snackbar di QRIS & Bank).
+- **Berlaku untuk ketiga produk:** ISO-8583, QRIS, dan Bank sama-sama memakai pola lama
+  yang cacat itu; ketiganya kini lewat service yang sama.
+
+### [DASHBOARD] Tab Rekening & Kartu tak ikut segar saat ada lalu lintas
+- **Gejala:** setelah change-PIN berhasil, kolom PIN tetap tertulis **"belum"** — tampak
+  seperti operasinya gagal padahal berhasil (API dan database sudah `pinSet: true`).
+- **Sebab:** tab itu hanya dimuat saat tab dibuka atau simulator dipilih. Pesan yang tiba
+  lewat socket mengubah state (saldo, PIN, telepon) tanpa ada yang memberitahu dashboard.
+  SSE yang ditambahkan sebelumnya hanya menyegarkan daftar log.
+- **Perbaikan:** tiap event SSE ikut menjadwalkan muat ulang rekening & kartu — pola yang
+  sama dipakai bank simulator (`reloadVa`/`reloadBank` pada tiap RequestEvent).
+- **Dengan jeda 600 ms:** satu klien bisa mengirim puluhan pesan beruntun; memuat ulang di
+  setiap pesan berarti puluhan request yang hasilnya langsung ditimpa.
+
+### [ISO-8583] Arah transfer `42x000` ditentukan DATA, bukan nama operasi
+- **Gejala:** `0200` DE3=`421000` dibalas `DE39=52` padahal rekeningnya jelas ada.
+- **Sebab — asumsi kami:** `421000`/`422000` dianggap SELALU "dana masuk dari bank lain",
+  jadi hanya DE103 yang dicari sebagai rekening lokal. Pesan nyata membuktikan kode yang
+  sama juga dipakai untuk dana **keluar**: DE102=`1111111111` (rekening lokal, pengirim),
+  DE103=`2222222222` + DE127=`014` (bank tujuan). Yang dicari salah sisi → `52`.
+- **Perbaikan:** arah dibaca dari data. Simulator hanya memegang rekening satu bank, jadi
+  sisi mana yang ADA di sini sudah cukup menentukan: pengirim lokal → **debit** (keluar);
+  kalau tidak, penerima lokal → **kredit** (masuk); tak satu pun → `52`. Ini menghapus
+  seluruh kelas salah-tebak arah, bukan menambal satu kasus.
+- **Sisi seberang tak pernah disentuh** — ia di bank lain; memindahkan saldo rekening lokal
+  yang kebetulan bernomor sama akan menciptakan uang.
+- **Diuji:** pesan asli pemakai → `00`, saldo 5.000.000 → 4.999.200 (debit 800) ·
+  arah masuk (pengirim asing, penerima lokal) → `00`, 1.350 → 1.550 · kedua sisi asing →
+  `52` · saldo kurang → `51`. Boot 0 ERROR.
+
+### [ISO-8583] **Defect:** change-PIN menuntut PIN baru di DE53, klien mengirim di DE48
+- **Gejala:** `0200` DE3=`340000` dari klien nyata dibalas `DE39=30`, padahal pesannya sah
+  dan ter-parse bersih (19 DE).
+- **Sebab:** handler hanya membaca **DE53** untuk PIN block baru. Klien Shinhan
+  menaruhnya di **DE48** (`EBA90CC188FA5C66`, 16 hex — bentuk yang sama dengan DE52 berisi
+  PIN lama). Dua konvensi ini sama-sama dipakai di lapangan; kami cuma mengenal satu.
+- **Perbaikan:** DE53 dulu, lalu DE48 — pola yang sama seperti perbaikan inquiry DE103→DE102.
+- **Diuji:** pesan asli pemakai diputar ulang → dari `30` menjadi `00`; `pin_block`
+  tersimpan `EBA90CC188FA5C66` dan `pin_changed_at` terisi. Boot 0 ERROR.
+- **Tetap berlaku:** PIN lama (DE52) TIDAK diverifikasi — butuh HSM/ZPK. "PIN lama salah"
+  diuji lewat scenario (DE39=55).
+
+### [DEPLOY] Cloudflare Tunnel: token hilang dari `.env` + penjaga agar tak terulang
+- **Sebab langsung:** `CLOUDFLARE_TUNNEL_TOKEN` di `.env` **kosong**. Tokennya hanya
+  tertinggal di `.env.backup-backend-lama` — kemungkinan hilang saat `.env` ditulis ulang
+  pada migrasi ke backend-split. Dipulihkan (187 char, terbaca sebagai token cloudflared
+  yang sah: account + tunnel id + secret).
+- **Kenapa senyap:** compose menerima `${VAR}` kosong, cloudflared jalan dengan
+  `--token ` lalu mati-hidup selamanya, dan `deploy.sh` tetap melaporkan **"Deploy
+  selesai!"**. Tak ada satu pun tanda kecuali log container.
+- **Penjaga 1 — compose:** `${CLOUDFLARE_TUNNEL_TOKEN:?...}`. Token kosong kini membuat
+  `docker compose` menolak start dengan pesan yang menyebutkan sebabnya.
+- **Penjaga 2 — deploy.sh:** dicek SEBELUM build & transfer, jadi gagalnya di detik
+  pertama, bukan setelah JAR terkirim.
+- **Penjaga 3 — verifikasi pasca-deploy:** setelah `docker compose up`, log cloudflared
+  diperiksa untuk `Registered tunnel connection`; bila tak ada, 20 baris terakhir dicetak
+  alih-alih melaporkan sukses.
+- **Didokumentasikan di compose:** origin tunnel yang benar adalah `http://frontend:80` —
+  **bukan** `localhost` (di dalam container itu cloudflared sendiri) dan bukan `backend`
+  (memakai `network_mode: host`, tak ada di jaringan bridge). Semua `/api/` termasuk SSE
+  lewat nginx frontend.
+- **Susulan — token ternyata RUSAK, bukan cuma hilang:** nilainya tersimpan dengan `---`
+  menempel di ujung (187 char, bukan 184). cloudflared menolaknya —
+  *"Provided Tunnel token is not valid"* lalu exit 255 berulang. Menyesatkan karena
+  `base64.b64decode` bawaan **mengabaikan** karakter di luar alfabet, jadi token itu
+  tampak sah saat diperiksa sekilas; hanya decode ketat (`validate=True`) yang menangkapnya.
+  Panjang yang tak habis dibagi 4 adalah tanda pertama.
+- **Penjaga 4 — bentuk token:** deploy.sh menolak token yang memuat karakter di luar
+  base64, dan yang tak terbaca sebagai JSON `{a,t,s}` saat di-decode **ketat**.
+- **Diuji:** token kosong → compose *dan* deploy.sh menolak · token ber-`---` → ditolak
+  dengan pesan yang menyebutkan sebabnya · token bersih (184 char) → lolos semua penjaga
+  dan `docker compose config` valid.
+
 ### [ISO-8583] **Defect:** inquiry transfer on-us menuntut DE103, klien mengirim DE102
 - **Gejala:** pesan `0200` DE3=`330000` dari klien nyata dibalas `DE39=30` (format error),
   padahal pesannya sah dan ter-parse bersih (18 DE, termasuk DE55 EMV).

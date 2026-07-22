@@ -1,4 +1,5 @@
 import { Component, OnDestroy, OnInit, inject, signal } from '@angular/core';
+import { ClipboardService } from '../../shared/services/clipboard.service';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
@@ -56,6 +57,8 @@ interface LogRow extends IsoLog {
 })
 export class Iso implements OnInit, OnDestroy {
   private static readonly LAST_SIM_KEY = 'behavio.iso.lastSimId';
+
+  private readonly clipboard = inject(ClipboardService);
 
   readonly api = inject(IsoApi);
   private readonly dialog = inject(MatDialog);
@@ -185,6 +188,11 @@ export class Iso implements OnInit, OnDestroy {
           duration_ms: d.durationMillis, error: d.error,
           created_at: new Date().toISOString(), open: false,
         };
+        // Pesan yang masuk BISA mengubah state: saldo, PIN, nomor telepon. Tanpa ini
+        // tab Rekening & Kartu tetap menampilkan nilai lama sampai tabnya dibuka ulang —
+        // PIN yang baru saja diubah masih tertulis "belum", dan itu tampak seperti
+        // operasinya gagal padahal berhasil.
+        this.scheduleStateRefresh();
         this.logTotal.update(n => n + 1);
         if (this.logPageIndex() === 0) {
           // Halaman 1 = "terbaru", jadi sisipkan di atas dan potong sesuai ukuran halaman.
@@ -202,6 +210,31 @@ export class Iso implements OnInit, OnDestroy {
     this.es?.close();
     this.es = undefined;
     this.liveConnected.set(false);
+    if (this.stateRefreshTimer) {
+      clearTimeout(this.stateRefreshTimer);
+      this.stateRefreshTimer = undefined;
+    }
+  }
+
+  private stateRefreshTimer?: ReturnType<typeof setTimeout>;
+
+  /**
+   * Muat ulang rekening & kartu setelah ada lalu lintas, dengan jeda pendek.
+   *
+   * <p>Jedanya disengaja: satu klien bisa mengirim puluhan pesan beruntun, dan memuat
+   * ulang di setiap pesan berarti puluhan request yang hasilnya langsung ditimpa. Jeda
+   * ini menggabungkannya jadi satu.
+   */
+  private scheduleStateRefresh() {
+    if (this.stateRefreshTimer) {
+      return;
+    }
+    this.stateRefreshTimer = setTimeout(() => {
+      this.stateRefreshTimer = undefined;
+      if (this.selectedSimId()) {
+        this.loadAccounts();
+      }
+    }, 600);
   }
 
   /**
@@ -285,7 +318,14 @@ export class Iso implements OnInit, OnDestroy {
   }
 
   copy(text: string, key: string) {
-    navigator.clipboard?.writeText(text).then(() => {
+    // Lewat ClipboardService, BUKAN navigator.clipboard langsung: API itu undefined di
+    // halaman non-HTTPS (mis. http://<ip>:81), sehingga tombol salin diam-diam tak
+    // berfungsi tanpa error apa pun.
+    this.clipboard.copy(text).then(ok => {
+      if (!ok) {
+        this.err.set('Gagal menyalin — salin manual dari teks di layar.');
+        return;
+      }
       this.copiedKey.set(key);
       setTimeout(() => this.copiedKey.set(null), 1500);
     });

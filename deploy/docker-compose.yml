@@ -57,9 +57,21 @@ services:
      image: cloudflare/cloudflared:latest
      container_name: behavio-cloudflared
      restart: unless-stopped
-     command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+     # `:?` — WAJIB ada isinya. Tanpa penjaga ini, token kosong tetap diterima compose
+     # dan cloudflared jalan dengan `--token ` lalu mati-hidup selamanya; deploy
+     # dilaporkan "selesai" sementara tunnelnya tak pernah tersambung. Kegagalan itu
+     # pernah terjadi dan tak terlihat di mana pun kecuali log container.
+     command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN:?CLOUDFLARE_TUNNEL_TOKEN kosong — isi di .env sebelum deploy}
      depends_on:
        - frontend
+     # Tunnel menghadap frontend lewat nama service (keduanya di jaringan bridge yang
+     # sama). JANGAN arahkan origin tunnel ke localhost: di dalam container ini
+     # localhost adalah cloudflared sendiri, bukan nginx. Origin yang benar di
+     # dashboard Cloudflare: http://frontend:80
+     #
+     # Backend TIDAK dijangkau langsung oleh tunnel — semua /api/ lewat nginx frontend
+     # (deploy/nginx.conf), termasuk SSE Live View. Backend memakai network_mode: host
+     # sehingga namanya memang tak bisa di-resolve dari jaringan bridge.
      logging:
        driver: json-file
        options:

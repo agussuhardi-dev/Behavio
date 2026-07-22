@@ -534,15 +534,15 @@ yang berbeda hanya rute operasinya.
 | `transfer-off-us-inquiry` | 0200 | `351000` | – |
 | `transfer-off-us` | 0200 | `411000` | **debit pengirim saja** |
 | `transfer-in-saving-inquiry` | 0200 | `361000` | – |
-| `transfer-in-saving` | 0200 | `421000` | **kredit penerima saja** |
+| `transfer-in-saving` | 0200 | `421000` | **arah dari data**: pengirim lokal → debit; penerima lokal → kredit |
 | `transfer-in-giro-inquiry` | 0200 | `362000` | – |
-| `transfer-in-giro` | 0200 | `422000` | **kredit penerima saja** |
+| `transfer-in-giro` | 0200 | `422000` | **arah dari data** (idem) |
 | `transfer-via-saving-inquiry` | 0200 | `371000` | – |
 | `transfer-via-saving` | 0200 | `431000` | – (numpang lewat) |
 | `transfer-via-giro-inquiry` | 0200 | `372000` | – |
 | `transfer-via-giro` | 0200 | `432000` | – (numpang lewat) |
 | `router-interbank` | 0200 | `900000` | – (numpang lewat) |
-| `change-pin` | 0200 | `340000` | PIN block baru di DE53 |
+| `change-pin` | 0200 | `340000` | PIN block baru di **DE53 atau DE48** |
 | `change-phone` | 0200 | `700000` | nomor baru di DE48 |
 | `reset-password-ib` | 0200 | `710000` | – |
 | `reversal` | 0400 | – | membalik transaksi finansial |

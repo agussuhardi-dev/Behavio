@@ -76,7 +76,7 @@ public class IsoOperationHandler {
             // "transfer" dipertahankan demi profil lama (iso8583-1987 v1.0/v1.1).
             case "transfer", "transfer-on-us" -> transferOnUs(simulatorId, req, resp);
             case "transfer-off-us" -> transferOffUs(simulatorId, req, resp);
-            case "transfer-in-saving", "transfer-in-giro" -> transferIncoming(simulatorId, req, resp);
+            case "transfer-in-saving", "transfer-in-giro" -> transferExternal(simulatorId, req, resp);
             case "transfer-via-saving", "transfer-via-giro", "router-interbank" ->
                     transferPassThrough(simulatorId, req, resp);
             case "cash-withdrawal", "purchase" -> withdrawal(simulatorId, req, resp);
@@ -209,14 +209,47 @@ public class IsoOperationHandler {
     }
 
     /**
-     * Transfer <b>masuk dari bank lain</b> ke rekening di host ini — tabungan
-     * ({@code 421000}) maupun giro ({@code 422000}).
+     * Transfer yang melibatkan bank lain — tabungan ({@code 421000}) maupun giro
+     * ({@code 422000}).
      *
-     * <p>Kebalikan dari off-us: hanya penerima yang dikredit. Pengirim ada di bank lain,
-     * jadi tak ada yang didebit di sini. Rekening tujuan dibaca dari DE103 (bila ada),
-     * kalau tidak dari DE102 — pada pesan masuk, "rekening tujuan"-lah yang milik kita.
+     * <p><b>Arahnya ditentukan oleh data, bukan oleh nama operasi.</b> Simulator ini
+     * hanya memegang rekening satu bank, jadi sisi mana yang ADA di sini sudah cukup
+     * menentukan siapa yang saldonya berubah:
+     *
+     * <ul>
+     *   <li>pengirim (DE102/PAN) ada di sini → dana <b>keluar</b>, pengirim didebit;</li>
+     *   <li>kalau tidak, penerima (DE103) ada di sini → dana <b>masuk</b>, penerima
+     *       dikredit;</li>
+     *   <li>tak satu pun ada → {@code DE39=52}.</li>
+     * </ul>
+     *
+     * <p>Ini menggantikan asumsi sebelumnya bahwa {@code 42x000} selalu berarti "masuk".
+     * Pesan nyata membuktikan kode yang sama juga dipakai untuk dana KELUAR (DE102
+     * rekening lokal, DE103 + DE127 menunjuk bank tujuan) — dan asumsi lama membalasnya
+     * {@code 52} padahal rekeningnya jelas ada. Membaca arah dari data menghapus seluruh
+     * kelas salah tebak itu.
+     *
+     * <p>Sisi seberang tak pernah disentuh: ia ada di bank lain, dan memindahkan saldo
+     * rekening lokal yang kebetulan bernomor sama akan menciptakan uang.
      */
-    private IsoMessage transferIncoming(UUID simulatorId, IsoMessage req, IsoMessage resp) {
+    private IsoMessage transferExternal(UUID simulatorId, IsoMessage req, IsoMessage resp) {
+        BigDecimal amount = amountOf(req);
+        if (amount == null) {
+            return resp.set(39, FORMAT_ERROR);
+        }
+
+        var fromOpt = resolveAccount(simulatorId, req);
+        if (fromOpt.isPresent()) {
+            var from = fromOpt.get();
+            if (from.balance().compareTo(amount) < 0) {
+                return resp.set(39, INSUFFICIENT_FUNDS).set(54, additionalAmounts(from));
+            }
+            state.debit(simulatorId, from.accountNo(), amount);
+            record(simulatorId, req, from.accountNo(), null, amount);
+            var after = state.findAccount(simulatorId, from.accountNo()).orElse(from);
+            return resp.set(39, OK).set(54, additionalAmounts(after));
+        }
+
         String toNo = req.raw(103);
         if (toNo == null || toNo.isBlank()) {
             toNo = req.raw(102);
@@ -227,10 +260,6 @@ public class IsoOperationHandler {
         var toOpt = state.findAccount(simulatorId, toNo.trim());
         if (toOpt.isEmpty()) {
             return resp.set(39, INVALID_ACCOUNT);
-        }
-        BigDecimal amount = amountOf(req);
-        if (amount == null) {
-            return resp.set(39, FORMAT_ERROR);
         }
         state.credit(simulatorId, toNo.trim(), amount);
         // accountNo = penerima, counterpart kosong → reversal mendebit balik penerima.
@@ -368,7 +397,15 @@ public class IsoOperationHandler {
         if (pan == null || pan.isBlank()) {
             return resp.set(39, FORMAT_ERROR);
         }
+        // DE53 dulu, lalu DE48. Dua konvensi yang sama-sama dipakai di lapangan: sebagian
+        // host menaruh PIN block BARU di DE53 (Security Related Control Info), sebagian
+        // lagi — termasuk klien Shinhan ini — di DE48 (Additional Data - Private).
+        // Menuntut DE53 saja membuat change-pin yang sah dibalas DE39=30 tanpa petunjuk
+        // apa yang kurang.
         String newPin = req.raw(53);
+        if (newPin == null || newPin.isBlank()) {
+            newPin = req.raw(48);
+        }
         if (newPin == null || newPin.isBlank()) {
             return resp.set(39, FORMAT_ERROR);   // tak ada PIN baru = tak ada yang diubah
         }

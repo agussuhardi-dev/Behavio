@@ -46,6 +46,29 @@ set -a
 source "$ENV_FILE"
 set +a
 
+# Gagal SEKARANG, bukan setelah container hidup: token tunnel yang kosong membuat
+# cloudflared mati-hidup selamanya sementara deploy melaporkan sukses.
+: "${CLOUDFLARE_TUNNEL_TOKEN:?CLOUDFLARE_TUNNEL_TOKEN kosong di .env — tunnel akan gagal. Isi tokennya, atau hapus service cloudflared dari deploy/docker-compose.yml bila memang tak dipakai}"
+
+# BENTUKNYA juga diperiksa, bukan cuma keberadaannya. Token cloudflared adalah base64
+# dari JSON {a,t,s}. Pernah terjadi tokennya tersimpan dengan `---` menempel di ujung —
+# base64 decoder Python diam-diam mengabaikannya sehingga tampak sah, tapi cloudflared
+# menolak dengan "Provided Tunnel token is not valid" dan restart selamanya.
+if ! printf '%s' "$CLOUDFLARE_TUNNEL_TOKEN" | grep -Eq '^[A-Za-z0-9+/]+=*$'; then
+  error "CLOUDFLARE_TUNNEL_TOKEN memuat karakter di luar base64 (mis. '-', spasi, atau baris baru) — salin ulang tokennya utuh dari Cloudflare Zero Trust → Networks → Tunnels"
+fi
+if ! python3 - "$CLOUDFLARE_TUNNEL_TOKEN" <<'PYCHECK'
+import base64, json, sys
+t = sys.argv[1]
+try:
+    d = json.loads(base64.b64decode(t + "=" * (-len(t) % 4), validate=True))
+except Exception:
+    sys.exit(1)
+sys.exit(0 if {"a", "t", "s"} <= set(d) else 1)
+PYCHECK
+then
+  error "CLOUDFLARE_TUNNEL_TOKEN tidak terbaca sebagai token cloudflared (base64 dari JSON {a,t,s}) — ambil token baru di Cloudflare Zero Trust → Networks → Tunnels → Configure"
+fi
 : "${DEPLOY_HOST:?DEPLOY_HOST harus diisi di .env}"
 : "${DEPLOY_USER:?DEPLOY_USER harus diisi di .env}"
 : "${DEPLOY_DIR:?DEPLOY_DIR harus diisi di .env}"
@@ -169,6 +192,18 @@ docker compose up -d --remove-orphans --pull never --force-recreate
 
 echo ""
 docker compose ps
+
+# Tunnel gagal itu senyap: container tetap "Up" sebentar lalu restart, dan deploy
+# terlanjur dilaporkan sukses. Diperiksa di sini supaya ketahuan saat itu juga.
+echo ""
+echo "  → Cek tunnel Cloudflare..."
+sleep 8
+if docker logs behavio-cloudflared 2>&1 | tail -40 | grep -qiE "Registered tunnel connection|Connection [a-f0-9-]+ registered"; then
+  echo "  ✓ cloudflared tersambung"
+else
+  echo "  ✗ cloudflared BELUM tersambung — 20 baris log terakhir:"
+  docker logs behavio-cloudflared 2>&1 | tail -20 | sed "s/^/      /"
+fi
 ENDSSH
 
 echo ""
