@@ -76,7 +76,7 @@ adapter-web (kena kedua simulator) · **[DASHBOARD]** frontend.
   dan export OpenAPI.
 - **Batas:** hanya **host** yang diperbaiki, bukan **port**. Port simulator dilayani
   `HttpServer` JDK tersendiri (tak lewat Spring) — kalau reverse proxy hanya meneruskan
-  `:8080`, host benar pun tak membuat port simulator terjangkau. Petakan port simulator di
+  `:9000`, host benar pun tak membuat port simulator terjangkau. Petakan port simulator di
   proxy, atau set `DEPLOY_HOST` ke alamat yang menjangkaunya.
 - **Setelan:** `behavio.public-host` (`application.yml`) ← env `DEPLOY_HOST`.
 - **Ref:** design.md **§6.4**.

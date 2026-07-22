@@ -135,9 +135,9 @@ if [[ "\$DO_BACKEND" == true ]]; then
 FROM eclipse-temurin:25-jre-alpine
 WORKDIR /app
 COPY app.jar app.jar
-# Admin API + dashboard. Port simulator (9001, 9101, …) dibuka runtime oleh
-# SimulatorServerManager dan dipetakan lewat SIM_PORT_START/END di compose.
-EXPOSE 8080
+# Admin API + dashboard. EXPOSE bersifat dokumentatif saja: container memakai
+# network_mode host, jadi seluruh port yang dibuka aplikasi langsung terjangkau.
+EXPOSE 9000
 ENTRYPOINT ["java", "-jar", "app.jar"]
 DOCKERFILE
   docker build --no-cache -t behavio-backend:latest /tmp/behavio-build-backend/

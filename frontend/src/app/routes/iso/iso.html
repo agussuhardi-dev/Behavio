@@ -1,0 +1,456 @@
+<div class="iso-page">
+  @if (loading()) {
+    <mat-progress-bar mode="indeterminate" />
+  }
+
+  <!-- ── bar profil simulator ─────────────────────────────────────────── -->
+  <mat-card class="iso-card" appearance="outlined">
+    <div class="iso-bar">
+      <mat-icon class="iso-bar__icon">lan</mat-icon>
+      <span class="iso-bar__title">Simulator ISO-8583</span>
+
+      <mat-form-field appearance="outline" class="iso-bar__select">
+        <mat-label>Profil simulator</mat-label>
+        <mat-select [value]="selectedSimId()" (valueChange)="selectSim($event)">
+          @for (s of sims(); track s.id) {
+            <mat-option [value]="s.id">{{ s.name }} — TCP :{{ s.port }}</mat-option>
+          }
+        </mat-select>
+      </mat-form-field>
+
+      @if (selectedSim; as sim) {
+        <span class="iso-chip" [class.iso-chip--on]="sim.status === 'RUNNING'">
+          <mat-icon>{{ sim.status === 'RUNNING' ? 'play_circle' : 'stop_circle' }}</mat-icon>
+          {{ sim.status }}
+        </span>
+        <span class="iso-chip iso-chip--spec" matTooltip="Profil spec yang dipakai simulator ini">
+          <mat-icon>menu_book</mat-icon>
+          {{ sim.specProfileName }} v{{ sim.specProfileVersion }}
+        </span>
+      }
+
+      <span class="iso-bar__spacer"></span>
+
+      @if (selectedSim; as sim) {
+        @if (sim.status === 'RUNNING') {
+          <button mat-stroked-button (click)="stop()"><mat-icon>stop</mat-icon> Stop</button>
+        } @else {
+          <button mat-flat-button color="primary" (click)="start()">
+            <mat-icon>play_arrow</mat-icon> Start
+          </button>
+        }
+        <button mat-icon-button [matMenuTriggerFor]="simMenu" matTooltip="Aksi lain">
+          <mat-icon>more_vert</mat-icon>
+        </button>
+        <mat-menu #simMenu="matMenu">
+          <button mat-menu-item (click)="seedDemo()">
+            <mat-icon>playlist_add</mat-icon> Isi data contoh
+          </button>
+          <mat-divider />
+          <button mat-menu-item (click)="removeSim()">
+            <mat-icon color="warn">delete</mat-icon> Hapus
+          </button>
+        </mat-menu>
+      }
+    </div>
+
+    @if (msg()) {
+      <div class="iso-msg iso-msg--ok"><mat-icon>check_circle</mat-icon> {{ msg() }}</div>
+    }
+    @if (err()) {
+      <div class="iso-msg iso-msg--err"><mat-icon>error</mat-icon> {{ err() }}</div>
+    }
+  </mat-card>
+
+  <mat-tab-group class="iso-tabs" animationDuration="0ms">
+    <!-- ── OPERASI & SCENARIO ─────────────────────────────────────────── -->
+    <mat-tab label="Operasi & Scenario">
+      <div class="iso-tab-body">
+        @if (!selectedSimId()) {
+          <p class="iso-empty"><mat-icon>info</mat-icon> Pilih atau buat simulator dulu.</p>
+        } @else if (operations().length === 0) {
+          <p class="iso-empty"><mat-icon>info</mat-icon> Profil spec ini belum punya operasi.</p>
+        } @else {
+          <p class="iso-hint">
+            Operasi ditentukan <b>MTI + processing code</b> dari profil spec — bukan URL.
+            Scenario mengubah apa yang <i>dilaporkan</i>; mutasi saldo tetap berjalan apa adanya.
+          </p>
+
+          @for (op of operations(); track op) {
+            <mat-expansion-panel class="iso-op" [expanded]="editingOp() === op" hideToggle>
+              <mat-expansion-panel-header>
+                <mat-panel-title>
+                  <span class="iso-op__badge">ISO</span>
+                  <span class="iso-op__name">{{ op }}</span>
+                  <span class="iso-op__scenario">{{ activeFor(op) }}</span>
+                </mat-panel-title>
+              </mat-expansion-panel-header>
+
+              <div class="iso-op__body">
+                <mat-form-field appearance="outline" class="iso-op__select">
+                  <mat-label>Scenario</mat-label>
+                  <mat-select [value]="activeFor(op)" (valueChange)="changeScenario(op, $event)">
+                    @for (n of namesFor(op); track n) {
+                      <mat-option [value]="n">{{ n }}</mat-option>
+                    }
+                  </mat-select>
+                </mat-form-field>
+
+                <button mat-stroked-button (click)="openEditor(op)">
+                  <mat-icon>edit</mat-icon>
+                  {{ editingOp() === op ? 'Tutup Editor' : 'Edit Response' }}
+                </button>
+
+                @if (editingOp() === op) {
+                  <div class="iso-editor">
+                    <div class="iso-editor__head">
+                      <mat-icon>tune</mat-icon>
+                      <span>Definisi <b>{{ activeFor(op) }}</b> — peta DE + fault</span>
+                    </div>
+                    <textarea class="iso-editor__area" spellcheck="false"
+                              [value]="editorText()"
+                              (input)="editorText.set($any($event.target).value)"></textarea>
+                    @if (editorSaved()) {
+                      <div class="iso-msg iso-msg--ok">
+                        <mat-icon>check_circle</mat-icon> Tersimpan — pesan berikutnya memakai ini.
+                      </div>
+                    }
+                    <div class="iso-editor__actions">
+                      <button mat-flat-button color="primary" (click)="saveEditor(op)">
+                        <mat-icon>save</mat-icon> Simpan
+                      </button>
+                      <button mat-stroked-button (click)="resetEditor(op)">
+                        <mat-icon>restart_alt</mat-icon> Reset ke Bawaan
+                      </button>
+                    </div>
+                  </div>
+                }
+              </div>
+            </mat-expansion-panel>
+          }
+        }
+      </div>
+    </mat-tab>
+
+    <!-- ── KONEKSI ────────────────────────────────────────────────────── -->
+    <mat-tab label="Koneksi">
+      <div class="iso-tab-body">
+        @if (!selectedSimId()) {
+          <p class="iso-empty"><mat-icon>info</mat-icon> Pilih simulator dulu.</p>
+        } @else {
+          <p class="iso-hint">
+            ISO-8583 tak punya URL — klien menyambung ke <b>host:port TCP</b>. Parameter di
+            bawah <b>harus sama</b> di sisi klien; kalau berbeda, seluruh aliran byte
+            bergeser dan semua pesan gagal dibaca.
+          </p>
+
+          <div class="iso-conn__hero">
+            <div>
+              <div class="iso-conn__label">Alamat</div>
+              <div class="iso-conn__addr">{{ address() }}</div>
+            </div>
+            <button mat-flat-button color="primary" (click)="copy(address(), 'addr-hero')">
+              <mat-icon>{{ copiedKey() === 'addr-hero' ? 'check' : 'content_copy' }}</mat-icon>
+              Salin alamat
+            </button>
+          </div>
+
+          <table class="iso-table">
+            <thead><tr><th>Parameter</th><th>Nilai</th><th></th></tr></thead>
+            <tbody>
+              @for (r of connectionRows(); track r.key) {
+                <tr>
+                  <td>
+                    {{ r.label }}
+                    @if (r.note) { <span class="iso-conn__note">{{ r.note }}</span> }
+                  </td>
+                  <td><code>{{ r.value }}</code></td>
+                  <td>
+                    <button mat-icon-button matTooltip="Salin" (click)="copy(r.value, r.key)">
+                      <mat-icon>{{ copiedKey() === r.key ? 'check' : 'content_copy' }}</mat-icon>
+                    </button>
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+
+          @if (selectedSim; as sim) {
+            @if (sim.status !== 'RUNNING') {
+              <div class="iso-msg iso-msg--err">
+                <mat-icon>error</mat-icon>
+                Simulator berstatus {{ sim.status }} — port belum dibuka. Tekan <b>Start</b> dulu.
+              </div>
+            }
+          }
+
+          <div class="iso-conn__snippet">
+            <div class="iso-conn__snippet-head">
+              <mat-icon>terminal</mat-icon>
+              <span>Cuplikan uji koneksi (Python) — framing sudah sesuai profil</span>
+              <span class="iso-bar__spacer"></span>
+              <button mat-icon-button matTooltip="Salin" (click)="copy(pythonSnippet(), 'snip')">
+                <mat-icon>{{ copiedKey() === 'snip' ? 'check' : 'content_copy' }}</mat-icon>
+              </button>
+            </div>
+            <pre>{{ pythonSnippet() }}</pre>
+          </div>
+        }
+      </div>
+    </mat-tab>
+
+    <!-- ── PROFIL SPEC ────────────────────────────────────────────────── -->
+    <mat-tab label="Profil Spec">
+      <div class="iso-tab-body">
+        <p class="iso-hint">
+          Spec host bank tidak publik, jadi ia <b>diunggah sebagai profil</b> — bukan ditulis
+          di kode. Menambah host baru cukup unggah profil.
+        </p>
+
+        <table class="iso-table">
+          <thead>
+            <tr><th>Nama</th><th>Versi</th><th>Mewarisi</th><th>Asal</th><th></th></tr>
+          </thead>
+          <tbody>
+            @for (p of profiles(); track p.id) {
+              <tr>
+                <td>{{ p.name }}</td>
+                <td>{{ p.version }}</td>
+                <td>{{ p.parent || '—' }}</td>
+                <td><code>{{ p.sourceFormat }}</code></td>
+                <td>
+                  <button mat-icon-button matTooltip="Lihat kamus DE" (click)="showProfile(p)">
+                    <mat-icon>visibility</mat-icon>
+                  </button>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+
+        <mat-expansion-panel class="iso-upload">
+          <mat-expansion-panel-header>
+            <mat-panel-title><mat-icon>upload_file</mat-icon>&nbsp; Unggah profil spec</mat-panel-title>
+          </mat-expansion-panel-header>
+
+          <div class="iso-form">
+            <mat-form-field appearance="outline">
+              <mat-label>Format</mat-label>
+              <mat-select [value]="upFormat()" (valueChange)="upFormat.set($event)">
+                <mat-option value="XML">jPOS packager XML (biasanya dari bank)</mat-option>
+                <mat-option value="JSON">JSON</mat-option>
+              </mat-select>
+            </mat-form-field>
+
+            @if (upFormat() === 'XML') {
+              <mat-form-field appearance="outline">
+                <mat-label>Nama profil</mat-label>
+                <input matInput [value]="upName()" (input)="upName.set($any($event.target).value)"
+                       placeholder="shinhan" />
+              </mat-form-field>
+              <mat-form-field appearance="outline">
+                <mat-label>Versi</mat-label>
+                <input matInput [value]="upVersion()" (input)="upVersion.set($any($event.target).value)" />
+              </mat-form-field>
+              <mat-form-field appearance="outline">
+                <mat-label>Mewarisi (opsional)</mat-label>
+                <input matInput [value]="upParent()" (input)="upParent.set($any($event.target).value)"
+                       placeholder="iso8583-1987" />
+              </mat-form-field>
+              <mat-form-field appearance="outline" class="iso-form__wide">
+                <mat-label>Operasi (nama:mti[:processingCode], pisahkan koma)</mat-label>
+                <input matInput [value]="upOperations()"
+                       (input)="upOperations.set($any($event.target).value)" />
+              </mat-form-field>
+            }
+
+            <mat-form-field appearance="outline" class="iso-form__wide">
+              <mat-label>{{ upFormat() === 'XML' ? 'Isi packager XML' : 'Isi profil JSON' }}</mat-label>
+              <textarea matInput rows="10" spellcheck="false"
+                        [value]="upContent()"
+                        (input)="upContent.set($any($event.target).value)"></textarea>
+            </mat-form-field>
+
+            <button mat-flat-button color="primary" (click)="upload()">
+              <mat-icon>cloud_upload</mat-icon> Unggah
+            </button>
+          </div>
+
+          @if (supportedClasses().length) {
+            <p class="iso-hint iso-hint--small">
+              <mat-icon>info</mat-icon>
+              Kelas packager didukung: <code>{{ supportedClasses().join(', ') }}</code>.
+              Di luar itu <b>ditolak</b> — salah tafsir menghasilkan pesan rusak di kabel.
+            </p>
+          }
+        </mat-expansion-panel>
+
+        @if (profileDetail(); as d) {
+          <mat-card class="iso-detail" appearance="outlined">
+            <div class="iso-detail__head">
+              <mat-icon>menu_book</mat-icon> <b>{{ d.id }}</b>
+              <span class="iso-bar__spacer"></span>
+              <span class="iso-chip">
+                header {{ d.transport.lengthPrefixBytes }}B {{ d.transport.lengthPrefixEncoding }} ·
+                {{ d.transport.charset }} · bitmap {{ d.transport.bitmap }}
+              </span>
+            </div>
+            <table class="iso-table">
+              <thead><tr><th>DE</th><th>Nama</th><th>Tipe</th><th>Encoding</th><th>Panjang</th></tr></thead>
+              <tbody>
+                @for (f of d.fields; track f.de) {
+                  <tr>
+                    <td><code>{{ f.de }}</code></td>
+                    <td>{{ f.name }}</td>
+                    <td>{{ f.type }}</td>
+                    <td>{{ f.encoding }}</td>
+                    <td>{{ f.lengthPrefix ? 'L'.repeat(f.lengthPrefix) + 'VAR ..' + f.length : f.length }}</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </mat-card>
+        }
+      </div>
+    </mat-tab>
+
+    <!-- ── UJI TRACE ──────────────────────────────────────────────────── -->
+    <mat-tab label="Uji Trace">
+      <div class="iso-tab-body">
+        <p class="iso-hint">
+          Spec host tak bisa diverifikasi dari dokumen. Tempel <b>satu trace hex dari host asli</b> —
+          kalau ter-parse bersih, profilnya <b>terbukti</b>; kalau tidak, errornya menunjuk DE yang salah.
+        </p>
+
+        <mat-form-field appearance="outline" class="iso-form__wide">
+          <mat-label>Trace hex</mat-label>
+          <textarea matInput rows="4" spellcheck="false"
+                    placeholder="30323030602000000080..."
+                    [value]="traceHex()"
+                    (input)="traceHex.set($any($event.target).value)"></textarea>
+        </mat-form-field>
+        <button mat-flat-button color="primary" (click)="runTrace()">
+          <mat-icon>science</mat-icon> Uji
+        </button>
+
+        @if (traceResult(); as r) {
+          @if (r.ok) {
+            <div class="iso-msg iso-msg--ok">
+              <mat-icon>check_circle</mat-icon>
+              Ter-parse: MTI <b>{{ r.mti }}</b>
+              @if (r.operation) { — operasi <b>{{ r.operation }}</b> }
+            </div>
+            <table class="iso-table">
+              <thead><tr><th>Data Element</th><th>Nilai</th></tr></thead>
+              <tbody>
+                @for (f of traceFields(r); track f.key) {
+                  <tr><td>{{ f.key }}</td><td><code>{{ f.value }}</code></td></tr>
+                }
+              </tbody>
+            </table>
+          } @else {
+            <div class="iso-msg iso-msg--err"><mat-icon>error</mat-icon> {{ r.error }}</div>
+          }
+        }
+      </div>
+    </mat-tab>
+
+    <!-- ── REKENING & KARTU ───────────────────────────────────────────── -->
+    <mat-tab label="Rekening & Kartu">
+      <div class="iso-tab-body">
+        <p class="iso-hint">
+          Rekening di sini <b>terpisah</b> dari bank simulator — saldo ISO bukan saldo bank.
+        </p>
+        @if (accounts().length === 0) {
+          <p class="iso-empty">
+            <mat-icon>info</mat-icon> Belum ada rekening. Pakai menu <b>Isi data contoh</b>.
+          </p>
+        } @else {
+          <table class="iso-table">
+            <thead><tr><th>Rekening</th><th>Nama</th><th class="num">Saldo</th><th>Mata uang</th></tr></thead>
+            <tbody>
+              @for (a of accounts(); track a.id) {
+                <tr>
+                  <td><code>{{ a.accountNo }}</code></td>
+                  <td>{{ a.holderName }}</td>
+                  <td class="num">{{ a.balance }}</td>
+                  <td>{{ a.currency }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        }
+        <button mat-stroked-button (click)="loadAccounts()"><mat-icon>refresh</mat-icon> Muat ulang</button>
+      </div>
+    </mat-tab>
+
+    <!-- ── LIVE VIEW ──────────────────────────────────────────────────── -->
+    <mat-tab label="Live View">
+      <div class="iso-tab-body">
+        <p class="iso-hint">
+          Pesan disimpan sebagai <b>hex</b> — bisa langsung dikirim ke Uji Trace saat menelusuri masalah.
+        </p>
+        <button mat-stroked-button (click)="loadLogs()"><mat-icon>refresh</mat-icon> Muat ulang</button>
+
+        @if (logs().length === 0) {
+          <p class="iso-empty"><mat-icon>info</mat-icon> Belum ada lalu lintas pesan.</p>
+        } @else {
+          @for (row of logs(); track row.created_at) {
+            <div class="iso-log" (click)="toggleLog(row)">
+              <span class="iso-log__mti">{{ row.mti || '—' }}</span>
+              <span class="iso-log__op">{{ row.operation || '' }}</span>
+              <span class="iso-log__ms">{{ row.duration_ms }}ms</span>
+              <span class="iso-bar__spacer"></span>
+              <button mat-icon-button matTooltip="Kirim ke Uji Trace"
+                      (click)="useLogAsTrace(row); $event.stopPropagation()">
+                <mat-icon>science</mat-icon>
+              </button>
+              <mat-icon>{{ row.open ? 'expand_less' : 'expand_more' }}</mat-icon>
+            </div>
+            @if (row.open) {
+              <div class="iso-log__detail">
+                <div class="iso-log__label">Request</div>
+                <pre>{{ row.request_hex }}</pre>
+                <div class="iso-log__label">Response</div>
+                <pre>{{ row.response_hex || '(tanpa balasan)' }}</pre>
+              </div>
+            }
+          }
+        }
+      </div>
+    </mat-tab>
+
+    <!-- ── BUAT SIMULATOR ─────────────────────────────────────────────── -->
+    <mat-tab label="Buat Simulator">
+      <div class="iso-tab-body">
+        <div class="iso-form">
+          <mat-form-field appearance="outline">
+            <mat-label>Nama</mat-label>
+            <input matInput [value]="newName()" (input)="newName.set($any($event.target).value)" />
+          </mat-form-field>
+          <mat-form-field appearance="outline">
+            <mat-label>Port TCP</mat-label>
+            <input matInput type="number" [value]="newPort()"
+                   (input)="newPort.set($any($event.target).value)" />
+          </mat-form-field>
+          <mat-form-field appearance="outline">
+            <mat-label>Profil spec</mat-label>
+            <mat-select [value]="newProfile()" (valueChange)="newProfile.set($event)">
+              @for (p of profiles(); track p.id) {
+                <mat-option [value]="p.name + ':' + p.version">{{ p.name }} v{{ p.version }}</mat-option>
+              }
+            </mat-select>
+          </mat-form-field>
+          <button mat-flat-button color="primary" (click)="createSim()">
+            <mat-icon>add</mat-icon> Buat
+          </button>
+        </div>
+        <p class="iso-hint iso-hint--small">
+          <mat-icon>info</mat-icon>
+          Port ISO disarankan mulai <b>9201</b> — bank memakai 9001+, QRIS 9101+, dan
+          keunikannya dijaga di database.
+        </p>
+      </div>
+    </mat-tab>
+  </mat-tab-group>
+</div>

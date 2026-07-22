@@ -1,5 +1,7 @@
 server:
-  port: ${SERVER_PORT:8080}   # Admin API + dashboard. API simulasi memakai port per-simulator.
+  # 9000 = Admin API + dashboard; port simulator merapat di atasnya
+  # (bank 9001+, QRIS 9101+, ISO-8583 9201+) agar satu blok mudah dibaca & di-firewall.
+  port: ${SERVER_PORT:9000}
   # Hormati X-Forwarded-* di belakang reverse proxy (dipakai PublicHost saat DEPLOY_HOST kosong).
   forward-headers-strategy: framework
 

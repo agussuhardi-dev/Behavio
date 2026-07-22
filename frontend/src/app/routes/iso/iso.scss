@@ -1,0 +1,368 @@
+.iso-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.iso-card {
+  padding: 12px 16px;
+}
+
+/* ── bar atas ─────────────────────────────────────────────────────────── */
+.iso-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+
+  &__icon {
+    color: var(--mat-sys-primary);
+  }
+
+  &__title {
+    font-weight: 600;
+  }
+
+  &__select {
+    min-width: 260px;
+    // Mat form field di dalam bar: rapatkan agar sejajar tombol.
+    margin-bottom: -1.25em;
+  }
+
+  &__spacer {
+    flex: 1 1 auto;
+  }
+}
+
+.iso-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  background: var(--mat-sys-surface-container-high);
+
+  mat-icon {
+    font-size: 16px;
+    width: 16px;
+    height: 16px;
+  }
+
+  &--on {
+    background: color-mix(in srgb, green 18%, transparent);
+  }
+
+  &--spec {
+    font-family: monospace;
+  }
+}
+
+/* ── pesan ────────────────────────────────────────────────────────────── */
+.iso-msg {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  font-size: 13px;
+
+  mat-icon {
+    font-size: 18px;
+    width: 18px;
+    height: 18px;
+  }
+
+  &--ok {
+    color: var(--mat-sys-primary);
+  }
+
+  &--err {
+    color: var(--mat-sys-error);
+  }
+}
+
+.iso-hint {
+  font-size: 13px;
+  opacity: 0.8;
+  margin: 4px 0 12px;
+
+  &--small {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+  }
+
+  mat-icon {
+    font-size: 16px;
+    width: 16px;
+    height: 16px;
+    vertical-align: middle;
+  }
+}
+
+.iso-empty {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  opacity: 0.7;
+  font-size: 13px;
+}
+
+/* ── tab ──────────────────────────────────────────────────────────────── */
+.iso-tabs {
+  background: var(--mat-sys-surface);
+  border-radius: 12px;
+}
+
+.iso-tab-body {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* ── operasi ──────────────────────────────────────────────────────────── */
+.iso-op {
+  margin-bottom: 8px;
+
+  &__badge {
+    font-family: monospace;
+    font-size: 11px;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: var(--mat-sys-primary);
+    color: var(--mat-sys-on-primary);
+    margin-right: 8px;
+  }
+
+  &__name {
+    font-weight: 500;
+  }
+
+  &__scenario {
+    margin-left: 10px;
+    font-size: 12px;
+    opacity: 0.7;
+  }
+
+  &__body {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    align-items: flex-start;
+  }
+
+  &__select {
+    min-width: 240px;
+  }
+}
+
+/* Judul panel tak boleh terpotong saat nama operasi panjang. */
+::ng-deep .iso-op .mat-expansion-panel-header {
+  height: auto;
+  padding: 12px 16px;
+}
+
+::ng-deep .iso-op .mat-content {
+  overflow: visible;
+}
+
+/* ── editor definisi ──────────────────────────────────────────────────── */
+.iso-editor {
+  width: 100%;
+
+  &__head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    margin-bottom: 6px;
+  }
+
+  &__area {
+    width: 100%;
+    min-height: 220px;
+    font-family: monospace;
+    font-size: 12px;
+    padding: 10px;
+    border-radius: 8px;
+    border: 1px solid var(--mat-sys-outline-variant);
+    background: var(--mat-sys-surface-container-low);
+    color: var(--mat-sys-on-surface);
+    resize: vertical;
+  }
+
+  &__actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+  }
+}
+
+/* ── tabel ────────────────────────────────────────────────────────────── */
+.iso-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  display: block;
+  overflow-x: auto;
+
+  th,
+  td {
+    text-align: left;
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--mat-sys-outline-variant);
+    white-space: nowrap;
+  }
+
+  th {
+    font-weight: 600;
+    opacity: 0.75;
+  }
+
+  .num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  code {
+    font-family: monospace;
+  }
+}
+
+/* ── form ─────────────────────────────────────────────────────────────── */
+.iso-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-start;
+
+  &__wide {
+    flex: 1 1 100%;
+  }
+}
+
+.iso-upload {
+  margin-top: 8px;
+}
+
+.iso-detail {
+  padding: 12px;
+  margin-top: 12px;
+
+  &__head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+    flex-wrap: wrap;
+  }
+}
+
+/* ── live view ────────────────────────────────────────────────────────── */
+.iso-log {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  background: var(--mat-sys-surface-container-low);
+
+  &:hover {
+    background: var(--mat-sys-surface-container);
+  }
+
+  &__mti {
+    font-family: monospace;
+    font-weight: 600;
+  }
+
+  &__op {
+    font-size: 12px;
+    opacity: 0.75;
+  }
+
+  &__ms {
+    font-size: 12px;
+    opacity: 0.6;
+  }
+
+  &__detail {
+    padding: 8px 12px 14px;
+
+    pre {
+      margin: 4px 0 10px;
+      padding: 8px;
+      border-radius: 6px;
+      background: var(--mat-sys-surface-container);
+      font-size: 11px;
+      /* Hex bisa sangat panjang — biarkan membungkus, jangan menggeser layout. */
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+  }
+
+  &__label {
+    font-size: 11px;
+    font-weight: 600;
+    opacity: 0.7;
+  }
+}
+
+/* ── info koneksi ─────────────────────────────────────────────────────── */
+.iso-conn {
+  &__hero {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+    padding: 14px 16px;
+    border-radius: 10px;
+    background: var(--mat-sys-surface-container-high);
+  }
+
+  &__label {
+    font-size: 12px;
+    opacity: 0.7;
+  }
+
+  &__addr {
+    font-family: monospace;
+    font-size: 20px;
+    font-weight: 600;
+    /* Host bisa panjang (FQDN) — jangan sampai menggeser layout. */
+    overflow-wrap: anywhere;
+  }
+
+  &__note {
+    display: block;
+    font-size: 11px;
+    opacity: 0.6;
+  }
+
+  &__snippet {
+    margin-top: 8px;
+    border: 1px solid var(--mat-sys-outline-variant);
+    border-radius: 10px;
+    overflow: hidden;
+
+    pre {
+      margin: 0;
+      padding: 12px;
+      font-size: 12px;
+      overflow-x: auto;
+      background: var(--mat-sys-surface-container-low);
+    }
+  }
+
+  &__snippet-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    font-size: 13px;
+    background: var(--mat-sys-surface-container);
+  }
+}

@@ -1,0 +1,235 @@
+package id.behavio.iso.web;
+
+import id.behavio.iso.codec.IsoMessage;
+import id.behavio.iso.persistence.IsoScenarioRepository;
+import id.behavio.iso.persistence.IsoStateRepository;
+import id.behavio.iso.scenario.IsoScenario;
+import id.behavio.iso.transport.IsoServerManager;
+import id.behavio.iso.spec.OperationRoute;
+import id.behavio.iso.spec.ResolvedSpec;
+import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.Optional;
+import java.util.UUID;
+
+/**
+ * Logika host ISO-8583: menerima {@code 0200}/{@code 0800}, membalas {@code 0210}/{@code 0810}.
+ *
+ * <p>Operasinya sengaja mencerminkan bank simulator (cek saldo, transfer, tarik tunai)
+ * tapi berjalan di atas state MILIK SENDIRI ({@code iso8583.accounts}) — saldo di sini
+ * bukan saldo bank ({@code docs/iso8583-plan.md} §3 poin 4).
+ */
+@Component
+public class IsoOperationHandler {
+
+    /** DE39 — kosakata respons ISO-8583 yang lazim. */
+    public static final String OK = "00";
+    public static final String INSUFFICIENT_FUNDS = "51";
+    public static final String INVALID_CARD = "14";
+    public static final String INVALID_ACCOUNT = "52";
+    public static final String FORMAT_ERROR = "30";
+    /** DE39 25 — "unable to locate record": transaksi asli tak ditemukan saat reversal. */
+    public static final String ORIGINAL_NOT_FOUND = "25";
+    public static final String SYSTEM_MALFUNCTION = "96";
+
+    private static final DateTimeFormatter DE7 = DateTimeFormatter.ofPattern("MMddHHmmss");
+
+    private final IsoStateRepository state;
+    private final IsoScenarioRepository scenarios;
+
+    public IsoOperationHandler(IsoStateRepository state, IsoScenarioRepository scenarios) {
+        this.state = state;
+        this.scenarios = scenarios;
+    }
+
+    @Transactional
+    public IsoServerManager.Outcome handle(UUID simulatorId, ResolvedSpec spec, IsoMessage req) {
+        IsoMessage resp = req.newResponse();
+        echoBack(req, resp);
+
+        String operation = spec.route(req).map(OperationRoute::name).orElse(null);
+        if (operation == null) {
+            // Tak ada rute = profil tak mengenali pesan ini. Balas 30 (format error) alih-alih
+            // diam: host penguji yang menunggu balasan akan timeout tanpa petunjuk apa pun.
+            return new IsoServerManager.Outcome(resp.set(39, FORMAT_ERROR), null);
+        }
+
+        IsoMessage natural = switch (operation) {
+            case "network-management" -> networkManagement(req, resp);
+            case "balance-inquiry" -> balanceInquiry(simulatorId, req, resp);
+            case "transfer" -> transfer(simulatorId, req, resp);
+            case "cash-withdrawal" -> withdrawal(simulatorId, req, resp);
+            case "reversal" -> reversal(simulatorId, req, resp);
+            default -> resp.set(39, FORMAT_ERROR);
+        };
+
+        // Scenario ditimpakan SETELAH logika alami berjalan. Urutan ini disengaja: mutasi
+        // saldo tetap terjadi apa adanya, lalu scenario hanya mengubah apa yang DILAPORKAN —
+        // sehingga "paksa DE39=51" bisa diuji tanpa memalsukan state.
+        scenarios.ensureProvisioned(simulatorId, operation);
+        IsoScenario sc = scenarios.active(simulatorId, operation);
+        return new IsoServerManager.Outcome(sc.apply(natural), sc.fault());
+    }
+
+    /** Field korelasi WAJIB digemakan — tanpa STAN/RRN yang sama, peer tak bisa memasangkan. */
+    private void echoBack(IsoMessage req, IsoMessage resp) {
+        copy(req, resp, 2);
+        copy(req, resp, 3);
+        copy(req, resp, 4);
+        copy(req, resp, 11);
+        copy(req, resp, 12);
+        copy(req, resp, 13);
+        copy(req, resp, 37);
+        copy(req, resp, 41);
+        copy(req, resp, 49);
+        copy(req, resp, 70);
+        resp.set(7, LocalDateTime.now().format(DE7));
+    }
+
+    private static void copy(IsoMessage from, IsoMessage to, int de) {
+        from.get(de).ifPresent(v -> to.set(de, v));
+    }
+
+    private IsoMessage networkManagement(IsoMessage req, IsoMessage resp) {
+        return resp.set(39, OK);   // echo/sign-on: cukup diakui
+    }
+
+    private IsoMessage balanceInquiry(UUID simulatorId, IsoMessage req, IsoMessage resp) {
+        var acc = resolveAccount(simulatorId, req);
+        if (acc.isEmpty()) {
+            return resp.set(39, INVALID_CARD);
+        }
+        return resp.set(39, OK).set(54, additionalAmounts(acc.get()));
+    }
+
+    private IsoMessage withdrawal(UUID simulatorId, IsoMessage req, IsoMessage resp) {
+        var accOpt = resolveAccount(simulatorId, req);
+        if (accOpt.isEmpty()) {
+            return resp.set(39, INVALID_CARD);
+        }
+        var acc = accOpt.get();
+        BigDecimal amount = amountOf(req);
+        if (amount == null) {
+            return resp.set(39, FORMAT_ERROR);
+        }
+        if (acc.balance().compareTo(amount) < 0) {
+            return resp.set(39, INSUFFICIENT_FUNDS).set(54, additionalAmounts(acc));
+        }
+        state.debit(simulatorId, acc.accountNo(), amount);
+        record(simulatorId, req, acc.accountNo(), null, amount);
+        var after = state.findAccount(simulatorId, acc.accountNo()).orElse(acc);
+        return resp.set(39, OK).set(54, additionalAmounts(after));
+    }
+
+    private IsoMessage transfer(UUID simulatorId, IsoMessage req, IsoMessage resp) {
+        var fromOpt = resolveAccount(simulatorId, req);
+        if (fromOpt.isEmpty()) {
+            return resp.set(39, INVALID_CARD);
+        }
+        String toNo = req.raw(103);
+        if (toNo == null || toNo.isBlank()) {
+            return resp.set(39, FORMAT_ERROR);
+        }
+        var toOpt = state.findAccount(simulatorId, toNo.trim());
+        if (toOpt.isEmpty()) {
+            return resp.set(39, INVALID_ACCOUNT);
+        }
+        BigDecimal amount = amountOf(req);
+        if (amount == null) {
+            return resp.set(39, FORMAT_ERROR);
+        }
+        var from = fromOpt.get();
+        if (from.balance().compareTo(amount) < 0) {
+            return resp.set(39, INSUFFICIENT_FUNDS).set(54, additionalAmounts(from));
+        }
+        state.debit(simulatorId, from.accountNo(), amount);
+        state.credit(simulatorId, toNo.trim(), amount);
+        record(simulatorId, req, from.accountNo(), toNo.trim(), amount);
+        var after = state.findAccount(simulatorId, from.accountNo()).orElse(from);
+        return resp.set(39, OK).set(54, additionalAmounts(after));
+    }
+
+    /**
+     * Reversal (0400): membatalkan efek finansial transaksi sebelumnya.
+     *
+     * <p>DE90 membawa identitas pesan ASLI — 4 digit MTI + 6 digit STAN di depan. Hanya
+     * itu yang dipakai mencari; rekening & nominal diambil dari catatan kita sendiri,
+     * karena DE90 memang tak membawanya.
+     *
+     * <p><b>Idempoten:</b> reversal LAZIM dikirim ulang saat acquirer tak yakin
+     * balasannya sampai. Pengiriman kedua tetap dijawab {@code 00} tapi TIDAK
+     * mengembalikan dana lagi — kalau tidak, saldo bertambah dari udara.
+     */
+    private IsoMessage reversal(UUID simulatorId, IsoMessage req, IsoMessage resp) {
+        String de90 = req.raw(90);
+        if (de90 == null || de90.length() < 10) {
+            return resp.set(39, FORMAT_ERROR);
+        }
+        String originalStan = de90.substring(4, 10);
+
+        var txnOpt = state.findReversibleByStan(simulatorId, originalStan);
+        if (txnOpt.isEmpty()) {
+            return resp.set(39, ORIGINAL_NOT_FOUND);
+        }
+        var txn = txnOpt.get();
+
+        // Penanda dipasang DULU; hanya yang berhasil memasangnya boleh memindahkan dana.
+        if (!state.markReversed(txn.id())) {
+            return resp.set(39, OK);   // sudah pernah dibalik — jawab sukses, jangan ulangi
+        }
+        state.credit(simulatorId, txn.accountNo(), txn.amount());
+        if (txn.counterpartNo() != null && !txn.counterpartNo().isBlank()) {
+            state.debit(simulatorId, txn.counterpartNo(), txn.amount());
+        }
+        return resp.set(39, OK);
+    }
+
+    private void record(UUID simulatorId, IsoMessage req, String accountNo,
+                        String counterpartNo, BigDecimal amount) {
+        state.recordTransaction(simulatorId, req.mti(), req.raw(3), req.raw(11), req.raw(37),
+                req.raw(2), accountNo, counterpartNo, amount, OK);
+    }
+
+    /**
+     * Rekening sumber: DE102 bila ada, kalau tidak lewat PAN (DE2) → tabel kartu.
+     * Urutan ini penting — transaksi dari ATM menyertakan DE102, sedangkan POS umumnya
+     * hanya membawa PAN.
+     */
+    private Optional<IsoStateRepository.Account> resolveAccount(UUID simulatorId, IsoMessage req) {
+        String acct = req.raw(102);
+        if (acct != null && !acct.isBlank()) {
+            return state.findAccount(simulatorId, acct.trim());
+        }
+        String pan = req.raw(2);
+        if (pan == null || pan.isBlank()) {
+            return Optional.empty();
+        }
+        return state.findAccountByPan(simulatorId, pan.trim());
+    }
+
+    /** DE4 bernilai n12 tanpa desimal — 2 digit terakhir adalah sen. */
+    private static BigDecimal amountOf(IsoMessage req) {
+        String raw = req.raw(4);
+        if (raw == null || !raw.matches("\\d{1,12}")) {
+            return null;
+        }
+        return new BigDecimal(raw).movePointLeft(2);
+    }
+
+    /**
+     * DE54 (Additional Amounts) format lazim per entri 20 karakter:
+     * jenis rekening(2) + jenis amount(2) + mata uang(3) + tanda(1) + nominal(12).
+     * {@code 10} = rekening tabungan · {@code 02} = saldo tersedia · {@code C} = positif.
+     */
+    private static String additionalAmounts(IsoStateRepository.Account acc) {
+        String amount = acc.balance().movePointRight(2).setScale(0).toPlainString();
+        if (amount.length() > 12) {
+            amount = amount.substring(amount.length() - 12);
+        }
+        return "1002" + acc.currency() + "C" + "0".repeat(12 - amount.length()) + amount;
+    }
+}

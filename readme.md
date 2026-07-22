@@ -219,7 +219,7 @@ Frontend (Angular)
         │
  REST Admin API / SSE
         │
-Admin Server (:8080)  ──►  Port/Server Manager
+Admin Server (:9000)  ──►  Port/Server Manager
         │                        │ buka/tutup port runtime
         │              ┌─────────┼─────────┐
         │            :9001     :9002     :9003     ← satu simulator = satu port
@@ -233,7 +233,7 @@ Fault Injection · Webhook (outbox)
 PostgreSQL
 ```
 
-Dua permukaan API terpisah total: **Admin API** (`:8080`, mengatur simulator) dan **API Simulasi** (per-port, meniru SNAP).
+Dua permukaan API terpisah total: **Admin API** (`:9000`, mengatur simulator) dan **API Simulasi** (per-port, meniru SNAP).
 
 ---
 

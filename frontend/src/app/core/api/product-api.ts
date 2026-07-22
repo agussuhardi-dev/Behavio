@@ -118,7 +118,7 @@ export abstract class ProductApi {
     );
   }
 
-  /** URL SSE live view (dilewatkan proxy dev ke :8080). */
+  /** URL SSE live view (dilewatkan proxy dev ke :9000). */
   streamUrl(id: string): string {
     return `${this.base}/${id}/logs/stream`;
   }

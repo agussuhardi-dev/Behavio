@@ -9,6 +9,7 @@ plugins {
 dependencies {
     implementation(project(":simulator"))
     implementation(project(":qris"))
+    implementation(project(":iso8583"))
 
     implementation(libs.spring.boot.starter.web)   // @RestController lintas-produk (health/sink) + advice
     implementation(libs.spring.boot.starter.actuator)

@@ -17,3 +17,12 @@ databaseChangeLog:
       file: db/changelog/bank/003-webhook-subscriptions.sql
   - include:
       file: db/changelog/qris/003-webhook-subscriptions.sql
+  # Produk ISO-8583 (docs/iso8583-plan.md) — changelog di jar module :iso8583.
+  - include:
+      file: db/changelog/iso8583/001-iso8583.sql
+  - include:
+      file: db/changelog/iso8583/002-state.sql
+  - include:
+      file: db/changelog/iso8583/003-scenarios.sql
+  - include:
+      file: db/changelog/iso8583/004-reversal.sql

@@ -15,6 +15,7 @@ export const routes: Routes = [
         loadChildren: () => import('./routes/simulators/simulators.routes').then(m => m.routes),
       },
       { path: 'qris', loadChildren: () => import('./routes/qris/qris.routes').then(m => m.routes) },
+      { path: 'iso8583', loadChildren: () => import('./routes/iso/iso.routes').then(m => m.routes) },
       { path: '403', component: Error403 },
       { path: '404', component: Error404 },
       { path: '500', component: Error500 },

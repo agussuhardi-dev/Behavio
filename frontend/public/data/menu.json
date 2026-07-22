@@ -11,6 +11,12 @@
       "name": "qris",
       "type": "link",
       "icon": "qr_code_2"
+    },
+    {
+      "route": "iso8583",
+      "name": "iso8583",
+      "type": "link",
+      "icon": "lan"
     }
   ]
 }

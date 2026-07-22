@@ -4,16 +4,25 @@ services:
     container_name: behavio-backend
     restart: unless-stopped
     env_file: .env
-    # Port per-simulator (design.md §6.1): tiap simulator membuka portnya SENDIRI —
-    # bank mulai 9001, QRIS 9101, dialokasikan platform.port_registry. Inilah port
-    # yang dipanggil klien/Postman; Admin API (8080) hanya untuk dashboard dan
-    # diproxy nginx. Tanpa pemetaan ini simulator hidup di dalam container tapi tak
-    # bisa dihubungi siapa pun — dan "connection refused" itu justru fitur yang
-    # disengaja saat simulator di-stop, sehingga bug ini menyamar jadi perilaku benar.
-    ports:
-      - "${SIM_PORT_START:-9000}-${SIM_PORT_END:-9199}:${SIM_PORT_START:-9000}-${SIM_PORT_END:-9199}"
+    # ── network_mode: host (keputusan 2026-07-22) ──────────────────────────
+    # Tiap simulator membuka portnya SENDIRI saat RUNTIME (bank 9001+, QRIS 9101+,
+    # ISO-8583 9201+) lewat platform.port_registry. Pemetaan port Docker sebaliknya
+    # bersifat STATIS — ditetapkan saat container dibuat. Ketidakcocokan itulah akar
+    # masalah `Connection refused` walau simulator hidup: port di luar rentang yang
+    # terlanjur dipetakan tak pernah dipublikasikan.
+    #
+    # Host networking menghapus kelas masalah itu: port apa pun yang dibuka aplikasi
+    # langsung terjangkau, tanpa SIM_PORT_START/END yang harus dirawat dan tanpa
+    # recreate container tiap menambah blok port produk baru. Bonus: mempublikasikan
+    # ratusan port lewat bridge itu mahal (proses per-port bila userland proxy aktif).
+    #
+    # HARGANYA — disadari saat memutuskan: container ikut melihat seluruh interface
+    # host (isolasi jaringan hilang) dan bersaing langsung memperebutkan port host.
+    # Konsekuensi lain: `backend` tak lagi ada di jaringan bridge, sehingga nginx
+    # TIDAK bisa memanggilnya lewat nama service — lihat deploy/nginx.conf.
+    network_mode: host
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:${SERVER_PORT:-8080}/actuator/health || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:${SERVER_PORT:-9000}/actuator/health || exit 1"]
       interval: 20s
       timeout: 10s
       retries: 10
@@ -30,6 +39,12 @@ services:
     restart: unless-stopped
     ports:
       - "81:80"
+    # Frontend SENGAJA tetap di bridge: memindahkannya ke host juga akan mengubah port
+    # yang diekspos (81) dan menyentuh konfigurasi tunnel cloudflared yang hidup di luar
+    # repo ini. Agar tetap bisa menjangkau backend yang kini host-mode, nginx memakai
+    # nama `host.docker.internal` yang dipetakan ke gateway host di bawah ini.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       - backend
     logging:

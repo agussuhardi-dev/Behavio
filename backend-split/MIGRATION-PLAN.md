@@ -129,7 +129,7 @@ simulator (Bank)   qris
 | **qris** | Salinan `core-engine` + adapter yang dipakai + `product-qris` (MPM, EMV QR) + changelog `qris/` + schema `qris`. Mandiri. |
 | **main-app** | Bootstrap Spring Boot; `DataSource`; schema `platform` (`port_registry`); health/config; import `@Configuration` kedua produk. `implementation(project(":simulator"))` + `implementation(project(":qris"))`. |
 
-**Frontend**: tetap 1 app Angular, bicara ke `main-app` di `:8080` lewat
+**Frontend**: tetap 1 app Angular, bicara ke `main-app` di `:9000` lewat
 `/api/admin/v1/{bank,qris}/...` — **tak perlu diubah**.
 
 ### ⚠️ Satu titik yang TAK bisa 100% terpisah: `platform.port_registry`

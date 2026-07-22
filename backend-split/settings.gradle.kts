@@ -12,5 +12,6 @@ rootProject.name = "behavio-split"
 include(
     "simulator",
     "qris",
+    "iso8583",
     "main-app",
 )

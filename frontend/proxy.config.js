@@ -1,7 +1,7 @@
-// Proxy dev: teruskan Admin API ke backend Behavio (:8080).
+// Proxy dev: teruskan Admin API ke backend Behavio (:9000).
 const PROXY_CONFIG = {
   '/api': {
-    target: 'http://localhost:8080',
+    target: 'http://localhost:9000',
     changeOrigin: true,
     secure: false,
   },

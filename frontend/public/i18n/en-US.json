@@ -1,7 +1,8 @@
 {
   "menu": {
     "simulators": "Bank Simulator",
-    "qris": "QRIS MPM"
+    "qris": "QRIS MPM",
+    "iso8583": "ISO-8583"
   },
   "validation": {
     "required": "This field is required",

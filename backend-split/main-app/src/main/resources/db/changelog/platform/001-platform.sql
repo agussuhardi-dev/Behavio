@@ -9,6 +9,10 @@ CREATE SCHEMA IF NOT EXISTS platform;
 CREATE SCHEMA IF NOT EXISTS bank;
 CREATE SCHEMA IF NOT EXISTS qris;
 
+--changeset behavio:platform-003-schema-iso8583
+-- Produk ISO-8583 (host TCP) — schema sendiri, lihat docs/iso8583-plan.md.
+CREATE SCHEMA IF NOT EXISTS iso8583;
+
 --changeset behavio:platform-002-port-registry
 -- Satu proses OS = satu ruang port. Constraint UNIQUE(port) di bank.simulators dan
 -- qris.simulators tidak saling melihat, jadi profil bank & profil QRIS bisa sama-sama

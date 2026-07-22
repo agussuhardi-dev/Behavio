@@ -1,7 +1,8 @@
 {
   "menu": {
     "simulators": "银行模拟器",
-    "qris": "QRIS MPM"
+    "qris": "QRIS MPM",
+    "iso8583": "ISO-8583"
   },
   "validation": {
     "required": "该字段必填",

@@ -334,7 +334,7 @@ localhost:9002/openapi/v1.0/transfer-intrabank   → Bank Simulasi B
 ```
 
 ### 6.2 API Admin (statis)
-Port tetap `:8080`. **Tanpa auth dulu** (lokal). Dipakai dashboard.
+Port tetap `:9000` (sejak 2026-07-22; sebelumnya 8080). **Tanpa auth dulu** (lokal). Dipakai dashboard.
 `{product}` = `bank` | `qris` (§3.4); produk tak dikenal → `404`.
 ```
 /api/admin/v1/{product}/
@@ -389,7 +389,7 @@ Urutan (pertama yang menang):
 >
 > **Batas yang tak bisa ditembus:** hanya **host** yang diperbaiki, bukan **port**. Contoh
 > curl menunjuk port simulator (mis. 9101) yang dilayani `HttpServer` JDK sendiri dan tak
-> pernah lewat Spring. Kalau reverse proxy hanya meneruskan `:8080`, host benar pun tak
+> pernah lewat Spring. Kalau reverse proxy hanya meneruskan `:9000`, host benar pun tak
 > membuat port itu terjangkau — petakan port simulator di proxy, atau set `DEPLOY_HOST`
 > ke alamat yang memang menjangkaunya.
 
@@ -696,7 +696,7 @@ ikut dipisah (BankApi/QrisApi di atas ProductApi generik).
 | Tenancy | Isolasi penuh per-partner; Workspace opsional |
 | Routing | Port per simulator (start/stop); restart → STOPPED |
 | Port assign | Manual + saran otomatis + deteksi konflik |
-| Admin/Dashboard | Port :8080, tanpa auth dulu |
+| Admin/Dashboard | Port :9000, tanpa auth dulu |
 | Signature | Dua mode (STRICT RSA/HMAC + SIMULATED) |
 | Fault | 3 titik (A/B/C) + connection-refused |
 | Webhook | Persistent outbox + retry |

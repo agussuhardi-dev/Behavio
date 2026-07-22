@@ -30,7 +30,7 @@ import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
  *
  * <p><b>Yang TIDAK bisa diperbaiki di sini:</b> port. Contoh curl menunjuk <i>port
  * simulator</i> (mis. 9101) yang dilayani {@code HttpServer} JDK tersendiri dan tak
- * pernah melewati Spring — jadi kalau reverse proxy Anda hanya meneruskan :8080, host
+ * pernah melewati Spring — jadi kalau reverse proxy Anda hanya meneruskan :9000, host
  * yang benar saja tak membuat port itu terjangkau. Petakan port simulator di proxy, atau
  * set {@code DEPLOY_HOST} ke alamat yang memang menjangkaunya.
  */
