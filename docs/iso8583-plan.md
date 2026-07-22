@@ -346,3 +346,173 @@ terjaga), jalur SSE 200, SPA 200, dan saat backend dimatikan nginx **tetap start
 `/etc/hosts` yang statis membuatnya tak lagi perlu).
 
 Alokasi port: bank **9001+** · QRIS **9101+** · ISO-8583 **9201+**.
+
+---
+
+## 12. Change PIN & Change Phone (2026-07-22)
+
+Dua operasi host tambahan, **didefinisikan di profil**, bukan di-hardcode:
+
+| Operasi | MTI | DE3 prefix | Data masuk | Kunci rekening |
+|---|---|---|---|---|
+| `change-pin` | `0200` | `92` | **DE53** = PIN block BARU (8 byte biner) | DE2 (PAN) |
+| `change-phone` | `0200` | `93` | **DE48** = nomor telepon baru | DE102 atau DE2 |
+
+Processing code `92`/`93` adalah **konvensi simulator ini, bukan standar ISO** — tiap host
+memakai kodenya sendiri. Bila host Anda berbeda, ubah `OperationRoute` di profilnya
+(`extends` baseline lalu timpa), **jangan** sentuh kode.
+
+**PIN lama tidak diverifikasi — disengaja.** Memverifikasinya menuntut HSM/ZPK untuk
+mendekripsi PIN block; simulator tak punya keduanya, dan berpura-pura punya justru
+menyesatkan. PIN block disimpan **apa adanya** di `iso8583.cards.pin_block` semata sebagai
+bukti operasi benar-benar sampai dan mengubah sesuatu — **bukan kredensial**. Penolakan
+"PIN lama salah" dihasilkan lewat **scenario** (DE39=55), yang justru memberi kendali lebih
+berguna saat menguji klien: klien bisa diuji pada jalur gagal kapan pun, tanpa menyiapkan
+data.
+
+**Profil baseline naik ke `iso8583-1987` v1.1.** Profil bersifat immutable, jadi v1.0 tetap
+ada apa adanya — simulator yang menunjuk v1.0 berperilaku persis seperti saat diuji dan
+**tidak** mendapat kedua operasi ini. Arahkan ke v1.1 untuk memakainya.
+
+Response code: `00` berhasil · `30` format (PIN/telepon baru tak dikirim) · `14` kartu tak
+dikenal · `52` rekening tak dikenal.
+
+### 12.1 Kelas packager `IFA_AMOUNT` (2026-07-22)
+
+Muncul dari unggahan spec nyata yang ditolak. Dipetakan sebagai **tipe tersendiri**
+(`FieldType.AMOUNT`), bukan disamakan dengan `N` atau `ANS`:
+
+```
+D00001500      ← tanda 'C'/'D' di posisi 1, digit rata-kanan berpad '0'
+```
+
+`N` akan menaruh '0' **di depan tanda**, `ANS` menempel **spasi di belakang digit**.
+Keduanya menghasilkan pesan yang panjangnya "benar" tapi isinya rusak — kelas bug yang
+paling mahal dilacak, karena host asli hanya diam atau menolak tanpa alasan jelas.
+
+Panjang di packager XML **sudah memuat karakter tanda** (`x+n8` ditulis `len="9"`), jadi
+angkanya dipakai apa adanya.
+
+**Tanda wajib eksplisit.** Nilai tanpa `C`/`D` di depan ditolak saat pack. Memberi default
+(mis. selalu `D`) akan membalik arah debit/kredit tanpa suara pada host yang membedakannya
+— gagal saat pack jauh lebih murah daripada salah bukukan di sisi host.
+
+Diuji: unit test round-trip + penolakan tanda hilang/kapasitas lewat, serta uji trace atas
+profil XML nyata yang memuat DE28.
+
+### 12.2 Bitmap HEX vs BINER — sebab tersering "response timeout" (2026-07-22)
+
+Berawal dari pesan echo nyata yang tak pernah dibalas:
+
+```
+0800 8220000000000000 0400000000000000 0722234155 000025 301
+     ^^ bitmap ditulis 16 KARAKTER ASCII hex
+```
+
+Pesannya sendiri benar (DE7, DE11, DE70=301 / echo test). Yang salah adalah **pasangannya
+dengan profil**: baseline `iso8583-1987` memakai `bitmap: BINARY` (8 byte mentah), jadi
+codec membaca 8 byte pertama — yaitu teks `"82200000"` — sebagai bitmap. Hasilnya bit-bit
+acak, DE di luar kamus, unpack gagal, tak ada balasan → **klien melihat timeout**.
+
+Perbaikannya bukan di kode: buat profil yang `extends` baseline lalu menimpa transport-nya.
+
+```json
+{ "name":"host-anda", "version":"1.0", "extends":"iso8583-1987",
+  "transport":{"lengthPrefixBytes":2,"lengthPrefixEncoding":"BINARY",
+               "charset":"ASCII","bitmap":"HEX"},
+  "fields":[],
+  "operations":[{"name":"network-management","mti":"0800","processingCode":null}] }
+```
+
+Pesan yang sama lalu dibalas `0810 … 00 301`. (Perhatikan kuncinya **`extends`**, bukan
+`parent`.)
+
+**Perubahan yang menyertai:** alasan gagal kini disimpan di `request_logs.error` dan
+ditampilkan di **Live View**. Sebelumnya server sudah tahu persis apa yang salah, tapi
+membuangnya ke log aplikasi — dari sisi pemakai gejalanya cuma "timeout" tanpa petunjuk.
+Balasan kosong + kolom alasan terisi = di situlah sebabnya.
+
+### 12.3 Menghapus profil spec (2026-07-22)
+
+`DELETE /api/admin/v1/iso8583/spec-profiles/{name}/{version}` — juga tersedia sebagai
+tombol hapus di tab **Profil Spec**.
+
+Ini **tidak** melanggar sifat immutable profil. Yang dilarang immutability adalah
+*mengubah* profil yang sedang dipakai — perilaku simulator berubah diam-diam. Menghapus
+profil yang tak dipakai siapa pun tak mengubah perilaku apa pun, dan tanpa penghapusan
+unggahan percobaan menumpuk selamanya.
+
+**Ditolak `409` bila masih dipakai**, dan pemakainya disebutkan:
+
+```json
+{"error":"Profil 'uji-pakai' v1.0 masih dipakai: simulator pemakai. Hapus/alihkan pemakainya dulu.",
+ "dependents":["simulator pemakai"]}
+```
+
+Yang dihitung sebagai pemakai:
+1. **Simulator** yang menunjuk `name` + `version` itu persis.
+2. **Profil turunan** yang `extends` nama itu — tapi hanya bila yang dihapus adalah versi
+   **terakhir** dari nama tersebut. Turunan menunjuk NAMA induk, bukan versi, jadi selama
+   masih ada versi lain ia tetap punya induk.
+
+> **Catatan yang perlu disadari (sifat lama, bukan baru):** karena `extends` menunjuk nama
+> saja, turunan selalu memakai versi **terbaru** induknya. Mengunggah versi induk yang
+> lebih baru ikut mengubah turunan. Kalau perilaku turunan harus benar-benar terkunci,
+> salin field induk ke dalamnya alih-alih mewarisi.
+
+### 12.4 Mengganti profil spec simulator (2026-07-22)
+
+Sebelumnya profil hanya bisa ditentukan **saat simulator dibuat**, jadi satu-satunya cara
+pindah profil adalah menghapus simulator — ikut membuang rekening, kartu, dan riwayat
+pesannya. Padahal justru saat menelusuri masalah (mis. §12.2, bitmap HEX vs BINER) yang
+ingin diganti hanyalah cara pesan dibaca, bukan datanya.
+
+```bash
+curl -X PUT ".../iso8583/simulators/{id}/spec-profile" -H 'Content-Type: application/json' \
+  -d '{"specProfileName":"host-hex","specProfileVersion":"1.0"}'
+```
+
+Di dashboard: menu **⋮ → Ganti profil spec** pada simulator terpilih; profil yang sedang
+dipakai ditandai centang dan tak bisa dipilih ulang.
+
+- Profil baru **diverifikasi lebih dulu** (sama seperti saat membuat simulator): gagal di
+  sini jauh lebih mudah dibaca daripada gagal saat pesan pertama tiba.
+- Simulator yang sedang `RUNNING` **di-start ulang** agar codec memakai profil baru.
+  Koneksi TCP yang terbuka terputus — tak terhindarkan, karena membiarkan listener lama
+  jalan dengan codec lama menghasilkan perilaku campur aduk yang mustahil ditelusuri.
+- **Rekening, kartu, dan riwayat pesan tetap utuh.**
+
+Ini juga jalan keluar dari penolakan hapus profil (§12.3): alihkan simulator ke profil
+lain, barulah profil lamanya bisa dihapus.
+
+> **Catatan Live View (2026-07-22):** penyegaran otomatis diganti tombol **Muat ulang**
+> atas permintaan pemakai — daftar yang bergeser sendiri mengganggu saat satu pesan sedang
+> ditelusuri. Tab Rekening & Kartu tetap dimuat saat tab dibuka.
+
+### 12.5 Kelas bitmap di packager XML kini dibaca (2026-07-22) — **defect**
+
+Lanjutan §12.2. Ternyata bukan sekadar salah pilih profil: parser packager XML
+**membuang kelas bitmap** (`<isofield id="1" … class="org.jpos.iso.IFA_BITMAP"/>`) karena
+bitmap ditangani codec, bukan sebagai field biasa. Akibatnya setiap profil hasil unggahan
+XML memakai `bitmap: BINARY` bawaan — termasuk berkas yang jelas-jelas menulis
+`IFA_BITMAP` (16 karakter ASCII hex).
+
+Gejalanya berbeda-beda dan semuanya menyesatkan:
+
+| Kamus profil | Gejala |
+|---|---|
+| subset (baseline) | `Pesan memuat DE 5 yang tidak ada di kamus profil` |
+| lengkap (berkas bank) | `Pesan terpotong: butuh 4 byte pada posisi 54, tersisa 1` |
+
+Tak satu pun menyebut bitmap — padahal di situlah masalahnya. Dengan kamus lengkap, bit-bit
+acak dari bitmap yang salah baca tetap menemukan definisi DE, jadi parser terus melahap
+panjang yang ngawur sampai kehabisan byte.
+
+**Perbaikan:** `IFA_BITMAP` → `HEX`, `IFB_BITMAP` → `BINARY`, varian EBCDIC ditolak.
+Pengaturan transport lain (lebar header, charset) tetap diwarisi induk — berkas packager
+hanya memuat satu petunjuk transport, jadi hanya itu yang diambil. Kelas MTI ber-BCD/EBCDIC
+(`IFB_NUMERIC` pada `id="0"`) juga ditolak, bukan diabaikan diam-diam.
+
+> **Profil XML yang diunggah SEBELUM perbaikan ini tetap `BINARY`.** Profil bersifat
+> immutable, jadi perbaikannya adalah unggah ulang sebagai versi baru lalu alihkan
+> simulatornya (§12.4).

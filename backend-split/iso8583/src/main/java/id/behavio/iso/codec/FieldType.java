@@ -20,7 +20,18 @@ public enum FieldType {
     /** Biner (hex string di representasi kita). */
     B("b"),
     /** Track data. */
-    Z("z");
+    Z("z"),
+    /**
+     * Amount BERTANDA ala jPOS {@code IFA_AMOUNT}: 1 karakter tanda di depan
+     * (<b>C</b>redit / <b>D</b>ebit) diikuti digit rata-kanan berpad '0'
+     * — mis. {@code n12} bertanda → {@code D000000010000} (panjang 13).
+     *
+     * <p>Padding-nya TIDAK bisa diwakili {@link #N} maupun {@link #ANS}: yang pertama
+     * akan menaruh '0' di depan tanda, yang kedua menempel spasi di belakang digit.
+     * Keduanya menghasilkan pesan yang panjangnya "benar" tapi isinya rusak — persis
+     * kelas bug yang paling mahal dilacak. Karena itu ia jadi tipe tersendiri.
+     */
+    AMOUNT("x+n");
 
     private final String code;
 
@@ -35,6 +46,11 @@ public enum FieldType {
     /** Numerik & biner rata KANAN; sisanya rata KIRI. */
     public boolean padLeft() {
         return this == N || this == B;
+    }
+
+    /** Padding-nya ditangani khusus di codec, bukan lewat {@link #padChar()}. */
+    public boolean signedAmount() {
+        return this == AMOUNT;
     }
 
     public char padChar() {

@@ -29,7 +29,7 @@ class JposPackagerXmlParserTest {
     @Test
     @DisplayName("memetakan kelas packager ke encoding, tipe, dan lebar penanda panjang")
     void mapsPackagerClasses() {
-        var fields = JposPackagerXmlParser.parse("""
+        var fields = fieldsOf("""
                 <isopackager>
                   <isofield id="2"  length="19" name="PAN"             class="org.jpos.iso.IFA_LLNUM"/>
                   <isofield id="3"  length="6"  name="PROCESSING CODE" class="org.jpos.iso.IFA_NUMERIC"/>
@@ -69,7 +69,7 @@ class JposPackagerXmlParserTest {
     @DisplayName("kelas packager tak dikenal DITOLAK, bukan ditebak")
     void rejectsUnknownPackagerClass() {
         IsoCodecException e = assertThrows(IsoCodecException.class, () ->
-                JposPackagerXmlParser.parse("""
+                fieldsOf("""
                         <isopackager>
                           <isofield id="2" length="19" name="PAN" class="org.jpos.iso.IFB_LLLNUM"/>
                         </isopackager>
@@ -82,7 +82,7 @@ class JposPackagerXmlParserTest {
     @Test
     @DisplayName("MTI dan bitmap dilewati, bukan jadi data element")
     void skipsMtiAndBitmap() {
-        var fields = JposPackagerXmlParser.parse("""
+        var fields = fieldsOf("""
                 <isopackager>
                   <isofield id="0" length="4"  name="MTI"    class="org.jpos.iso.IFA_NUMERIC"/>
                   <isofield id="1" length="16" name="BITMAP" class="org.jpos.iso.IFA_BITMAP"/>
@@ -96,7 +96,7 @@ class JposPackagerXmlParserTest {
     @DisplayName("DE ganda ditolak")
     void rejectsDuplicateDe() {
         IsoCodecException e = assertThrows(IsoCodecException.class, () ->
-                JposPackagerXmlParser.parse("""
+                fieldsOf("""
                         <isopackager>
                           <isofield id="3" length="6" name="A" class="org.jpos.iso.IFA_NUMERIC"/>
                           <isofield id="3" length="6" name="B" class="org.jpos.iso.IFA_NUMERIC"/>
@@ -108,9 +108,9 @@ class JposPackagerXmlParserTest {
     @Test
     @DisplayName("XML kosong / bukan packager ditolak dengan pesan jelas")
     void rejectsGarbage() {
-        assertThrows(IsoCodecException.class, () -> JposPackagerXmlParser.parse(""));
-        assertThrows(IsoCodecException.class, () -> JposPackagerXmlParser.parse("<html><body/></html>"));
-        assertThrows(IsoCodecException.class, () -> JposPackagerXmlParser.parse("bukan xml"));
+        assertThrows(IsoCodecException.class, () -> fieldsOf(""));
+        assertThrows(IsoCodecException.class, () -> fieldsOf("<html><body/></html>"));
+        assertThrows(IsoCodecException.class, () -> fieldsOf("bukan xml"));
     }
 
     /**
@@ -121,7 +121,7 @@ class JposPackagerXmlParserTest {
     @Test
     @DisplayName("DOCTYPE eksternal tidak menggagalkan parse & tidak dimuat (aman XXE)")
     void handlesDoctypeSafely() {
-        var fields = JposPackagerXmlParser.parse("""
+        var fields = fieldsOf("""
                 <?xml version="1.0"?>
                 <!DOCTYPE isopackager SYSTEM "genericpackager.dtd">
                 <isopackager>
@@ -135,11 +135,56 @@ class JposPackagerXmlParserTest {
     @Test
     @DisplayName("nama kelas boleh sederhana tanpa package")
     void acceptsSimpleClassName() {
-        var fields = JposPackagerXmlParser.parse("""
+        var fields = fieldsOf("""
                 <isopackager>
                   <isofield id="4" length="12" name="AMOUNT" class="IFA_NUMERIC"/>
                 </isopackager>
                 """);
         assertEquals(FieldType.N, fields.get(0).type());
+    }
+
+    private static java.util.List<FieldSpec> fieldsOf(String xml) {
+        return JposPackagerXmlParser.parse(xml).fields();
+    }
+
+    @Test
+    @DisplayName("kelas bitmap menentukan encoding bitmap — IFA_ = hex ASCII, IFB_ = biner")
+    void bitmapClassDecidesEncoding() {
+        // Diabaikannya kelas bitmap pernah membuat profil diam-diam memakai bitmap BINER
+        // untuk host yang mengirim 16 karakter ASCII hex: pesan tak pernah ter-parse dan
+        // gejalanya cuma "host tak membalas".
+        String xml = """
+                <isopackager>
+                  <isofield id="1" length="16" name="BITMAP" class="org.jpos.iso.%s"/>
+                  <isofield id="3" length="6"  name="PROCESSING CODE" class="org.jpos.iso.IFA_NUMERIC"/>
+                </isopackager>
+                """;
+        assertEquals(TransportSpec.BitmapEncoding.HEX,
+                JposPackagerXmlParser.parse(xml.formatted("IFA_BITMAP")).bitmap());
+        assertEquals(TransportSpec.BitmapEncoding.BINARY,
+                JposPackagerXmlParser.parse(xml.formatted("IFB_BITMAP")).bitmap());
+        // Tak ada deklarasi bitmap → null, pemanggil yang memutuskan bawaannya.
+        assertEquals(null, JposPackagerXmlParser.parse("""
+                <isopackager>
+                  <isofield id="3" length="6" name="PROCESSING CODE" class="org.jpos.iso.IFA_NUMERIC"/>
+                </isopackager>
+                """).bitmap());
+    }
+
+    @Test
+    @DisplayName("kelas bitmap/MTI yang belum didukung ditolak, bukan diabaikan")
+    void rejectsUnsupportedBitmapAndMti() {
+        assertThrows(IsoCodecException.class, () -> JposPackagerXmlParser.parse("""
+                <isopackager>
+                  <isofield id="1" length="16" name="BITMAP" class="org.jpos.iso.IFE_BITMAP"/>
+                  <isofield id="3" length="6"  name="PC" class="org.jpos.iso.IFA_NUMERIC"/>
+                </isopackager>
+                """));
+        assertThrows(IsoCodecException.class, () -> JposPackagerXmlParser.parse("""
+                <isopackager>
+                  <isofield id="0" length="4" name="MTI" class="org.jpos.iso.IFB_NUMERIC"/>
+                  <isofield id="3" length="6" name="PC"  class="org.jpos.iso.IFA_NUMERIC"/>
+                </isopackager>
+                """));
     }
 }

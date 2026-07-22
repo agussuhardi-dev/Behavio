@@ -17,6 +17,7 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import {
   IsoAccount,
   IsoApi,
+  IsoCard,
   IsoLog,
   IsoSimulator,
   SpecProfileDetail,
@@ -101,7 +102,24 @@ export class Iso implements OnInit {
 
   // state & log
   readonly accounts = signal<IsoAccount[]>([]);
+  readonly cards = signal<IsoCard[]>([]);
+
+  // form rekening & kartu
+  readonly accNo = signal('');
+  readonly accName = signal('');
+  readonly accBalance = signal('1000000.00');
+  readonly accPhone = signal('');
+  readonly cardPan = signal('');
+  readonly cardAccNo = signal('');
   readonly logs = signal<LogRow[]>([]);
+
+  /** Tab aktif — menentukan data apa yang dimuat saat tab dibuka. */
+  readonly activeTab = signal('');
+
+  // Dicocokkan dengan LABEL tab, bukan indeks: indeks bergeser diam-diam begitu ada tab
+  // baru disisipkan, dan pemuatan akan menempel di tab yang salah tanpa gejala apa pun.
+  private static readonly TAB_ACCOUNTS = 'Rekening & Kartu';
+  private static readonly TAB_LIVE = 'Live View';
 
   get selectedSim(): IsoSimulator | undefined {
     return this.sims().find(s => s.id === this.selectedSimId());
@@ -110,6 +128,24 @@ export class Iso implements OnInit {
   ngOnInit() {
     this.publicHost.load();
     this.reload();
+  }
+
+  /**
+   * Data dimuat saat tabnya dibuka. Live View sengaja TIDAK lagi menyegarkan sendiri —
+   * atas permintaan: polling membuat daftar bergeser saat sedang dibaca, dan saat
+   * menelusuri satu pesan yang bergerak justru mengganggu. Penyegaran kini di tangan
+   * pemakai lewat tombol Muat ulang.
+   */
+  onTabChange(label: string) {
+    this.activeTab.set(label);
+    if (!this.selectedSimId()) {
+      return;
+    }
+    if (label === Iso.TAB_LIVE) {
+      this.loadLogs();
+    } else if (label === Iso.TAB_ACCOUNTS) {
+      this.loadAccounts();
+    }
   }
 
   // ── info koneksi (untuk disalin ke klien) ───────────────────────────────
@@ -228,6 +264,8 @@ export class Iso implements OnInit {
     this.loadOperations();
     this.loadAccounts();
     this.loadLogs();
+    // Polling mengikuti simulator yang sedang dipilih, bukan yang lama.
+    this.onTabChange(this.activeTab());
   }
 
   /** Operasi datang dari PROFIL SPEC simulator, bukan daftar tetap di frontend. */
@@ -260,6 +298,74 @@ export class Iso implements OnInit {
       next: a => this.accounts.set(a),
       error: () => this.accounts.set([]),
     });
+    this.api.cards(this.selectedSimId()).subscribe({
+      next: c => this.cards.set(c),
+      error: () => this.cards.set([]),
+    });
+  }
+
+  /**
+   * Rekening menyimpan saldo; KARTU memetakan PAN → rekening. Klien ISO mengirim PAN
+   * (DE2), jadi rekening tanpa kartu tetap dibalas DE39=14 — karena itu keduanya
+   * disediakan berdampingan di sini.
+   */
+  addAccount() {
+    if (!this.accNo().trim()) {
+      this.err.set('Nomor rekening wajib diisi.');
+      return;
+    }
+    this.api
+      .addAccount(this.selectedSimId(), this.accNo().trim(), this.accName().trim() || 'Nasabah',
+        this.accBalance().trim() || '0', this.accPhone().trim())
+      .subscribe({
+        next: () => {
+          this.msg.set(`Rekening ${this.accNo()} dibuat.`);
+          this.err.set('');
+          // Nomor rekening diisikan ke form kartu: langkah berikutnya hampir selalu
+          // membuatkan kartunya, dan mengetik ulang nomor itu mudah salah.
+          this.cardAccNo.set(this.accNo().trim());
+          this.accNo.set('');
+          this.accName.set('');
+          this.accPhone.set('');
+          this.loadAccounts();
+        },
+        error: e => this.err.set(e?.error?.error ?? 'Gagal membuat rekening.'),
+      });
+  }
+
+  addCard() {
+    if (!this.cardPan().trim() || !this.cardAccNo().trim()) {
+      this.err.set('PAN dan nomor rekening wajib diisi.');
+      return;
+    }
+    this.api.addCard(this.selectedSimId(), this.cardPan().trim(), this.cardAccNo().trim()).subscribe({
+      next: () => {
+        this.msg.set(`Kartu ${this.cardPan()} ditautkan ke rekening ${this.cardAccNo()}.`);
+        this.err.set('');
+        this.cardPan.set('');
+        this.loadAccounts();
+      },
+      error: e => this.err.set(e?.error?.error ?? 'Gagal membuat kartu.'),
+    });
+  }
+
+  removeAccount(a: IsoAccount) {
+    this.confirm('Hapus rekening?', `Rekening ${a.accountNo} (${a.holderName}) akan dihapus.`,
+      () => this.api.deleteAccount(this.selectedSimId(), a.accountNo).subscribe({
+        next: () => { this.msg.set('Rekening dihapus.'); this.loadAccounts(); },
+      }));
+  }
+
+  removeCard(c: IsoCard) {
+    this.confirm('Hapus kartu?', `Kartu ${c.pan} akan dihapus.`,
+      () => this.api.deleteCard(this.selectedSimId(), c.pan).subscribe({
+        next: () => { this.msg.set('Kartu dihapus.'); this.loadAccounts(); },
+      }));
+  }
+
+  /** Kartu yang menunjuk rekening ini — dipakai memberi tanda "belum punya kartu". */
+  cardsFor(accountNo: string): IsoCard[] {
+    return this.cards().filter(c => c.accountNo === accountNo);
   }
 
   loadLogs() {
@@ -356,6 +462,51 @@ export class Iso implements OnInit {
       next: d => this.profileDetail.set(d),
       error: e => this.err.set(e?.error?.error ?? 'Gagal memuat profil.'),
     });
+  }
+
+  /**
+   * Mengalihkan simulator aktif ke profil spec lain — cara memperbaiki ketidakcocokan
+   * seperti bitmap HEX vs BINER tanpa membuat ulang simulator (rekening, kartu, dan
+   * riwayat pesannya tetap utuh).
+   */
+  switchProfile(p: SpecProfileSummary) {
+    const sim = this.selectedSim;
+    if (!sim) {
+      return;
+    }
+    const jalan = sim.status === 'RUNNING';
+    this.confirm('Ganti profil spec?',
+      `${sim.name} akan memakai ${p.name} v${p.version}.` +
+      (jalan ? ' Simulator sedang berjalan, jadi akan di-start ulang — koneksi TCP yang'
+             + ' terbuka akan terputus.' : ''),
+      () => this.api.switchProfile(sim.id, p.name, p.version).subscribe({
+        next: () => {
+          this.msg.set(`${sim.name} kini memakai ${p.name} v${p.version}.`);
+          this.err.set('');
+          this.reload();
+        },
+        error: e => this.err.set(e?.error?.error ?? 'Gagal mengganti profil.'),
+      }));
+  }
+
+  /**
+   * Menghapus satu versi profil. Backend menolak (409) bila masih dipakai dan menyebutkan
+   * pemakainya — pesan itu ditampilkan apa adanya, karena justru itu yang perlu ditindak.
+   */
+  removeProfile(p: SpecProfileSummary) {
+    this.confirm('Hapus profil spec?',
+      `Profil ${p.name} v${p.version} akan dihapus. Simulator yang menunjuknya tak akan bisa start.`,
+      () => this.api.deleteProfile(p.name, p.version).subscribe({
+        next: () => {
+          this.msg.set(`Profil ${p.name} v${p.version} dihapus.`);
+          this.err.set('');
+          if (this.profileDetail()) {
+            this.profileDetail.set(null);
+          }
+          this.reload();
+        },
+        error: e => this.err.set(e?.error?.error ?? 'Gagal menghapus profil.'),
+      }));
   }
 
   /**

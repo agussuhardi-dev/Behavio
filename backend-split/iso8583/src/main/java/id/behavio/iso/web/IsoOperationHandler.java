@@ -64,6 +64,8 @@ public class IsoOperationHandler {
             case "transfer" -> transfer(simulatorId, req, resp);
             case "cash-withdrawal" -> withdrawal(simulatorId, req, resp);
             case "reversal" -> reversal(simulatorId, req, resp);
+            case "change-pin" -> changePin(simulatorId, req, resp);
+            case "change-phone" -> changePhone(simulatorId, req, resp);
             default -> resp.set(39, FORMAT_ERROR);
         };
 
@@ -186,6 +188,50 @@ public class IsoOperationHandler {
             state.debit(simulatorId, txn.counterpartNo(), txn.amount());
         }
         return resp.set(39, OK);
+    }
+
+    /**
+     * Change PIN. PIN block LAMA di DE52, BARU di DE53 — konvensi yang lazim, tapi tiap
+     * host berbeda; kalau spec Anda menaruhnya di tempat lain, ubah profilnya, bukan kode ini.
+     *
+     * <p><b>PIN lama TIDAK diverifikasi.</b> Memverifikasinya menuntut HSM/ZPK untuk
+     * mendekripsi PIN block. Di simulator, penolakan "PIN lama salah" dihasilkan lewat
+     * scenario (DE39=55) — itu memberi kendali yang justru lebih berguna saat menguji klien.
+     */
+    private IsoMessage changePin(UUID simulatorId, IsoMessage req, IsoMessage resp) {
+        String pan = req.raw(2);
+        if (pan == null || pan.isBlank()) {
+            return resp.set(39, FORMAT_ERROR);
+        }
+        String newPin = req.raw(53);
+        if (newPin == null || newPin.isBlank()) {
+            return resp.set(39, FORMAT_ERROR);   // tak ada PIN baru = tak ada yang diubah
+        }
+        if (state.findAccountByPan(simulatorId, pan.trim()).isEmpty()) {
+            return resp.set(39, INVALID_CARD);
+        }
+        return state.updatePin(simulatorId, pan.trim(), newPin.trim())
+                ? resp.set(39, OK)
+                : resp.set(39, INVALID_CARD);
+    }
+
+    /**
+     * Change nomor telepon. Nomor baru dibaca dari DE48 (Additional Data — private),
+     * tempat yang lazim untuk data non-standar; rekening ditentukan DE102 atau PAN.
+     * Sekali lagi: kalau host Anda memakai DE lain, sesuaikan lewat profil.
+     */
+    private IsoMessage changePhone(UUID simulatorId, IsoMessage req, IsoMessage resp) {
+        var accOpt = resolveAccount(simulatorId, req);
+        if (accOpt.isEmpty()) {
+            return resp.set(39, INVALID_CARD);
+        }
+        String phone = req.raw(48);
+        if (phone == null || phone.isBlank()) {
+            return resp.set(39, FORMAT_ERROR);
+        }
+        return state.updatePhone(simulatorId, accOpt.get().accountNo(), phone.trim())
+                ? resp.set(39, OK)
+                : resp.set(39, INVALID_ACCOUNT);
     }
 
     private void record(UUID simulatorId, IsoMessage req, String accountNo,

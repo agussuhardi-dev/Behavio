@@ -24,7 +24,12 @@ import java.util.List;
 public class BaselineProfileSeeder {
 
     public static final String NAME = "iso8583-1987";
-    public static final String VERSION = "1.0";
+    /**
+     * Dinaikkan ke 1.1 saat operasi change-pin & change-phone ditambahkan. Profil bersifat
+     * IMMUTABLE, jadi versi baru dibuat berdampingan — simulator yang menunjuk 1.0 tetap
+     * berperilaku persis seperti saat diuji.
+     */
+    public static final String VERSION = "1.1";
 
     private static final Logger log = LoggerFactory.getLogger(BaselineProfileSeeder.class);
 
@@ -56,7 +61,11 @@ public class BaselineProfileSeeder {
                 new OperationRoute("cash-withdrawal", "0200", "01"),
                 new OperationRoute("purchase", "0200", "00"),
                 new OperationRoute("network-management", "0800", null),
-                new OperationRoute("reversal", "0400", null));
+                new OperationRoute("reversal", "0400", null),
+                // Processing code di bawah ini KONVENSI simulator, bukan standar ISO —
+                // tiap host memakai kodenya sendiri. Sesuaikan lewat profil, bukan kode.
+                new OperationRoute("change-pin", "0200", "92"),
+                new OperationRoute("change-phone", "0200", "93"));
 
         return new SpecProfile(NAME, VERSION, null, TransportSpec.defaults(), fields, ops);
     }

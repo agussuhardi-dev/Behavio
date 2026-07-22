@@ -23,7 +23,7 @@
           <mat-icon>{{ sim.status === 'RUNNING' ? 'play_circle' : 'stop_circle' }}</mat-icon>
           {{ sim.status }}
         </span>
-        <span class="iso-chip iso-chip--spec" matTooltip="Profil spec yang dipakai simulator ini">
+        <span class="iso-chip iso-chip--spec" matTooltip="Profil spec yang dipakai simulator ini — ganti lewat menu ⋮">
           <mat-icon>menu_book</mat-icon>
           {{ sim.specProfileName }} v{{ sim.specProfileVersion }}
         </span>
@@ -46,10 +46,23 @@
           <button mat-menu-item (click)="seedDemo()">
             <mat-icon>playlist_add</mat-icon> Isi data contoh
           </button>
+          <button mat-menu-item [matMenuTriggerFor]="profilMenu">
+            <mat-icon>menu_book</mat-icon> Ganti profil spec
+          </button>
           <mat-divider />
           <button mat-menu-item (click)="removeSim()">
             <mat-icon color="warn">delete</mat-icon> Hapus
           </button>
+        </mat-menu>
+        <mat-menu #profilMenu="matMenu">
+          @for (p of profiles(); track p.id) {
+            <button mat-menu-item (click)="switchProfile(p)"
+                    [disabled]="p.name === sim.specProfileName && p.version === sim.specProfileVersion">
+              <mat-icon>{{ p.name === sim.specProfileName && p.version === sim.specProfileVersion
+                            ? 'check' : 'menu_book' }}</mat-icon>
+              {{ p.name }} v{{ p.version }}
+            </button>
+          }
         </mat-menu>
       }
     </div>
@@ -62,7 +75,8 @@
     }
   </mat-card>
 
-  <mat-tab-group class="iso-tabs" animationDuration="0ms">
+  <mat-tab-group class="iso-tabs" animationDuration="0ms"
+                 (selectedTabChange)="onTabChange($event.tab.textLabel)">
     <!-- ── OPERASI & SCENARIO ─────────────────────────────────────────── -->
     <mat-tab label="Operasi & Scenario">
       <div class="iso-tab-body">
@@ -222,6 +236,9 @@
                   <button mat-icon-button matTooltip="Lihat kamus DE" (click)="showProfile(p)">
                     <mat-icon>visibility</mat-icon>
                   </button>
+                  <button mat-icon-button matTooltip="Hapus profil" (click)="removeProfile(p)">
+                    <mat-icon color="warn">delete</mat-icon>
+                  </button>
                 </td>
               </tr>
             }
@@ -358,29 +375,141 @@
     <!-- ── REKENING & KARTU ───────────────────────────────────────────── -->
     <mat-tab label="Rekening & Kartu">
       <div class="iso-tab-body">
-        <p class="iso-hint">
-          Rekening di sini <b>terpisah</b> dari bank simulator — saldo ISO bukan saldo bank.
-        </p>
-        @if (accounts().length === 0) {
-          <p class="iso-empty">
-            <mat-icon>info</mat-icon> Belum ada rekening. Pakai menu <b>Isi data contoh</b>.
-          </p>
+        @if (!selectedSimId()) {
+          <p class="iso-empty"><mat-icon>info</mat-icon> Pilih simulator dulu.</p>
         } @else {
-          <table class="iso-table">
-            <thead><tr><th>Rekening</th><th>Nama</th><th class="num">Saldo</th><th>Mata uang</th></tr></thead>
-            <tbody>
-              @for (a of accounts(); track a.id) {
-                <tr>
-                  <td><code>{{ a.accountNo }}</code></td>
-                  <td>{{ a.holderName }}</td>
-                  <td class="num">{{ a.balance }}</td>
-                  <td>{{ a.currency }}</td>
-                </tr>
-              }
-            </tbody>
-          </table>
+          <p class="iso-hint">
+            Dua hal berbeda: <b>rekening</b> menyimpan saldo, <b>kartu</b> memetakan PAN →
+            rekening. Klien ISO mengirim PAN di <b>DE2</b>, jadi rekening tanpa kartu tetap
+            dibalas <code>DE39=14</code> (kartu tak valid). Rekening di sini
+            <b>terpisah</b> dari bank simulator.
+          </p>
+
+          <!-- form rekening -->
+          <div class="iso-form">
+            <mat-form-field appearance="outline">
+              <mat-label>Nomor rekening</mat-label>
+              <input matInput [value]="accNo()" (input)="accNo.set($any($event.target).value)"
+                     placeholder="1234567890" />
+            </mat-form-field>
+            <mat-form-field appearance="outline">
+              <mat-label>Nama pemilik</mat-label>
+              <input matInput [value]="accName()" (input)="accName.set($any($event.target).value)"
+                     placeholder="Andi Sumber" />
+            </mat-form-field>
+            <mat-form-field appearance="outline">
+              <mat-label>Saldo awal</mat-label>
+              <input matInput [value]="accBalance()"
+                     (input)="accBalance.set($any($event.target).value)" />
+            </mat-form-field>
+            <mat-form-field appearance="outline">
+              <mat-label>Nomor telepon (opsional)</mat-label>
+              <input matInput [value]="accPhone()" (input)="accPhone.set($any($event.target).value)"
+                     placeholder="081234567890" />
+            </mat-form-field>
+            <button mat-flat-button color="primary" (click)="addAccount()">
+              <mat-icon>add</mat-icon> Buat rekening
+            </button>
+          </div>
+
+          @if (accounts().length === 0) {
+            <p class="iso-empty">
+              <mat-icon>info</mat-icon> Belum ada rekening — buat di atas, atau pakai menu
+              <b>Isi data contoh</b>.
+            </p>
+          } @else {
+            <table class="iso-table">
+              <thead>
+                <tr><th>Rekening</th><th>Nama</th><th class="num">Saldo</th><th>Telepon</th><th>Kartu</th><th></th></tr>
+              </thead>
+              <tbody>
+                @for (a of accounts(); track a.id) {
+                  <tr>
+                    <td><code>{{ a.accountNo }}</code></td>
+                    <td>{{ a.holderName }}</td>
+                    <td class="num">{{ a.balance }}</td>
+                    <td>
+                      @if (a.phone) {
+                        <code>{{ a.phone }}</code>
+                      } @else {
+                        <span class="iso-muted">—</span>
+                      }
+                    </td>
+                    <td>
+                      @if (cardsFor(a.accountNo).length === 0) {
+                        <span class="iso-warn" matTooltip="Tanpa kartu, transaksi ber-PAN dibalas DE39=14">
+                          <mat-icon>warning</mat-icon> belum ada kartu
+                        </span>
+                      } @else {
+                        @for (c of cardsFor(a.accountNo); track c.id) {
+                          <code class="iso-pan">{{ c.pan }}</code>
+                        }
+                      }
+                    </td>
+                    <td>
+                      <button mat-icon-button matTooltip="Hapus rekening" (click)="removeAccount(a)">
+                        <mat-icon color="warn">delete</mat-icon>
+                      </button>
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          }
+
+          <mat-divider />
+
+          <!-- form kartu -->
+          <div class="iso-form">
+            <mat-form-field appearance="outline">
+              <mat-label>PAN (nomor kartu)</mat-label>
+              <input matInput [value]="cardPan()" (input)="cardPan.set($any($event.target).value)"
+                     placeholder="6281388370001" />
+            </mat-form-field>
+            <mat-form-field appearance="outline">
+              <mat-label>Tautkan ke rekening</mat-label>
+              <mat-select [value]="cardAccNo()" (valueChange)="cardAccNo.set($event)">
+                @for (a of accounts(); track a.id) {
+                  <mat-option [value]="a.accountNo">{{ a.accountNo }} — {{ a.holderName }}</mat-option>
+                }
+              </mat-select>
+            </mat-form-field>
+            <button mat-flat-button color="primary" (click)="addCard()">
+              <mat-icon>credit_card</mat-icon> Buat kartu
+            </button>
+          </div>
+
+          @if (cards().length > 0) {
+            <table class="iso-table">
+              <thead><tr><th>PAN</th><th>Rekening</th><th>Status</th><th>PIN</th><th></th></tr></thead>
+              <tbody>
+                @for (c of cards(); track c.id) {
+                  <tr>
+                    <td><code>{{ c.pan }}</code></td>
+                    <td><code>{{ c.accountNo }}</code></td>
+                    <td>{{ c.status }}</td>
+                    <td>
+                      @if (c.pinSet) {
+                        <span class="iso-chip iso-chip--on"
+                              matTooltip="PIN block tersimpan apa adanya — TIDAK didekripsi & tidak diverifikasi">
+                          <mat-icon>lock</mat-icon> ter-set
+                        </span>
+                      } @else {
+                        <span class="iso-muted" matTooltip="Belum pernah menerima operasi change-pin">belum</span>
+                      }
+                    </td>
+                    <td>
+                      <button mat-icon-button matTooltip="Hapus kartu" (click)="removeCard(c)">
+                        <mat-icon color="warn">delete</mat-icon>
+                      </button>
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          }
+
         }
-        <button mat-stroked-button (click)="loadAccounts()"><mat-icon>refresh</mat-icon> Muat ulang</button>
       </div>
     </mat-tab>
 
@@ -390,7 +519,9 @@
         <p class="iso-hint">
           Pesan disimpan sebagai <b>hex</b> — bisa langsung dikirim ke Uji Trace saat menelusuri masalah.
         </p>
-        <button mat-stroked-button (click)="loadLogs()"><mat-icon>refresh</mat-icon> Muat ulang</button>
+        <button mat-stroked-button (click)="loadLogs()">
+          <mat-icon>refresh</mat-icon> Muat ulang
+        </button>
 
         @if (logs().length === 0) {
           <p class="iso-empty"><mat-icon>info</mat-icon> Belum ada lalu lintas pesan.</p>
@@ -400,6 +531,11 @@
               <span class="iso-log__mti">{{ row.mti || '—' }}</span>
               <span class="iso-log__op">{{ row.operation || '' }}</span>
               <span class="iso-log__ms">{{ row.duration_ms }}ms</span>
+              @if (row.error) {
+                <span class="iso-warn" matTooltip="Klien tak menerima balasan — buka untuk alasannya">
+                  <mat-icon>error_outline</mat-icon> gagal
+                </span>
+              }
               <span class="iso-bar__spacer"></span>
               <button mat-icon-button matTooltip="Kirim ke Uji Trace"
                       (click)="useLogAsTrace(row); $event.stopPropagation()">
@@ -409,6 +545,10 @@
             </div>
             @if (row.open) {
               <div class="iso-log__detail">
+                @if (row.error) {
+                  <div class="iso-log__label">Kenapa gagal</div>
+                  <pre class="iso-log__err">{{ row.error }}</pre>
+                }
                 <div class="iso-log__label">Request</div>
                 <pre>{{ row.request_hex }}</pre>
                 <div class="iso-log__label">Response</div>

@@ -46,6 +46,21 @@ public class IsoSimulatorAdminController {
         return service.create(name, port, profile, version);
     }
 
+    /**
+     * Mengalihkan simulator ke profil spec lain tanpa membuat ulang simulatornya —
+     * rekening, kartu, dan riwayat pesannya tetap utuh.
+     */
+    @PutMapping("/{id}/spec-profile")
+    public IsoSimulatorService.SimulatorView switchProfile(@PathVariable UUID id,
+                                                          @RequestBody Map<String, String> b) {
+        String name = b.get("specProfileName");
+        String version = b.get("specProfileVersion");
+        if (name == null || name.isBlank() || version == null || version.isBlank()) {
+            throw new IsoCodecException("specProfileName & specProfileVersion wajib diisi");
+        }
+        return service.switchProfile(id, name.trim(), version.trim());
+    }
+
     @PostMapping("/{id}/start")
     public IsoSimulatorService.SimulatorView start(@PathVariable UUID id) {
         return service.start(id);
@@ -71,9 +86,31 @@ public class IsoSimulatorAdminController {
 
     @PostMapping("/{id}/accounts")
     public Map<String, Object> addAccount(@PathVariable UUID id, @RequestBody Map<String, Object> b) {
-        UUID accId = state.addAccount(id, str(b, "accountNo", null), str(b, "holderName", "Nasabah"),
+        String accountNo = str(b, "accountNo", null);
+        UUID accId = state.addAccount(id, accountNo, str(b, "holderName", "Nasabah"),
                 new BigDecimal(str(b, "balance", "0")), str(b, "currency", "360"));
+        String phone = str(b, "phone", "");
+        if (!phone.isBlank()) {
+            state.updatePhone(id, accountNo, phone.trim());
+        }
         return Map.of("id", accId, "status", "created");
+    }
+
+    @GetMapping("/{id}/cards")
+    public List<IsoStateRepository.Card> cards(@PathVariable UUID id) {
+        return state.listCards(id);
+    }
+
+    @DeleteMapping("/{id}/accounts/{accountNo}")
+    public Map<String, Object> deleteAccount(@PathVariable UUID id, @PathVariable String accountNo) {
+        state.deleteAccount(id, accountNo);
+        return Map.of("status", "deleted", "accountNo", accountNo);
+    }
+
+    @DeleteMapping("/{id}/cards/{pan}")
+    public Map<String, Object> deleteCard(@PathVariable UUID id, @PathVariable String pan) {
+        state.deleteCard(id, pan);
+        return Map.of("status", "deleted", "pan", pan);
     }
 
     @PostMapping("/{id}/cards")

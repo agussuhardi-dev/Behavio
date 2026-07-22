@@ -193,4 +193,45 @@ class IsoCodecTest {
         assertTrue(s.route(new IsoMessage("0200").set(3, "401000")).isEmpty(),
                 "processing code 40 tak punya rute di profil ini");
     }
+
+    // ── amount bertanda (jPOS IFA_AMOUNT) ────────────────────────────────────
+
+    private static ResolvedSpec amountSpec() {
+        return spec(TransportSpec.defaults(),
+                FieldSpec.fixed(3, "Processing Code", FieldType.N, 6),
+                FieldSpec.fixed(11, "STAN", FieldType.N, 6),
+                // len 9 = 1 karakter tanda + 8 digit, persis seperti packager jPOS menulisnya.
+                FieldSpec.fixed(28, "Amount, Fee", FieldType.AMOUNT, 9));
+    }
+
+    @Test
+    @DisplayName("amount bertanda: tanda tetap di depan, digitnya yang dipad '0'")
+    void amountPadsDigitsNotSign() {
+        IsoCodec codec = new IsoCodec(amountSpec());
+        byte[] raw = codec.pack(new IsoMessage("0200").set(3, "300000").set(28, "D1500"));
+        String wire = new String(raw, StandardCharsets.US_ASCII);
+        assertTrue(wire.endsWith("D00001500"),
+                "tanda harus di posisi pertama, bukan ikut tergeser oleh pad: " + wire);
+        assertEquals("D00001500", codec.unpack(raw).raw(28));
+    }
+
+    @Test
+    @DisplayName("amount bertanda: tanda wajib eksplisit — tak boleh ditebak")
+    void amountRejectsMissingSign() {
+        IsoCodec codec = new IsoCodec(amountSpec());
+        // Memberi default 'D' akan mengubah kredit jadi debit tanpa suara pada host yang
+        // membedakannya; gagal di sini jauh lebih murah daripada salah bukukan di host.
+        assertThrows(IsoCodecException.class,
+                () -> codec.pack(new IsoMessage("0200").set(28, "1500")));
+        assertThrows(IsoCodecException.class,
+                () -> codec.pack(new IsoMessage("0200").set(28, "X1500")));
+    }
+
+    @Test
+    @DisplayName("amount bertanda: digit melebihi kapasitas ditolak, bukan dipotong")
+    void amountRejectsOverflow() {
+        IsoCodec codec = new IsoCodec(amountSpec());
+        assertThrows(IsoCodecException.class,
+                () -> codec.pack(new IsoMessage("0200").set(28, "C123456789")));
+    }
 }

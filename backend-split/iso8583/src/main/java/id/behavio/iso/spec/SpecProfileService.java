@@ -59,8 +59,20 @@ public class SpecProfileService {
      */
     public UUID uploadPackagerXml(String xml, String name, String version,
                                   String parent, List<OperationRoute> operations) {
-        List<FieldSpec> fields = JposPackagerXmlParser.parse(xml);
-        SpecProfile p = new SpecProfile(name, version, parent, null, fields,
+        JposPackagerXmlParser.Parsed parsed = JposPackagerXmlParser.parse(xml);
+        // Berkas packager hanya menyimpan satu petunjuk transport: kelas bitmap. Sisanya
+        // (lebar header, charset) diwarisi induk — jangan sampai ikut tertimpa bawaan.
+        TransportSpec transport = null;
+        if (parsed.bitmap() != null) {
+            TransportSpec base = parent == null || parent.isBlank()
+                    ? TransportSpec.defaults()
+                    : resolver().resolve(repo.findLatest(parent).orElseThrow(() ->
+                            new IsoCodecException("Profil induk '" + parent + "' tidak ada")))
+                              .transport();
+            transport = new TransportSpec(base.lengthPrefixBytes(), base.lengthPrefixEncoding(),
+                    base.charset(), parsed.bitmap());
+        }
+        SpecProfile p = new SpecProfile(name, version, parent, transport, parsed.fields(),
                 operations == null ? List.of() : operations);
         validateUsable(p);
         return repo.save(p, "XML");

@@ -100,6 +100,9 @@ public final class FieldDictionary {
         put(m, FieldSpec.fixed(49, "Currency Code, Transaction", FieldType.AN, 3));
         // PIN block itu 8 byte BINER (16 karakter hex di representasi kita), bukan ASCII.
         put(m, FieldSpec.fixed(52, "PIN Data", FieldType.B, 16).withEncoding(Encoding.BINARY));
+        // DE53 dipakai operasi change-pin untuk membawa PIN block BARU (DE52 = yang lama).
+        put(m, FieldSpec.fixed(53, "Security Related Control Info", FieldType.B, 16)
+                .withEncoding(Encoding.BINARY));
         put(m, FieldSpec.lllvar(54, "Additional Amounts", FieldType.AN, 120));
         put(m, FieldSpec.lllvar(60, "Reserved National", FieldType.ANS, 999));
         put(m, FieldSpec.lllvar(61, "Reserved National", FieldType.ANS, 999));

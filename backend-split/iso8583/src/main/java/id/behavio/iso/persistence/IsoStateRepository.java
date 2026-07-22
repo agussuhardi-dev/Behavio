@@ -25,11 +25,11 @@ public class IsoStateRepository {
     }
 
     public record Account(UUID id, String accountNo, String holderName,
-                          BigDecimal balance, String currency) {}
+                          BigDecimal balance, String currency, String phone) {}
 
     public Optional<Account> findAccount(UUID simulatorId, String accountNo) {
         return db.sql("""
-                SELECT id, account_no, holder_name, balance, currency
+                SELECT id, account_no, holder_name, balance, currency, phone
                 FROM iso8583.accounts WHERE simulator_id = ? AND account_no = ?
                 """)
                 .param(simulatorId).param(accountNo)
@@ -39,7 +39,7 @@ public class IsoStateRepository {
     /** Lewat kartu: PAN → rekening. Transaksi POS umumnya hanya membawa PAN. */
     public Optional<Account> findAccountByPan(UUID simulatorId, String pan) {
         return db.sql("""
-                SELECT a.id, a.account_no, a.holder_name, a.balance, a.currency
+                SELECT a.id, a.account_no, a.holder_name, a.balance, a.currency, a.phone
                 FROM iso8583.cards c
                 JOIN iso8583.accounts a
                   ON a.simulator_id = c.simulator_id AND a.account_no = c.account_no
@@ -51,7 +51,7 @@ public class IsoStateRepository {
 
     public List<Account> listAccounts(UUID simulatorId) {
         return db.sql("""
-                SELECT id, account_no, holder_name, balance, currency
+                SELECT id, account_no, holder_name, balance, currency, phone
                 FROM iso8583.accounts WHERE simulator_id = ? ORDER BY account_no
                 """)
                 .param(simulatorId).query(Account.class).list();
@@ -91,6 +91,56 @@ public class IsoStateRepository {
                 .param(balance).param(currency)
                 .update();
         return id;
+    }
+
+    public record Card(UUID id, String pan, String accountNo, String status,
+                       boolean pinSet) {}
+
+    /**
+     * Daftar kartu. Penting ditampilkan: klien ISO mengirim PAN (DE2), dan tanpa baris
+     * kartu yang memetakannya ke rekening, host membalas DE39=14 (kartu tak valid) —
+     * walau rekeningnya sendiri sudah ada.
+     */
+    public List<Card> listCards(UUID simulatorId) {
+        return db.sql("""
+                SELECT id, pan, account_no, status, (pin_block IS NOT NULL) AS pin_set
+                FROM iso8583.cards WHERE simulator_id = ? ORDER BY pan
+                """)
+                .param(simulatorId).query(Card.class).list();
+    }
+
+    /**
+     * Simpan PIN block BARU apa adanya. TIDAK didekripsi & TIDAK diverifikasi — verifikasi
+     * sungguhan menuntut HSM/ZPK. Gunanya membuktikan operasi benar-benar mengubah sesuatu.
+     *
+     * @return false bila kartu tak ada
+     */
+    @Transactional
+    public boolean updatePin(UUID simulatorId, String pan, String newPinBlock) {
+        return db.sql("""
+                UPDATE iso8583.cards SET pin_block = ?, pin_changed_at = now()
+                WHERE simulator_id = ? AND pan = ?
+                """)
+                .param(newPinBlock).param(simulatorId).param(pan).update() > 0;
+    }
+
+    /** @return false bila rekening tak ada */
+    @Transactional
+    public boolean updatePhone(UUID simulatorId, String accountNo, String phone) {
+        return db.sql("UPDATE iso8583.accounts SET phone = ? WHERE simulator_id = ? AND account_no = ?")
+                .param(phone).param(simulatorId).param(accountNo).update() > 0;
+    }
+
+    @Transactional
+    public void deleteAccount(UUID simulatorId, String accountNo) {
+        db.sql("DELETE FROM iso8583.accounts WHERE simulator_id = ? AND account_no = ?")
+                .param(simulatorId).param(accountNo).update();
+    }
+
+    @Transactional
+    public void deleteCard(UUID simulatorId, String pan) {
+        db.sql("DELETE FROM iso8583.cards WHERE simulator_id = ? AND pan = ?")
+                .param(simulatorId).param(pan).update();
     }
 
     @Transactional
@@ -154,20 +204,24 @@ public class IsoStateRepository {
 
     @Transactional
     public void logExchange(UUID simulatorId, String mti, String operation, String responseCode,
-                            String requestHex, String responseHex, long durationMillis) {
+                            String requestHex, String responseHex, long durationMillis,
+                            String error) {
         db.sql("""
                 INSERT INTO iso8583.request_logs
-                    (id, simulator_id, mti, operation, response_code, request_hex, response_hex, duration_ms)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    (id, simulator_id, mti, operation, response_code, request_hex, response_hex,
+                     duration_ms, error)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """)
                 .param(UUID.randomUUID()).param(simulatorId).param(mti).param(operation)
                 .param(responseCode).param(requestHex).param(responseHex).param(durationMillis)
+                .param(error)
                 .update();
     }
 
     public List<java.util.Map<String, Object>> recentLogs(UUID simulatorId, int limit) {
         return db.sql("""
-                SELECT mti, operation, response_code, request_hex, response_hex, duration_ms, created_at
+                SELECT mti, operation, response_code, request_hex, response_hex, duration_ms,
+                       error, created_at
                 FROM iso8583.request_logs WHERE simulator_id = ?
                 ORDER BY created_at DESC LIMIT ?
                 """)

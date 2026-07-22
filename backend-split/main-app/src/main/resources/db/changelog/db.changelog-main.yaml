@@ -26,3 +26,7 @@ databaseChangeLog:
       file: db/changelog/iso8583/003-scenarios.sql
   - include:
       file: db/changelog/iso8583/004-reversal.sql
+  - include:
+      file: db/changelog/iso8583/005-pin-phone.sql
+  - include:
+      file: db/changelog/iso8583/006-log-error.sql

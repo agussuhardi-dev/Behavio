@@ -7,6 +7,7 @@ import id.behavio.iso.spec.OperationRoute;
 import id.behavio.iso.spec.PackagerClassMap;
 import id.behavio.iso.spec.ResolvedSpec;
 import id.behavio.iso.spec.SpecProfileService;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -104,6 +105,30 @@ public class SpecProfileAdminController {
      * Uji trace: tempel hex dari host asli, lihat apakah profil membacanya dengan benar.
      * Balasan 200 walau gagal parse — kegagalan di sini adalah HASIL uji, bukan error API.
      */
+    /**
+     * Menghapus satu versi profil — DITOLAK bila masih ada yang memakainya.
+     *
+     * <p>Menghapus profil yang masih ditunjuk simulator akan membuat simulator itu gagal
+     * start dengan pesan yang menyesatkan (tampak seperti kerusakan, padahal ulah
+     * penghapusan). Karena itu pemakainya disebutkan, bukan sekadar ditolak.
+     */
+    @DeleteMapping("/{name}/{version}")
+    public ResponseEntity<?> delete(@PathVariable String name, @PathVariable String version) {
+        List<String> pemakai = repo.dependents(name, version);
+        if (!pemakai.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
+                    "error", "Profil '" + name + "' v" + version + " masih dipakai: "
+                            + String.join(", ", pemakai)
+                            + ". Hapus/alihkan pemakainya dulu.",
+                    "dependents", pemakai));
+        }
+        if (!repo.delete(name, version)) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(Map.of("error", "Profil '" + name + "' v" + version + " tidak ada"));
+        }
+        return ResponseEntity.ok(Map.of("status", "deleted", "name", name, "version", version));
+    }
+
     @PostMapping(value = "/{name}/{version}/test-trace", consumes = MediaType.TEXT_PLAIN_VALUE)
     public SpecProfileService.TraceResult testTrace(@PathVariable String name,
                                                     @PathVariable String version,

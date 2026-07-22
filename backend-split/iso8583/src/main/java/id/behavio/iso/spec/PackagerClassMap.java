@@ -35,6 +35,9 @@ public final class PackagerClassMap {
         put("IFA_CHAR", Encoding.ASCII, FieldType.ANS, 0);
         put("IF_CHAR", Encoding.ASCII, FieldType.ANS, 0);
         put("IFA_BINARY", Encoding.BINARY, FieldType.B, 0);
+        // Amount BERTANDA: 1 karakter 'C'/'D' + digit. Panjang di packager XML sudah
+        // MEMUAT karakter tanda (DE28 "x+n8" ditulis len="9"), jadi tak perlu disesuaikan.
+        put("IFA_AMOUNT", Encoding.ASCII, FieldType.AMOUNT, 0);
 
         // ── ASCII, panjang variabel (penanda panjang dalam digit ASCII) ─────────
         put("IFA_LLNUM", Encoding.ASCII, FieldType.N, 2);
@@ -51,7 +54,6 @@ public final class PackagerClassMap {
         //     → lebar penanda panjangnya (byte BCD vs digit ASCII) dijelaskan
         //       tidak konsisten di dokumentasi; menebak = pesan rusak.
         //   IFE_* (EBCDIC) → belum ada kebutuhan; tambahkan saat ketemu.
-        //   IFA_AMOUNT → membawa karakter tanda di depan, perlu aturan tersendiri.
     }
 
     private PackagerClassMap() {}

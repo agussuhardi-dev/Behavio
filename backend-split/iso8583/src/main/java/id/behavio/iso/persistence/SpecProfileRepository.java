@@ -98,6 +98,43 @@ public class SpecProfileRepository {
                 .map(SpecProfileJson::read);
     }
 
+    /**
+     * Siapa saja yang masih memakai profil ini — dipakai sebelum menghapus.
+     *
+     * @return nama simulator yang menunjuk versi ini, plus profil turunan yang
+     *         {@code extends} nama ini. Kosong = aman dihapus.
+     */
+    public List<String> dependents(String name, String version) {
+        List<String> out = new ArrayList<>(db.sql("""
+                SELECT 'simulator ' || name FROM iso8583.simulators
+                WHERE spec_profile_name = ? AND spec_profile_version = ?
+                """).param(name).param(version).query(String.class).list());
+        // Turunan menunjuk NAMA induk (bukan versi), jadi ia baru benar-benar kehilangan
+        // induknya kalau versi TERAKHIR dari nama itu yang dihapus.
+        boolean lastVersion = db.sql("SELECT count(*) FROM iso8583.spec_profiles WHERE name = ?")
+                .param(name).query(Long.class).single() <= 1;
+        if (lastVersion) {
+            out.addAll(db.sql("""
+                    SELECT 'profil turunan ' || name || ' v' || version
+                    FROM iso8583.spec_profiles WHERE parent = ?
+                    """).param(name).query(String.class).list());
+        }
+        return out;
+    }
+
+    /**
+     * Menghapus SATU versi profil.
+     *
+     * <p>Tidak bertentangan dengan sifat immutable: yang dilarang adalah <i>mengubah</i>
+     * profil yang sedang dipakai — perilaku simulator berubah diam-diam. Menghapus profil
+     * yang tak dipakai siapa pun tak mengubah perilaku apa pun, dan tanpa ini unggahan
+     * percobaan menumpuk selamanya.
+     */
+    public boolean delete(String name, String version) {
+        return db.sql("DELETE FROM iso8583.spec_profiles WHERE name = ? AND version = ?")
+                .param(name).param(version).update() > 0;
+    }
+
     /** Semua nama profil beserta versinya — untuk dashboard nanti. */
     public Map<String, List<String>> versionsByName() {
         Map<String, List<String>> out = new LinkedHashMap<>();

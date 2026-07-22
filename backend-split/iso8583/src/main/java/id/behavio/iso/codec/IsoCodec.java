@@ -93,13 +93,45 @@ public final class IsoCodec {
                 requireHex(f, v);
                 yield pad(v, f.length(), '0', true);
             }
-            default -> pad(v, f.length(), f.type().padChar(), f.type().padLeft());
+            default -> f.type().signedAmount()
+                    ? packSignedAmount(f, v)
+                    : pad(v, f.length(), f.type().padChar(), f.type().padLeft());
         };
         if (visibleLength(f, fixed) > f.length()) {
             throw new IsoCodecException("DE " + f.de() + ": nilai lebih panjang dari "
                     + f.length() + " → '" + v + "'");
         }
         out.writeBytes(encodeValue(f, fixed));
+    }
+
+    /**
+     * Amount bertanda (jPOS {@code IFA_AMOUNT}): tanda tetap di posisi pertama, digitnya
+     * dipad '0' di kiri.
+     *
+     * <p>Tanda WAJIB ditulis eksplisit. Memberi default (mis. selalu 'D') akan mengubah
+     * debit jadi kredit tanpa suara pada spec yang memang membedakannya — lebih baik
+     * unggahan/permintaan gagal di sini daripada host asli membukukan arah yang salah.
+     */
+    private String packSignedAmount(FieldSpec f, String v) {
+        if (f.length() < 2) {
+            throw new IsoCodecException("DE " + f.de() + ": field amount bertanda butuh "
+                    + "panjang minimal 2 (1 tanda + digit), di profil tertulis " + f.length());
+        }
+        char sign = v.isEmpty() ? ' ' : Character.toUpperCase(v.charAt(0));
+        if (sign != 'C' && sign != 'D') {
+            throw new IsoCodecException("DE " + f.de() + ": nilai amount bertanda harus diawali "
+                    + "'C' (credit) atau 'D' (debit), mis. 'D000000010000' — dapat: '" + v + "'");
+        }
+        String digits = v.substring(1);
+        if (!digits.chars().allMatch(Character::isDigit)) {
+            throw new IsoCodecException("DE " + f.de() + ": setelah tanda harus digit — dapat: '"
+                    + v + "'");
+        }
+        if (digits.length() > f.length() - 1) {
+            throw new IsoCodecException("DE " + f.de() + ": amount " + digits.length()
+                    + " digit melebihi " + (f.length() - 1) + " digit yang muat di profil");
+        }
+        return sign + pad(digits, f.length() - 1, '0', true);
     }
 
     private byte[] encodeValue(FieldSpec f, String v) {

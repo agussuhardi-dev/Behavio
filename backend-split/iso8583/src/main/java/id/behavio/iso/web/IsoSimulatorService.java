@@ -72,14 +72,45 @@ public class IsoSimulatorService {
         return find(id).orElseThrow();
     }
 
+    /**
+     * Mengalihkan simulator ke profil spec lain — mis. dari bitmap BINER ke HEX begitu
+     * ketahuan host aslinya berbeda.
+     *
+     * <p>Profil baru diverifikasi lebih dulu dengan alasan yang sama seperti saat membuat:
+     * gagal di sini jauh lebih mudah dibaca daripada gagal saat pesan pertama tiba.
+     *
+     * <p>Bila simulator sedang RUNNING, listener-nya <b>di-start ulang</b> agar codec
+     * memakai profil baru. Konsekuensinya koneksi TCP yang sedang terbuka terputus — itu
+     * tak terhindarkan, karena membiarkannya jalan dengan codec lama justru menghasilkan
+     * perilaku campur aduk yang mustahil ditelusuri.
+     */
+    public SimulatorView switchProfile(UUID id, String profileName, String profileVersion) {
+        SimulatorView before = find(id)
+                .orElseThrow(() -> new IsoCodecException("Simulator tidak ditemukan"));
+        profiles.resolve(profileName, profileVersion);
+
+        db.sql("""
+                UPDATE iso8583.simulators
+                SET spec_profile_name = ?, spec_profile_version = ?
+                WHERE id = ?
+                """)
+                .param(profileName).param(profileVersion).param(id).update();
+
+        if ("RUNNING".equals(before.status())) {
+            stop(id);
+            return start(id);
+        }
+        return find(id).orElseThrow();
+    }
+
     public SimulatorView start(UUID id) {
         SimulatorView s = find(id).orElseThrow(() -> new IsoCodecException("Simulator tidak ditemukan"));
         ResolvedSpec spec = profiles.resolve(s.specProfileName(), s.specProfileVersion());
 
         servers.start(id, s.port(), spec,
                 (simId, req) -> handler.handle(simId, spec, req),
-                (simId, mti, reqHex, respHex, ms) ->
-                        state.logExchange(simId, mti, null, null, reqHex, respHex, ms));
+                (simId, mti, reqHex, respHex, ms, error) ->
+                        state.logExchange(simId, mti, null, null, reqHex, respHex, ms, error));
 
         db.sql("UPDATE iso8583.simulators SET status = 'RUNNING' WHERE id = ?").param(id).update();
         return find(id).orElseThrow();

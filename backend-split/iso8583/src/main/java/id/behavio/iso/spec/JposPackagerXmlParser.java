@@ -33,11 +33,20 @@ public final class JposPackagerXmlParser {
     private JposPackagerXmlParser() {}
 
     /**
-     * @return daftar {@link FieldSpec}, terurut menurut nomor DE.
+     * Hasil parse: daftar field <b>plus</b> encoding bitmap yang tersirat dari kelas
+     * packager DE1.
+     *
+     * @param bitmap {@code null} bila berkas tak mendeklarasikan bitmap sama sekali —
+     *               pemanggil yang memutuskan bawaannya.
+     */
+    public record Parsed(List<FieldSpec> fields, TransportSpec.BitmapEncoding bitmap) {}
+
+    /**
+     * @return field terurut menurut nomor DE, beserta encoding bitmap yang terdeteksi.
      * @throws IsoCodecException bila XML tak valid, ada DE ganda, atau memakai kelas
      *                           packager yang belum didukung.
      */
-    public static List<FieldSpec> parse(String xml) {
+    public static Parsed parse(String xml) {
         if (xml == null || xml.isBlank()) {
             throw new IsoCodecException("Berkas packager XML kosong");
         }
@@ -50,6 +59,7 @@ public final class JposPackagerXmlParser {
         }
 
         Map<Integer, FieldSpec> byDe = new LinkedHashMap<>();
+        TransportSpec.BitmapEncoding bitmap = null;
         for (int i = 0; i < nodes.getLength(); i++) {
             Element el = (Element) nodes.item(i);
             String idAttr = el.getAttribute("id");
@@ -57,7 +67,16 @@ public final class JposPackagerXmlParser {
 
             int de = parseDe(idAttr, i);
             // DE0 = MTI dan DE1 = bitmap: keduanya ditangani codec, bukan field biasa.
-            if (de == 0 || de == 1 || PackagerClassMap.isBitmap(className)) {
+            // Tapi kelas bitmap TIDAK boleh dibuang begitu saja — di situlah tertulis
+            // bitmap dikirim sebagai 16 karakter ASCII hex (IFA_) atau 8 byte biner
+            // (IFB_). Mengabaikannya membuat profil diam-diam memakai bawaan yang salah,
+            // dan gejalanya hanyalah host tak pernah membalas.
+            if (de == 1 || PackagerClassMap.isBitmap(className)) {
+                bitmap = bitmapEncodingOf(className);
+                continue;
+            }
+            if (de == 0) {
+                requireAsciiMti(className);
                 continue;
             }
             if (byDe.containsKey(de)) {
@@ -80,7 +99,35 @@ public final class JposPackagerXmlParser {
         }
         List<FieldSpec> out = new ArrayList<>(byDe.values());
         out.sort((a, b) -> Integer.compare(a.de(), b.de()));
-        return out;
+        return new Parsed(out, bitmap);
+    }
+
+    /**
+     * {@code IFA_BITMAP} = 16 karakter ASCII hex · {@code IFB_BITMAP} = 8 byte biner.
+     * Varian EBCDIC ditolak: codec belum mendukung EBCDIC, dan menerimanya di sini hanya
+     * memindahkan kegagalan ke saat pesan pertama tiba.
+     */
+    private static TransportSpec.BitmapEncoding bitmapEncodingOf(String className) {
+        String simple = className.substring(className.lastIndexOf('.') + 1).trim();
+        return switch (simple) {
+            case "IFA_BITMAP", "IF_CHAR_BITMAP" -> TransportSpec.BitmapEncoding.HEX;
+            case "IFB_BITMAP" -> TransportSpec.BitmapEncoding.BINARY;
+            default -> throw new IsoCodecException("Kelas bitmap belum didukung: '" + simple
+                    + "'. Yang dikenal: IFA_BITMAP (16 karakter ASCII hex) dan "
+                    + "IFB_BITMAP (8 byte biner).");
+        };
+    }
+
+    /** MTI selalu 4 karakter ASCII di codec ini; packager yang mengirim BCD ditolak. */
+    private static void requireAsciiMti(String className) {
+        if (className == null || className.isBlank()) {
+            return;
+        }
+        String simple = className.substring(className.lastIndexOf('.') + 1).trim();
+        if (simple.startsWith("IFB_") || simple.startsWith("IFE_")) {
+            throw new IsoCodecException("MTI ber-kelas '" + simple + "' (BCD/EBCDIC) belum "
+                    + "didukung — codec ini membaca MTI sebagai 4 karakter ASCII.");
+        }
     }
 
     private static int parseDe(String idAttr, int index) {

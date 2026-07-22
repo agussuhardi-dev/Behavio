@@ -58,10 +58,16 @@ public class IsoServerManager {
         Outcome handle(UUID simulatorId, IsoMessage request);
     }
 
-    /** Dipanggil setelah tiap pesan selesai — untuk Live View & request_logs. */
+    /**
+     * Dipanggil setelah tiap pesan selesai — untuk Live View & request_logs.
+     *
+     * @param error alasan gagal, atau {@code null} bila berhasil. Wajib ikut dicatat:
+     *              balasan kosong tanpa alasan hanya tampak sebagai "timeout" di sisi
+     *              klien, dan itu kegagalan yang paling mahal dilacak.
+     */
     public interface Listener2 {
         void onExchange(UUID simulatorId, String mti, String requestHex,
-                        String responseHex, long durationMillis);
+                        String responseHex, long durationMillis, String error);
     }
 
     public synchronized void start(UUID simulatorId, int port, ResolvedSpec spec,
@@ -135,6 +141,7 @@ public class IsoServerManager {
                 String reqHex = Hex.encode(raw);
                 String mti = null;
                 String respHex = "";
+                String error = null;
                 try {
                     IsoMessage req = codec.unpack(raw);
                     mti = req.mti();
@@ -147,7 +154,8 @@ public class IsoServerManager {
                     if (fault.drop()) {
                         log.info("Simulator {}: koneksi diputus sesuai scenario", simulatorId);
                         if (observer != null) {
-                            observer.onExchange(simulatorId, mti, reqHex, "", elapsedMs(t0));
+                            observer.onExchange(simulatorId, mti, reqHex, "", elapsedMs(t0),
+                                    "koneksi diputus sesuai scenario");
                         }
                         return;   // menutup socket → klien menerima EOF
                     }
@@ -166,11 +174,12 @@ public class IsoServerManager {
                     // Pesan rusak TIDAK memutus koneksi: host penguji lazim mengirim banyak
                     // pesan lewat satu koneksi, dan menjatuhkannya karena satu pesan cacat
                     // menyembunyikan sisanya. Dicatat, lalu lanjut ke pesan berikutnya.
+                    error = e.getMessage();
                     log.warn("Simulator {} gagal memproses pesan: {}", simulatorId, e.getMessage());
                 }
                 if (observer != null) {
                     observer.onExchange(simulatorId, mti, reqHex, respHex,
-                            (System.nanoTime() - t0) / 1_000_000);
+                            (System.nanoTime() - t0) / 1_000_000, error);
                 }
             }
         } catch (IOException e) {

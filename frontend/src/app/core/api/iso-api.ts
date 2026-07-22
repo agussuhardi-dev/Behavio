@@ -54,6 +54,16 @@ export interface IsoAccount {
   holderName: string;
   balance: number;
   currency: string;
+  phone: string | null;
+}
+
+export interface IsoCard {
+  id: string;
+  pan: string;
+  accountNo: string;
+  status: string;
+  /** PIN pernah di-set lewat operasi change-pin. Bukan nilai PIN-nya — itu tak pernah dibuka. */
+  pinSet: boolean;
 }
 
 export interface IsoLog {
@@ -63,6 +73,8 @@ export interface IsoLog {
   request_hex: string;
   response_hex: string;
   duration_ms: number;
+  /** Alasan pesan gagal diproses; null bila berhasil. Inilah sebab klien melihat timeout. */
+  error: string | null;
   created_at: string;
 }
 
@@ -88,6 +100,18 @@ export class IsoApi {
     return this.http.post<IsoSimulator>(`${this.base}/simulators`, {
       name,
       port,
+      specProfileName,
+      specProfileVersion,
+    });
+  }
+
+  /**
+   * Mengalihkan simulator ke profil spec lain. Rekening, kartu, dan riwayat pesan tetap;
+   * yang berubah hanya cara pesan dibaca/ditulis. Simulator yang sedang RUNNING di-start
+   * ulang oleh backend, sehingga koneksi TCP yang terbuka terputus.
+   */
+  switchProfile(id: string, specProfileName: string, specProfileVersion: string) {
+    return this.http.put<IsoSimulator>(`${this.base}/simulators/${id}/spec-profile`, {
       specProfileName,
       specProfileVersion,
     });
@@ -146,6 +170,16 @@ export class IsoApi {
     });
   }
 
+  /**
+   * Menghapus satu versi profil. Ditolak (409) bila masih ada simulator yang menunjuknya
+   * atau profil lain yang mewarisinya — pesan errornya menyebutkan siapa.
+   */
+  deleteProfile(name: string, version: string) {
+    return this.http.delete(
+      `${this.base}/spec-profiles/${encodeURIComponent(name)}/${encodeURIComponent(version)}`
+    );
+  }
+
   /** Tempel trace hex dari host asli → buktikan profil membacanya dengan benar. */
   testTrace(name: string, version: string, hex: string) {
     return this.http.post<TraceResult>(
@@ -201,16 +235,29 @@ export class IsoApi {
     return this.http.get<IsoAccount[]>(`${this.base}/simulators/${id}/accounts`);
   }
 
-  addAccount(id: string, accountNo: string, holderName: string, balance: string) {
+  addAccount(id: string, accountNo: string, holderName: string, balance: string, phone: string) {
     return this.http.post(`${this.base}/simulators/${id}/accounts`, {
       accountNo,
       holderName,
       balance,
+      phone,
     });
+  }
+
+  cards(id: string) {
+    return this.http.get<IsoCard[]>(`${this.base}/simulators/${id}/cards`);
   }
 
   addCard(id: string, pan: string, accountNo: string) {
     return this.http.post(`${this.base}/simulators/${id}/cards`, { pan, accountNo });
+  }
+
+  deleteAccount(id: string, accountNo: string) {
+    return this.http.delete(`${this.base}/simulators/${id}/accounts/${encodeURIComponent(accountNo)}`);
+  }
+
+  deleteCard(id: string, pan: string) {
+    return this.http.delete(`${this.base}/simulators/${id}/cards/${encodeURIComponent(pan)}`);
   }
 
   seedDemo(id: string) {
