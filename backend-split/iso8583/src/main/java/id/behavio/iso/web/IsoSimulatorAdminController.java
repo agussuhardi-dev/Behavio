@@ -2,6 +2,7 @@ package id.behavio.iso.web;
 
 import id.behavio.iso.codec.IsoCodecException;
 import id.behavio.iso.persistence.IsoStateRepository;
+import id.behavio.iso.spec.ShinhanProfileSeeder;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -41,8 +42,13 @@ public class IsoSimulatorAdminController {
     public IsoSimulatorService.SimulatorView create(@RequestBody Map<String, Object> body) {
         String name = str(body, "name", "ISO Simulator");
         int port = body.get("port") instanceof Number n ? n.intValue() : 9201;
-        String profile = str(body, "specProfileName", "iso8583-1987");
-        String version = str(body, "specProfileVersion", "1.0");
+        // Bawaan = profil Shinhan LENGKAP (19 operasi), bukan baseline generik: simulator
+        // yang baru dibuat harus langsung bisa melayani semua transaksi, bukan sebagian.
+        // Nama & versinya diambil dari seeder-nya, bukan ditulis ulang — string yang
+        // dihardcode di sini pernah menunjuk versi yang sudah tak ada lagi, dan pembuatan
+        // simulator gagal total karenanya.
+        String profile = str(body, "specProfileName", ShinhanProfileSeeder.NAME);
+        String version = str(body, "specProfileVersion", ShinhanProfileSeeder.VERSION);
         return service.create(name, port, profile, version);
     }
 
@@ -125,11 +131,27 @@ public class IsoSimulatorAdminController {
         return service.seedDemo(id);
     }
 
-    /** Live View sederhana: pesan masuk/keluar dalam HEX, siap ditempel ke uji trace. */
+    /**
+     * Riwayat pesan berhalaman. Pesan BARU datang lewat SSE ({@code /logs/stream});
+     * endpoint ini untuk menelusuri yang lama — dan riwayat ISO bisa panjang, jadi
+     * mengirim semuanya sekaligus bukan pilihan.
+     */
     @GetMapping("/{id}/logs")
-    public List<Map<String, Object>> logs(@PathVariable UUID id,
-                                          @RequestParam(defaultValue = "20") int limit) {
-        return state.recentLogs(id, limit);
+    public Map<String, Object> logs(@PathVariable UUID id,
+                                    @RequestParam(defaultValue = "20") int limit,
+                                    @RequestParam(defaultValue = "0") int offset) {
+        return Map.of(
+                "total", state.countLogs(id),
+                "rows", state.recentLogs(id, limit, offset));
+    }
+
+    /**
+     * Mengosongkan riwayat pesan — menghapus di DATABASE, bukan sekadar membersihkan
+     * tampilan. Rekening, kartu, dan profil tak tersentuh.
+     */
+    @DeleteMapping("/{id}/logs")
+    public Map<String, Object> clearLogs(@PathVariable UUID id) {
+        return Map.of("deleted", state.clearLogs(id));
     }
 
     private static String str(Map<String, Object> b, String k, String def) {

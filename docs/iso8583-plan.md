@@ -485,9 +485,11 @@ dipakai ditandai centang dan tak bisa dipilih ulang.
 Ini juga jalan keluar dari penolakan hapus profil (§12.3): alihkan simulator ke profil
 lain, barulah profil lamanya bisa dihapus.
 
-> **Catatan Live View (2026-07-22):** penyegaran otomatis diganti tombol **Muat ulang**
-> atas permintaan pemakai — daftar yang bergeser sendiri mengganggu saat satu pesan sedang
-> ditelusuri. Tab Rekening & Kartu tetap dimuat saat tab dibuka.
+> **Catatan Live View (2026-07-22, direvisi):** sempat polling 3 detik → tombol **Muat
+> ulang** → akhirnya **SSE** (`…/logs/stream`), menyamai bank simulator. Polling memang
+> mengganggu (daftar bergeser saat dibaca) dan tombol memang bukan "live"; SSE menyelesaikan
+> keduanya — daftar hanya bergerak saat benar-benar ada pesan. Tab Rekening & Kartu tetap
+> dimuat saat tab dibuka.
 
 ### 12.5 Kelas bitmap di packager XML kini dibaca (2026-07-22) — **defect**
 
@@ -516,3 +518,68 @@ hanya memuat satu petunjuk transport, jadi hanya itu yang diambil. Kelas MTI ber
 > **Profil XML yang diunggah SEBELUM perbaikan ini tetap `BINARY`.** Profil bersifat
 > immutable, jadi perbaikannya adalah unggah ulang sebagai versi baru lalu alihkan
 > simulatornya (§12.4).
+
+## 13. Operasi bawaan Shinhan (2026-07-23)
+
+Processing code diambil dari `TransactionType` milik klien — **bukan tebakan**. Ditanam
+sebagai profil bawaan **`shinhan-default` v1.0** yang mewarisi kamus DE `iso8583-1987`;
+yang berbeda hanya rute operasinya.
+
+| Operasi | MTI | DE3 | Efek pada saldo |
+|---|---|---|---|
+| `network-management` | 0800 | – | – (sign-on 001 · sign-off 002 · key exchange 101 · echo 301, dibedakan DE70) |
+| `balance-inquiry` | 0200 | `310000` | baca saja → DE54 |
+| `transfer-on-us-inquiry` | 0200 | `330000` | – (nama penerima → DE48) |
+| `transfer-on-us` | 0200 | `400000` | **debit pengirim + kredit penerima** |
+| `transfer-off-us-inquiry` | 0200 | `351000` | – |
+| `transfer-off-us` | 0200 | `411000` | **debit pengirim saja** |
+| `transfer-in-saving-inquiry` | 0200 | `361000` | – |
+| `transfer-in-saving` | 0200 | `421000` | **kredit penerima saja** |
+| `transfer-in-giro-inquiry` | 0200 | `362000` | – |
+| `transfer-in-giro` | 0200 | `422000` | **kredit penerima saja** |
+| `transfer-via-saving-inquiry` | 0200 | `371000` | – |
+| `transfer-via-saving` | 0200 | `431000` | – (numpang lewat) |
+| `transfer-via-giro-inquiry` | 0200 | `372000` | – |
+| `transfer-via-giro` | 0200 | `432000` | – (numpang lewat) |
+| `router-interbank` | 0200 | `900000` | – (numpang lewat) |
+| `change-pin` | 0200 | `340000` | PIN block baru di DE53 |
+| `change-phone` | 0200 | `700000` | nomor baru di DE48 |
+| `reset-password-ib` | 0200 | `710000` | – |
+| `reversal` | 0400 | – | membalik transaksi finansial |
+
+**Kode ditulis 6 digit penuh, bukan awalan 2 digit.** `700000` (change phone) dan `710000`
+(reset password) sama-sama berawalan "70" — awalan pendek membuat keduanya ambigu dan salah
+satunya tak akan pernah terpanggil.
+
+### Kenapa arah dananya berbeda-beda
+
+Pembedaan on-us / off-us / masuk / lewat bukan kosmetik — ia menentukan siapa yang
+saldonya berubah, dan salah menaruhnya menciptakan uang dari udara:
+
+- **on-us** — kedua rekening ada di host ini, jadi dana benar-benar berpindah.
+- **keluar ke bank lain** — hanya pengirim yang didebit. Rekening tujuan ada di bank lain;
+  mengkredit rekening lokal yang kebetulan bernomor sama = mencetak uang. Transaksi dicatat
+  tanpa counterpart, sehingga reversal-nya otomatis benar (hanya mengembalikan ke pengirim).
+- **masuk dari bank lain** — kebalikannya, hanya penerima yang dikredit.
+- **bank lain → bank lain / router** — tak ada saldo yang berubah, dan sengaja **tidak
+  dicatat** sebagai transaksi finansial: kalau dicatat, reversal-nya akan memindahkan dana
+  yang tak pernah berpindah.
+
+### Yang sengaja TIDAK disimulasikan
+
+`reset-password-ib` tak menyimpan password apa pun, dan inquiry ke bank lain tak bisa
+memverifikasi rekening di seberang (dibalas `NASABAH BANK LAIN`). Keduanya memang di luar
+jangkauan simulator; penolakannya diuji lewat **scenario** — 15 scenario bawaan (PIN Salah,
+Saldo Tidak Cukup, Tanpa Balasan, …) otomatis tersedia untuk **setiap** operasi baru ini.
+
+### Profil tanpa operasi kini ditolak
+
+Berkas packager XML hanya memuat daftar field, tak memuat operasi. Profil tanpa rute akan
+membalas `DE39=30` untuk segalanya — simulator yang hidup tapi menolak semuanya. Unggahan
+seperti itu sekarang gagal dengan pesan yang menyebutkan jalan keluarnya:
+sertakan `operation=`, atau `parent=shinhan-default`.
+
+```bash
+curl -X POST ".../spec-profiles?name=host-anda&version=1.0&parent=shinhan-default" \
+  -H 'Content-Type: application/xml' --data-binary @cfg/packager.xml
+```

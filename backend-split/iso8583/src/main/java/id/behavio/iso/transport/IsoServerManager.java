@@ -4,6 +4,7 @@ import id.behavio.iso.codec.Hex;
 import id.behavio.iso.codec.IsoCodec;
 import id.behavio.iso.codec.IsoMessage;
 import id.behavio.iso.scenario.IsoFault;
+import id.behavio.iso.spec.OperationRoute;
 import id.behavio.iso.spec.ResolvedSpec;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -66,8 +67,8 @@ public class IsoServerManager {
      *              klien, dan itu kegagalan yang paling mahal dilacak.
      */
     public interface Listener2 {
-        void onExchange(UUID simulatorId, String mti, String requestHex,
-                        String responseHex, long durationMillis, String error);
+        void onExchange(UUID simulatorId, String mti, String operation, String responseCode,
+                        String requestHex, String responseHex, long durationMillis, String error);
     }
 
     public synchronized void start(UUID simulatorId, int port, ResolvedSpec spec,
@@ -140,11 +141,16 @@ public class IsoServerManager {
                 long t0 = System.nanoTime();
                 String reqHex = Hex.encode(raw);
                 String mti = null;
+                String operation = null;
+                String responseCode = null;
                 String respHex = "";
                 String error = null;
                 try {
                     IsoMessage req = codec.unpack(raw);
                     mti = req.mti();
+                    // Nama operasi & DE39 ikut disiarkan supaya Live View bisa dibaca
+                    // sekilas — hex saja menuntut orang mem-parse di kepala.
+                    operation = spec.route(req).map(OperationRoute::name).orElse(null);
                     Outcome outcome = handler.handle(simulatorId, req);
                     IsoFault fault = outcome == null ? IsoFault.none() : outcome.fault();
 
@@ -154,12 +160,13 @@ public class IsoServerManager {
                     if (fault.drop()) {
                         log.info("Simulator {}: koneksi diputus sesuai scenario", simulatorId);
                         if (observer != null) {
-                            observer.onExchange(simulatorId, mti, reqHex, "", elapsedMs(t0),
-                                    "koneksi diputus sesuai scenario");
+                            observer.onExchange(simulatorId, mti, operation, null, reqHex, "",
+                                    elapsedMs(t0), "koneksi diputus sesuai scenario");
                         }
                         return;   // menutup socket → klien menerima EOF
                     }
                     if (!fault.noResponse() && outcome != null && outcome.response() != null) {
+                        responseCode = outcome.response().raw(39);
                         byte[] packed = codec.pack(outcome.response());
                         if (fault.corrupt()) {
                             packed = corrupt(packed);
@@ -178,8 +185,8 @@ public class IsoServerManager {
                     log.warn("Simulator {} gagal memproses pesan: {}", simulatorId, e.getMessage());
                 }
                 if (observer != null) {
-                    observer.onExchange(simulatorId, mti, reqHex, respHex,
-                            (System.nanoTime() - t0) / 1_000_000, error);
+                    observer.onExchange(simulatorId, mti, operation, responseCode, reqHex,
+                            respHex, (System.nanoTime() - t0) / 1_000_000, error);
                 }
             }
         } catch (IOException e) {

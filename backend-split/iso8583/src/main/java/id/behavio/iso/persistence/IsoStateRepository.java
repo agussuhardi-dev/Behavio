@@ -218,14 +218,35 @@ public class IsoStateRepository {
                 .update();
     }
 
-    public List<java.util.Map<String, Object>> recentLogs(UUID simulatorId, int limit) {
+    /**
+     * Satu halaman riwayat pesan, terbaru dulu.
+     *
+     * <p>Diurutkan {@code created_at DESC, id DESC}: dua pesan bisa tercatat pada
+     * mikrodetik yang sama, dan urutan yang tak deterministik membuat baris melompat
+     * antar-halaman — tepat saat orang sedang menelusuri satu pesan.
+     */
+    public List<java.util.Map<String, Object>> recentLogs(UUID simulatorId, int limit, int offset) {
         return db.sql("""
                 SELECT mti, operation, response_code, request_hex, response_hex, duration_ms,
                        error, created_at
                 FROM iso8583.request_logs WHERE simulator_id = ?
-                ORDER BY created_at DESC LIMIT ?
+                ORDER BY created_at DESC, id DESC
+                LIMIT ? OFFSET ?
                 """)
-                .param(simulatorId).param(Math.min(200, limit))
+                .param(simulatorId).param(Math.min(200, Math.max(1, limit)))
+                .param(Math.max(0, offset))
                 .query().listOfRows();
+    }
+
+    public long countLogs(UUID simulatorId) {
+        return db.sql("SELECT count(*) FROM iso8583.request_logs WHERE simulator_id = ?")
+                .param(simulatorId).query(Long.class).single();
+    }
+
+    /** Mengosongkan riwayat pesan satu simulator. Rekening & kartu tak tersentuh. */
+    @Transactional
+    public int clearLogs(UUID simulatorId) {
+        return db.sql("DELETE FROM iso8583.request_logs WHERE simulator_id = ?")
+                .param(simulatorId).update();
     }
 }

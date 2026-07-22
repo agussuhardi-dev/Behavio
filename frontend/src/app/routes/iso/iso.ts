@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
@@ -9,6 +9,7 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatIconModule } from '@angular/material/icon';
 import { MatInputModule } from '@angular/material/input';
 import { MatMenuModule } from '@angular/material/menu';
+import { MatPaginatorModule, PageEvent } from '@angular/material/paginator';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatSelectModule } from '@angular/material/select';
 import { MatTabsModule } from '@angular/material/tabs';
@@ -47,12 +48,13 @@ interface LogRow extends IsoLog {
     FormsModule,
     MatButtonModule, MatCardModule, MatDialogModule, MatDividerModule,
     MatExpansionModule, MatFormFieldModule, MatIconModule, MatInputModule,
-    MatMenuModule, MatProgressBarModule, MatSelectModule, MatTabsModule, MatTooltipModule,
+    MatMenuModule,
+    MatPaginatorModule, MatProgressBarModule, MatSelectModule, MatTabsModule, MatTooltipModule,
   ],
   templateUrl: './iso.html',
   styleUrl: './iso.scss',
 })
-export class Iso implements OnInit {
+export class Iso implements OnInit, OnDestroy {
   private static readonly LAST_SIM_KEY = 'behavio.iso.lastSimId';
 
   readonly api = inject(IsoApi);
@@ -83,8 +85,16 @@ export class Iso implements OnInit {
   // unggah profil
   readonly upName = signal('');
   readonly upVersion = signal('1.0');
-  readonly upParent = signal('');
-  readonly upOperations = signal('balance-inquiry:0200:30, transfer:0200:40, network-management:0800');
+  /**
+   * Bawaan: mewarisi profil Shinhan dan TIDAK menulis ulang operasinya.
+   *
+   * <p>Dulu isian ini terisi tiga operasi contoh, dan siapa pun yang menekan Unggah tanpa
+   * menyentuhnya mendapat profil yang hanya mengenal tiga transaksi — sisanya dibalas
+   * DE39=30 tanpa petunjuk. Mewarisi jauh lebih aman: berkas packager memang tak memuat
+   * operasi, jadi induknyalah sumber yang benar.
+   */
+  readonly upParent = signal(Iso.DEFAULT_PROFILE);
+  readonly upOperations = signal('');
   readonly upContent = signal('');
   readonly upFormat = signal<'XML' | 'JSON'>('XML');
 
@@ -116,8 +126,30 @@ export class Iso implements OnInit {
   /** Tab aktif — menentukan data apa yang dimuat saat tab dibuka. */
   readonly activeTab = signal('');
 
+  /**
+   * Live View memakai <b>SSE</b>, sama seperti bank simulator — bukan polling dan bukan
+   * tombol muat ulang. Pesan ISO datang lewat socket kapan saja, dan justru pesan pertama
+   * sesudah klien menyambung yang paling ingin dilihat; polling membuatnya telat satu
+   * interval, dan "live" yang harus diklik dulu bukanlah live.
+   */
+  private es?: EventSource;
+  readonly liveConnected = signal(false);
+
+  /**
+   * Paging riwayat. Pesan baru dari SSE hanya disisipkan saat berada di halaman 1 —
+   * kalau tidak, isi halaman yang sedang dibaca akan bergeser sendiri, persis gangguan
+   * yang membuat polling dulu ditinggalkan. Di halaman lain jumlahnya dihitung sebagai
+   * lencana "pesan baru".
+   */
+  readonly logTotal = signal(0);
+  readonly logPageIndex = signal(0);
+  readonly logPageSize = signal(20);
+  readonly livePending = signal(0);
+
   // Dicocokkan dengan LABEL tab, bukan indeks: indeks bergeser diam-diam begitu ada tab
   // baru disisipkan, dan pemuatan akan menempel di tab yang salah tanpa gejala apa pun.
+  /** Profil bawaan — memuat seluruh operasi Shinhan, dipilih otomatis saat membuat simulator. */
+  private static readonly DEFAULT_PROFILE = 'shinhan-default';
   private static readonly TAB_ACCOUNTS = 'Rekening & Kartu';
   private static readonly TAB_LIVE = 'Live View';
 
@@ -130,20 +162,57 @@ export class Iso implements OnInit {
     this.reload();
   }
 
+  ngOnDestroy() {
+    this.disconnectLive();
+  }
+
+  private connectLive() {
+    const id = this.selectedSimId();
+    this.disconnectLive();
+    if (!id) {
+      return;
+    }
+    const es = new EventSource(this.api.streamUrl(id));
+    es.addEventListener('open', () => this.liveConnected.set(true));
+    es.addEventListener('exchange', (e: MessageEvent) => {
+      try {
+        const d = JSON.parse(e.data);
+        const row: LogRow = {
+          mti: d.mti, operation: d.operation, response_code: d.responseCode,
+          request_hex: d.requestHex, response_hex: d.responseHex,
+          duration_ms: d.durationMillis, error: d.error,
+          created_at: new Date().toISOString(), open: false,
+        };
+        this.logTotal.update(n => n + 1);
+        if (this.logPageIndex() === 0) {
+          // Halaman 1 = "terbaru", jadi sisipkan di atas dan potong sesuai ukuran halaman.
+          this.logs.update(list => [row, ...list].slice(0, this.logPageSize()));
+        } else {
+          this.livePending.update(n => n + 1);
+        }
+      } catch { /* payload tak terbaca — abaikan, jangan jatuhkan stream */ }
+    });
+    es.onerror = () => this.liveConnected.set(false);
+    this.es = es;
+  }
+
+  private disconnectLive() {
+    this.es?.close();
+    this.es = undefined;
+    this.liveConnected.set(false);
+  }
+
   /**
-   * Data dimuat saat tabnya dibuka. Live View sengaja TIDAK lagi menyegarkan sendiri —
-   * atas permintaan: polling membuat daftar bergeser saat sedang dibaca, dan saat
-   * menelusuri satu pesan yang bergerak justru mengganggu. Penyegaran kini di tangan
-   * pemakai lewat tombol Muat ulang.
+   * Data dimuat saat tabnya dibuka. Live View tak butuh ini — ia menerima dorongan lewat
+   * SSE begitu simulator dipilih, jadi pesan yang datang saat tab lain terbuka pun tetap
+   * tercatat.
    */
   onTabChange(label: string) {
     this.activeTab.set(label);
     if (!this.selectedSimId()) {
       return;
     }
-    if (label === Iso.TAB_LIVE) {
-      this.loadLogs();
-    } else if (label === Iso.TAB_ACCOUNTS) {
+    if (label === Iso.TAB_ACCOUNTS) {
       this.loadAccounts();
     }
   }
@@ -228,7 +297,11 @@ export class Iso implements OnInit {
       next: p => {
         this.profiles.set(p);
         if (!this.newProfile() && p.length) {
-          this.newProfile.set(`${p[0].name}:${p[0].version}`);
+          // Profil bawaan diutamakan: ia memuat SEMUA operasi Shinhan, sementara profil
+          // pertama dalam daftar bisa saja baseline generik yang hanya sebagian.
+          const bawaan = p.find(x => x.name === Iso.DEFAULT_PROFILE);
+          const pilih = bawaan ?? p[0];
+          this.newProfile.set(`${pilih.name}:${pilih.version}`);
         }
       },
       error: () => this.profiles.set([]),
@@ -264,7 +337,8 @@ export class Iso implements OnInit {
     this.loadOperations();
     this.loadAccounts();
     this.loadLogs();
-    // Polling mengikuti simulator yang sedang dipilih, bukan yang lama.
+    // Stream mengikuti simulator yang sedang dipilih, bukan yang lama.
+    this.connectLive();
     this.onTabChange(this.activeTab());
   }
 
@@ -369,10 +443,58 @@ export class Iso implements OnInit {
   }
 
   loadLogs() {
-    this.api.logs(this.selectedSimId(), 30).subscribe({
-      next: l => this.logs.set(l.map(x => ({ ...x, open: false }))),
-      error: () => this.logs.set([]),
+    const id = this.selectedSimId();
+    if (!id) {
+      this.logs.set([]);
+      this.logTotal.set(0);
+      return;
+    }
+    this.api.logs(id, this.logPageSize(), this.logPageIndex() * this.logPageSize()).subscribe({
+      next: p => {
+        this.logs.set(p.rows.map(x => ({ ...x, open: false })));
+        this.logTotal.set(p.total);
+        this.livePending.set(0);
+      },
+      error: () => {
+        this.logs.set([]);
+        this.logTotal.set(0);
+      },
     });
+  }
+
+  onLogPage(e: PageEvent) {
+    this.logPageIndex.set(e.pageIndex);
+    this.logPageSize.set(e.pageSize);
+    this.loadLogs();
+  }
+
+  /** Kembali ke halaman 1 dan tarik ulang — dipakai lencana "pesan baru". */
+  gotoLatestLogs() {
+    this.logPageIndex.set(0);
+    this.loadLogs();
+  }
+
+  /**
+   * Menghapus riwayat di DATABASE, bukan sekadar mengosongkan tampilan — itulah yang
+   * dimaksud saat orang menekan "bersihkan" setelah sesi uji yang berantakan.
+   */
+  clearLogs() {
+    const sim = this.selectedSim;
+    if (!sim) {
+      return;
+    }
+    this.confirm('Hapus riwayat pesan?',
+      `Seluruh riwayat pesan ${sim.name} akan dihapus dari database dan tak bisa dikembalikan.`
+      + ' Rekening, kartu, dan profil tidak tersentuh.',
+      () => this.api.clearLogs(sim.id).subscribe({
+        next: r => {
+          this.msg.set(`${r.deleted} baris riwayat dihapus.`);
+          this.err.set('');
+          this.logPageIndex.set(0);
+          this.loadLogs();
+        },
+        error: e => this.err.set(e?.error?.error ?? 'Gagal menghapus riwayat.'),
+      }));
   }
 
   // ── simulator ───────────────────────────────────────────────────────────

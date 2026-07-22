@@ -418,3 +418,21 @@
 .iso-log__err {
   color: var(--mat-sys-error);
 }
+
+.iso-live--on {
+  color: var(--mat-sys-primary);
+}
+
+.iso-log__rc {
+  font-family: var(--iso-mono, monospace);
+  font-size: 12px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--mat-sys-error-container);
+  color: var(--mat-sys-on-error-container);
+}
+
+.iso-log__rc--ok {
+  background: var(--mat-sys-primary-container);
+  color: var(--mat-sys-on-primary-container);
+}

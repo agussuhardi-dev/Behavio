@@ -270,14 +270,23 @@
                 <input matInput [value]="upVersion()" (input)="upVersion.set($any($event.target).value)" />
               </mat-form-field>
               <mat-form-field appearance="outline">
-                <mat-label>Mewarisi (opsional)</mat-label>
-                <input matInput [value]="upParent()" (input)="upParent.set($any($event.target).value)"
-                       placeholder="iso8583-1987" />
+                <mat-label>Mewarisi profil</mat-label>
+                <mat-select [value]="upParent()" (valueChange)="upParent.set($event)">
+                  <mat-option value="">(tidak mewarisi — operasi wajib diisi)</mat-option>
+                  @for (p of profiles(); track p.id) {
+                    <mat-option [value]="p.name">{{ p.name }}</mat-option>
+                  }
+                </mat-select>
               </mat-form-field>
               <mat-form-field appearance="outline" class="iso-form__wide">
-                <mat-label>Operasi (nama:mti[:processingCode], pisahkan koma)</mat-label>
+                <mat-label>Operasi (kosongkan untuk mewarisi semuanya)</mat-label>
                 <input matInput [value]="upOperations()"
-                       (input)="upOperations.set($any($event.target).value)" />
+                       (input)="upOperations.set($any($event.target).value)"
+                       placeholder="nama:mti[:processingCode], pisahkan koma" />
+                <mat-hint>
+                  Berkas packager tak memuat operasi. Dibiarkan kosong = seluruh operasi
+                  profil induk dipakai; diisi = daftar ini menggantikan milik induk.
+                </mat-hint>
               </mat-form-field>
             }
 
@@ -519,9 +528,21 @@
         <p class="iso-hint">
           Pesan disimpan sebagai <b>hex</b> — bisa langsung dikirim ke Uji Trace saat menelusuri masalah.
         </p>
-        <button mat-stroked-button (click)="loadLogs()">
-          <mat-icon>refresh</mat-icon> Muat ulang
-        </button>
+        <span class="iso-live" [class.iso-live--on]="liveConnected()">
+          <mat-icon>{{ liveConnected() ? 'sensors' : 'sensors_off' }}</mat-icon>
+          {{ liveConnected() ? 'Tersambung — pesan muncul begitu tiba' : 'Tak tersambung' }}
+        </span>
+        @if (livePending() > 0) {
+          <button mat-stroked-button color="primary" (click)="gotoLatestLogs()">
+            <mat-icon>arrow_upward</mat-icon> {{ livePending() }} pesan baru
+          </button>
+        }
+        <span class="iso-bar__spacer"></span>
+        @if (logTotal() > 0) {
+          <button mat-stroked-button color="warn" (click)="clearLogs()">
+            <mat-icon>delete_sweep</mat-icon> Hapus riwayat
+          </button>
+        }
 
         @if (logs().length === 0) {
           <p class="iso-empty"><mat-icon>info</mat-icon> Belum ada lalu lintas pesan.</p>
@@ -530,6 +551,10 @@
             <div class="iso-log" (click)="toggleLog(row)">
               <span class="iso-log__mti">{{ row.mti || '—' }}</span>
               <span class="iso-log__op">{{ row.operation || '' }}</span>
+              @if (row.response_code) {
+                <span class="iso-log__rc"
+                      [class.iso-log__rc--ok]="row.response_code === '00'">{{ row.response_code }}</span>
+              }
               <span class="iso-log__ms">{{ row.duration_ms }}ms</span>
               @if (row.error) {
                 <span class="iso-warn" matTooltip="Klien tak menerima balasan — buka untuk alasannya">
@@ -556,6 +581,12 @@
               </div>
             }
           }
+          <mat-paginator [length]="logTotal()"
+                         [pageIndex]="logPageIndex()"
+                         [pageSize]="logPageSize()"
+                         [pageSizeOptions]="[10, 20, 50, 100]"
+                         (page)="onLogPage($event)"
+                         aria-label="Halaman riwayat pesan" />
         }
       </div>
     </mat-tab>

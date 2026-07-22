@@ -24,15 +24,17 @@ public class IsoSimulatorService {
     private final IsoServerManager servers;
     private final IsoOperationHandler handler;
     private final IsoStateRepository state;
+    private final IsoSseBroadcaster live;
 
     public IsoSimulatorService(JdbcClient db, SpecProfileService profiles,
                                IsoServerManager servers, IsoOperationHandler handler,
-                               IsoStateRepository state) {
+                               IsoStateRepository state, IsoSseBroadcaster live) {
         this.db = db;
         this.profiles = profiles;
         this.servers = servers;
         this.handler = handler;
         this.state = state;
+        this.live = live;
     }
 
     public record SimulatorView(UUID id, String name, int port, String status,
@@ -109,8 +111,11 @@ public class IsoSimulatorService {
 
         servers.start(id, s.port(), spec,
                 (simId, req) -> handler.handle(simId, spec, req),
-                (simId, mti, reqHex, respHex, ms, error) ->
-                        state.logExchange(simId, mti, null, null, reqHex, respHex, ms, error));
+                (simId, mti, operation, rc, reqHex, respHex, ms, error) -> {
+                    state.logExchange(simId, mti, operation, rc, reqHex, respHex, ms, error);
+                    live.publish(new IsoSseBroadcaster.Exchange(simId.toString(), mti, operation,
+                            rc, reqHex, respHex, ms, error));
+                });
 
         db.sql("UPDATE iso8583.simulators SET status = 'RUNNING' WHERE id = ?").param(id).update();
         return find(id).orElseThrow();

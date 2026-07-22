@@ -30,6 +30,69 @@ adapter-web (kena kedua simulator) · **[DASHBOARD]** frontend ·
 - **Perhatian:** profil XML yang diunggah sebelum perbaikan tetap BINARY (profil
   immutable) — unggah ulang sebagai versi baru lalu alihkan simulatornya.
 
+### [ISO-8583] **Defect:** profil bawaan simulator baru menunjuk versi yang tak ada
+- **Gejala:** membuat simulator tanpa menyebut profil → `Profil 'iso8583-1987' versi '1.0'
+  tidak ada`. Versi bawaannya dihardcode `1.0`, padahal baseline sudah naik ke `1.1` dan
+  `1.0` bisa dihapus — pembuatan simulator gagal total.
+- **Perbaikan:** bawaan kini `shinhan-default` v1.0, **19 operasi lengkap**, dan nama/versinya
+  diambil dari konstanta seeder-nya, bukan string yang ditulis ulang dan bisa melenceng.
+- **Dashboard:** dropdown profil saat membuat simulator memilih `shinhan-default` otomatis,
+  bukan sekadar profil pertama dalam daftar (yang bisa saja baseline generik separuh isi).
+- **Diuji:** `POST /simulators` tanpa `specProfileName` → tercipta di `shinhan-default` v1.0;
+  ketujuh operasi yang dicek (termasuk yang baru) masing-masing punya **15 scenario**. Boot
+  0 ERROR.
+
+### [ISO-8583] Operasi bawaan Shinhan lengkap
+- **Sumber:** `TransactionType` milik klien — processing code nyata, bukan tebakan.
+- **Ditanam sebagai profil `shinhan-default` v1.0** (mewarisi kamus DE `iso8583-1987`):
+  19 operasi — saldo `310000`, change PIN `340000`, change phone `700000`, reset password IB
+  `710000`, transfer on-us `330000`/`400000`, ke bank lain `351000`/`411000`, masuk
+  tabungan `361000`/`421000` & giro `362000`/`422000`, lewat `371000`/`431000` &
+  `372000`/`432000`, router `900000`, reversal, network-management.
+- **Kode 6 digit penuh, bukan awalan 2 digit:** `700000` dan `710000` sama-sama berawalan
+  "70" — awalan pendek membuat salah satunya tak pernah terpanggil.
+- **Arah dana dibedakan sungguhan:** on-us memindahkan dua sisi; keluar hanya mendebit;
+  masuk hanya mengkredit; numpang-lewat tak menyentuh saldo dan **tidak dicatat** sebagai
+  transaksi (kalau dicatat, reversal-nya memindahkan dana yang tak pernah berpindah).
+- **Profil tanpa operasi kini DITOLAK** saat unggah, dengan pesan yang menyebutkan jalan
+  keluarnya (`operation=` atau `parent=shinhan-default`) — sebelumnya tersimpan diam-diam
+  lalu membalas DE39=30 untuk segalanya.
+- **Diuji:** 17 kasus lewat socket nyata memakai packager.xml asli klien — saldo akhir
+  cocok di tiap arah (A 1.000.000 → 999.250, B 0 → 1.350), inquiry mengembalikan nama
+  penerima, `51` saat saldo kurang, `52` saat rekening tujuan tak ada, PIN & telepon
+  berubah. 15 scenario otomatis tersedia untuk tiap operasi baru. Boot 0 ERROR.
+
+### [ISO-8583] Live View: hapus riwayat + paging
+- **Hapus riwayat:** `DELETE /simulators/{id}/logs` + tombol **Hapus riwayat**. Menghapus
+  di **database**, bukan sekadar mengosongkan tampilan — itu yang dimaksud orang setelah
+  sesi uji yang berantakan. Rekening, kartu, dan profil tak tersentuh; dialog konfirmasi
+  menyebutkan itu.
+- **Paging:** `GET /logs?limit=&offset=` kini mengembalikan `{total, rows}` + `mat-paginator`
+  (10/20/50/100). Riwayat ISO cepat menumpuk — 25 pesan uji saja sudah melewati satu layar.
+- **Urutan deterministik:** `ORDER BY created_at DESC, id DESC`. Dua pesan bisa tercatat
+  pada mikrodetik yang sama, dan urutan yang tak pasti membuat baris melompat antar-halaman
+  tepat saat satu pesan sedang ditelusuri.
+- **SSE + paging hidup berdampingan:** pesan baru disisipkan hanya saat berada di halaman 1;
+  di halaman lain ia jadi lencana **"N pesan baru"** yang mengembalikan ke halaman 1. Tanpa
+  ini, halaman yang sedang dibaca akan bergeser sendiri — gangguan yang sama seperti polling.
+- **Diuji:** 25 pesan → 3 halaman (10/10/9), STAN berurut turun tanpa tumpang tindih;
+  `DELETE` menghapus 29 baris, total jadi 0, rekening tetap 2. Boot 0 ERROR.
+
+### [ISO-8583] Live View jadi benar-benar live (SSE) — menyamai bank simulator
+- **Masalah:** Live View ISO memakai tombol muat ulang, sedangkan halaman `/simulators`
+  (bank) sudah **push lewat SSE**. Dua produk, dua perilaku, tanpa alasan.
+- **Perbaikan:** `IsoSseBroadcaster` + `GET /simulators/{id}/logs/stream`, bentuk URL sama
+  persis dengan bank agar dashboard tak memperlakukan ISO sebagai kasus khusus. Frontend
+  memakai `EventSource`; tombol muat ulang diganti indikator sambungan + tombol bersihkan.
+- **Bonus yang ikut benar:** `operation` dan `response_code` di `iso8583.request_logs`
+  selama ini SELALU null — kini terisi, dan ikut tampil di baris Live View sehingga bisa
+  dibaca sekilas tanpa mem-parse hex di kepala.
+- **Diuji:** stream SSE nyata menerima dua `event:exchange` seketika saat pesan tiba
+  (`operation: network-management`, `responseCode: 00`), dan baris yang sama tersimpan di
+  `request_logs` dengan kedua kolom terisi. Boot 0 ERROR.
+- **Catatan:** riwayat tetap dimuat dari database saat simulator dipilih — bank memulai
+  dengan daftar kosong, ISO tidak, karena hex pesan lama justru yang dipakai Uji Trace.
+
 ### [DASHBOARD] Live View kembali ke muat ulang manual
 - **Permintaan pemakai:** penyegaran otomatis 3 detik di tab Live View diganti tombol
   **Muat ulang**. Alasannya masuk akal: daftar yang bergeser sendiri justru mengganggu saat

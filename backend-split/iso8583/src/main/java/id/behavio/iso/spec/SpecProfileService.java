@@ -85,6 +85,16 @@ public class SpecProfileService {
         if (resolved.dictionary().defined().isEmpty()) {
             throw new IsoCodecException("Profil '" + p.name() + "' tak menghasilkan satu pun DE");
         }
+        // Profil tanpa rute operasi BISA disimpan, tapi setiap pesan yang masuk akan
+        // dibalas DE39=30 — simulator yang hidup tapi menolak segalanya. Gagal di sini
+        // jauh lebih murah daripada menelusurinya lewat trace.
+        if (resolved.operations().isEmpty()) {
+            throw new IsoCodecException("Profil '" + p.name() + "' tak punya satu pun operasi — "
+                    + "berkas packager memang tak memuatnya. Sertakan parameter 'operation', "
+                    + "atau warisi profil bawaan: extends/parent = '"
+                    + ShinhanProfileSeeder.NAME + "' (processing code Shinhan lengkap) atau '"
+                    + BaselineProfileSeeder.NAME + "' (generik).");
+        }
     }
 
     /** Hasil uji trace: DE yang berhasil dibaca, atau sebab kegagalan yang menunjuk. */

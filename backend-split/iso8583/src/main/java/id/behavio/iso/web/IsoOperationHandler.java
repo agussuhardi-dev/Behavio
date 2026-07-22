@@ -61,11 +61,26 @@ public class IsoOperationHandler {
         IsoMessage natural = switch (operation) {
             case "network-management" -> networkManagement(req, resp);
             case "balance-inquiry" -> balanceInquiry(simulatorId, req, resp);
-            case "transfer" -> transfer(simulatorId, req, resp);
-            case "cash-withdrawal" -> withdrawal(simulatorId, req, resp);
             case "reversal" -> reversal(simulatorId, req, resp);
             case "change-pin" -> changePin(simulatorId, req, resp);
             case "change-phone" -> changePhone(simulatorId, req, resp);
+            case "reset-password-ib" -> resetPasswordIb(simulatorId, req, resp);
+
+            // ── inquiry: MEMERIKSA, tidak memindahkan dana ───────────────────
+            case "transfer-on-us-inquiry" -> transferInquiryOnUs(simulatorId, req, resp);
+            case "transfer-off-us-inquiry", "transfer-in-saving-inquiry",
+                 "transfer-in-giro-inquiry", "transfer-via-saving-inquiry",
+                 "transfer-via-giro-inquiry" -> transferInquiryExternal(simulatorId, req, resp);
+
+            // ── eksekusi ────────────────────────────────────────────────────
+            // "transfer" dipertahankan demi profil lama (iso8583-1987 v1.0/v1.1).
+            case "transfer", "transfer-on-us" -> transferOnUs(simulatorId, req, resp);
+            case "transfer-off-us" -> transferOffUs(simulatorId, req, resp);
+            case "transfer-in-saving", "transfer-in-giro" -> transferIncoming(simulatorId, req, resp);
+            case "transfer-via-saving", "transfer-via-giro", "router-interbank" ->
+                    transferPassThrough(simulatorId, req, resp);
+            case "cash-withdrawal", "purchase" -> withdrawal(simulatorId, req, resp);
+
             default -> resp.set(39, FORMAT_ERROR);
         };
 
@@ -127,7 +142,11 @@ public class IsoOperationHandler {
         return resp.set(39, OK).set(54, additionalAmounts(after));
     }
 
-    private IsoMessage transfer(UUID simulatorId, IsoMessage req, IsoMessage resp) {
+    /**
+     * Transfer <b>on-us</b> (DE3 {@code 400000}): kedua rekening ada di host ini, jadi
+     * dana benar-benar berpindah — didebit dari pengirim, dikredit ke penerima.
+     */
+    private IsoMessage transferOnUs(UUID simulatorId, IsoMessage req, IsoMessage resp) {
         var fromOpt = resolveAccount(simulatorId, req);
         if (fromOpt.isEmpty()) {
             return resp.set(39, INVALID_CARD);
@@ -153,6 +172,145 @@ public class IsoOperationHandler {
         record(simulatorId, req, from.accountNo(), toNo.trim(), amount);
         var after = state.findAccount(simulatorId, from.accountNo()).orElse(from);
         return resp.set(39, OK).set(54, additionalAmounts(after));
+    }
+
+    /**
+     * Transfer <b>keluar ke bank lain</b> (DE3 {@code 411000}).
+     *
+     * <p>Hanya pengirim yang didebit. Rekening tujuan ada di bank LAIN — simulator ini
+     * tak boleh mengarang saldonya, dan mengkredit rekening lokal yang kebetulan bernomor
+     * sama akan menghasilkan uang dari udara. Nomor tujuan tetap divalidasi keberadaannya
+     * di pesan (DE103), bukan di database.
+     *
+     * <p>Reversal-nya otomatis benar: transaksi dicatat tanpa counterpart, jadi pembalikan
+     * hanya mengembalikan dana ke pengirim.
+     */
+    private IsoMessage transferOffUs(UUID simulatorId, IsoMessage req, IsoMessage resp) {
+        var fromOpt = resolveAccount(simulatorId, req);
+        if (fromOpt.isEmpty()) {
+            return resp.set(39, INVALID_CARD);
+        }
+        String toNo = req.raw(103);
+        if (toNo == null || toNo.isBlank()) {
+            return resp.set(39, FORMAT_ERROR);
+        }
+        BigDecimal amount = amountOf(req);
+        if (amount == null) {
+            return resp.set(39, FORMAT_ERROR);
+        }
+        var from = fromOpt.get();
+        if (from.balance().compareTo(amount) < 0) {
+            return resp.set(39, INSUFFICIENT_FUNDS).set(54, additionalAmounts(from));
+        }
+        state.debit(simulatorId, from.accountNo(), amount);
+        record(simulatorId, req, from.accountNo(), null, amount);
+        var after = state.findAccount(simulatorId, from.accountNo()).orElse(from);
+        return resp.set(39, OK).set(54, additionalAmounts(after));
+    }
+
+    /**
+     * Transfer <b>masuk dari bank lain</b> ke rekening di host ini — tabungan
+     * ({@code 421000}) maupun giro ({@code 422000}).
+     *
+     * <p>Kebalikan dari off-us: hanya penerima yang dikredit. Pengirim ada di bank lain,
+     * jadi tak ada yang didebit di sini. Rekening tujuan dibaca dari DE103 (bila ada),
+     * kalau tidak dari DE102 — pada pesan masuk, "rekening tujuan"-lah yang milik kita.
+     */
+    private IsoMessage transferIncoming(UUID simulatorId, IsoMessage req, IsoMessage resp) {
+        String toNo = req.raw(103);
+        if (toNo == null || toNo.isBlank()) {
+            toNo = req.raw(102);
+        }
+        if (toNo == null || toNo.isBlank()) {
+            return resp.set(39, FORMAT_ERROR);
+        }
+        var toOpt = state.findAccount(simulatorId, toNo.trim());
+        if (toOpt.isEmpty()) {
+            return resp.set(39, INVALID_ACCOUNT);
+        }
+        BigDecimal amount = amountOf(req);
+        if (amount == null) {
+            return resp.set(39, FORMAT_ERROR);
+        }
+        state.credit(simulatorId, toNo.trim(), amount);
+        // accountNo = penerima, counterpart kosong → reversal mendebit balik penerima.
+        record(simulatorId, req, toNo.trim(), null, amount);
+        var after = state.findAccount(simulatorId, toNo.trim()).orElse(toOpt.get());
+        return resp.set(39, OK).set(54, additionalAmounts(after));
+    }
+
+    /**
+     * Transfer <b>bank lain → bank lain</b> ({@code 431000}/{@code 432000}) dan
+     * {@code router-interbank} ({@code 900000}): host ini cuma dilewati.
+     *
+     * <p>Tak ada saldo yang berubah — kedua pihak ada di luar. Sengaja TIDAK dicatat
+     * sebagai transaksi finansial: kalau dicatat, reversal-nya akan memindahkan dana yang
+     * tak pernah berpindah. Yang perlu diuji klien di sini adalah bentuk balasannya.
+     */
+    private IsoMessage transferPassThrough(UUID simulatorId, IsoMessage req, IsoMessage resp) {
+        if (amountOf(req) == null) {
+            return resp.set(39, FORMAT_ERROR);
+        }
+        return resp.set(39, OK);
+    }
+
+    /**
+     * Inquiry transfer on-us ({@code 330000}): memastikan rekening tujuan ADA dan
+     * mengembalikan nama pemiliknya lewat DE48 — persis kegunaan inquiry di dunia nyata
+     * (nasabah mengonfirmasi nama sebelum lanjut). <b>Tidak</b> memindahkan dana.
+     */
+    private IsoMessage transferInquiryOnUs(UUID simulatorId, IsoMessage req, IsoMessage resp) {
+        String toNo = req.raw(103);
+        if (toNo == null || toNo.isBlank()) {
+            return resp.set(39, FORMAT_ERROR);
+        }
+        var toOpt = state.findAccount(simulatorId, toNo.trim());
+        if (toOpt.isEmpty()) {
+            return resp.set(39, INVALID_ACCOUNT);
+        }
+        return resp.set(39, OK).set(48, beneficiary(toOpt.get().accountNo(),
+                toOpt.get().holderName()));
+    }
+
+    /**
+     * Inquiry transfer yang melibatkan bank lain. Rekening di seberang tak bisa
+     * diverifikasi dari sini, jadi yang diperiksa adalah <b>kelengkapan pesan</b>; nama
+     * penerima dibalas sebagai nilai contoh yang jelas-jelas dummy.
+     *
+     * <p>Kalau Anda butuh inquiry yang MENOLAK (rekening tujuan tak ditemukan di bank
+     * lain), pakai scenario — di situlah kendalinya, bukan di kode ini.
+     */
+    private IsoMessage transferInquiryExternal(UUID simulatorId, IsoMessage req, IsoMessage resp) {
+        String toNo = req.raw(103);
+        if (toNo == null || toNo.isBlank()) {
+            toNo = req.raw(102);
+        }
+        if (toNo == null || toNo.isBlank()) {
+            return resp.set(39, FORMAT_ERROR);
+        }
+        // Rekening milik host ini tetap dijawab dengan nama sebenarnya bila kebetulan ada.
+        String name = state.findAccount(simulatorId, toNo.trim())
+                .map(IsoStateRepository.Account::holderName)
+                .orElse("NASABAH BANK LAIN");
+        return resp.set(39, OK).set(48, beneficiary(toNo.trim(), name));
+    }
+
+    /**
+     * Reset password internet banking ({@code 710000}).
+     *
+     * <p>Simulator tak menyimpan password internet banking — dan tak seharusnya. Yang
+     * diuji klien di sini adalah alur & bentuk balasannya, jadi yang dilakukan hanyalah
+     * memastikan rekening/kartunya dikenal. Penolakan diuji lewat scenario.
+     */
+    private IsoMessage resetPasswordIb(UUID simulatorId, IsoMessage req, IsoMessage resp) {
+        return resolveAccount(simulatorId, req).isEmpty()
+                ? resp.set(39, INVALID_CARD)
+                : resp.set(39, OK);
+    }
+
+    /** DE48 inquiry: nomor rekening + nama penerima, dipisah spasi. */
+    private static String beneficiary(String accountNo, String holderName) {
+        return accountNo + " " + (holderName == null ? "" : holderName.trim());
     }
 
     /**

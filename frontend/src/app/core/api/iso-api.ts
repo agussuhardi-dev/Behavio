@@ -264,7 +264,23 @@ export class IsoApi {
     return this.http.post(`${this.base}/simulators/${id}/seed-demo`, {});
   }
 
-  logs(id: string, limit = 20) {
-    return this.http.get<IsoLog[]>(`${this.base}/simulators/${id}/logs?limit=${limit}`);
+  /**
+   * URL SSE Live View — sama bentuknya dengan bank simulator (`…/logs/stream`), jadi
+   * dashboard tak memperlakukan produk ini sebagai kasus khusus.
+   */
+  streamUrl(id: string): string {
+    return `${this.base}/simulators/${id}/logs/stream`;
+  }
+
+  /** Satu halaman riwayat. Pesan baru datang lewat SSE, bukan dari sini. */
+  logs(id: string, limit = 20, offset = 0) {
+    return this.http.get<{ total: number; rows: IsoLog[] }>(
+      `${this.base}/simulators/${id}/logs?limit=${limit}&offset=${offset}`
+    );
+  }
+
+  /** Mengosongkan riwayat pesan di DATABASE (bukan sekadar tampilan). */
+  clearLogs(id: string) {
+    return this.http.delete<{ deleted: number }>(`${this.base}/simulators/${id}/logs`);
   }
 }
