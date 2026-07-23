@@ -1,4 +1,21 @@
 <div class="iso-page">
+  <div class="iso-hero">
+    <div class="iso-hero__text">
+      <h1><mat-icon class="iso-hero__icon">lan</mat-icon> Simulator ISO-8583</h1>
+      <p>
+        Berperan sebagai <strong>host</strong> bank di atas <strong>socket TCP</strong>, bukan HTTP —
+        cek saldo, transfer on-us & antar-bank, tarik tunai, ganti PIN/telepon, sampai reversal.
+        Setiap balasan dapat diubah lewat scenario tanpa menyentuh kode.
+      </p>
+      <p class="iso-hero__note">
+        Bentuk pesannya ditentukan <strong>profil spec</strong> yang diunggah (packager XML jPOS
+        atau JSON) — kamus DE, bitmap, framing, dan rute operasi ikut profil, jadi host baru
+        cukup ditambah profilnya. Datanya terpisah penuh dari Bank Simulator dan QRIS: schema
+        <code>iso8583</code>, rekening, dan port sendiri.
+      </p>
+    </div>
+  </div>
+
   @if (loading()) {
     <mat-progress-bar mode="indeterminate" />
   }
@@ -7,7 +24,6 @@
   <mat-card class="iso-card" appearance="outlined">
     <div class="iso-bar">
       <mat-icon class="iso-bar__icon">lan</mat-icon>
-      <span class="iso-bar__title">Simulator ISO-8583</span>
 
       <mat-form-field appearance="outline" class="iso-bar__select">
         <mat-label>Profil simulator</mat-label>
@@ -76,6 +92,7 @@
   </mat-card>
 
   <mat-tab-group class="iso-tabs" animationDuration="0ms"
+                 [selectedIndex]="tabIndex()"
                  (selectedTabChange)="onTabChange($event.tab.textLabel)">
     <!-- ── OPERASI & SCENARIO ─────────────────────────────────────────── -->
     <mat-tab label="Operasi & Scenario">
@@ -499,12 +516,11 @@
                     <td>{{ c.status }}</td>
                     <td>
                       @if (c.pinSet) {
-                        <span class="iso-chip iso-chip--on"
-                              matTooltip="PIN block tersimpan apa adanya — TIDAK didekripsi & tidak diverifikasi">
-                          <mat-icon>lock</mat-icon> ter-set
-                        </span>
+                        <code class="iso-pan"
+                              matTooltip="PIN block terakhir yang diterima — bukan PIN, dan tak bisa didekripsi tanpa HSM">{{ c.pinBlock }}</code>
                       } @else {
-                        <span class="iso-muted" matTooltip="Belum pernah menerima operasi change-pin">belum</span>
+                        <span class="iso-muted"
+                              matTooltip="Belum pernah menerima change-pin. PIN tak pernah diverifikasi, jadi transaksi tetap bisa dijalankan.">belum di-set</span>
                       }
                     </td>
                     <td>
@@ -580,9 +596,34 @@
                               </tr>
                               <tr>
                                 <td><code>DE53</code></td>
-                                <td>PIN block BARU — hanya untuk change-pin</td>
+                                <td>
+                                  PIN block BARU — hanya untuk change-pin.
+                                  <b>Tak pernah diverifikasi</b>, jadi nilai apa pun diterima:
+                                  tak perlu tahu PIN lamanya.
+                                </td>
                                 <td><code>0123456789ABCDEF</code></td>
                                 <td></td>
+                              </tr>
+                              <tr>
+                                <td><code>DE52</code></td>
+                                <td>PIN block terakhir yang tersimpan — <b>bukan PIN</b>, dan
+                                    tak bisa dikembalikan jadi angka PIN tanpa HSM</td>
+                                <td>
+                                  @if (c.pinBlock) {
+                                    <code>{{ c.pinBlock }}</code>
+                                    <span class="iso-muted"> · diubah {{ c.pinChangedAt }}</span>
+                                  } @else {
+                                    <span class="iso-muted">belum pernah di-set</span>
+                                  }
+                                </td>
+                                <td>
+                                  @if (c.pinBlock) {
+                                    <button mat-icon-button matTooltip="Salin PIN block"
+                                            (click)="copy(c.pinBlock!, 'pinb-' + c.pan)">
+                                      <mat-icon>{{ copiedKey() === 'pinb-' + c.pan ? 'check' : 'content_copy' }}</mat-icon>
+                                    </button>
+                                  }
+                                </td>
                               </tr>
                               <tr>
                                 <td><code>DE48</code></td>
@@ -669,7 +710,11 @@
           @for (row of logs(); track row.created_at) {
             <div class="iso-log" (click)="toggleLog(row)">
               <span class="iso-log__mti">{{ row.mti || '—' }}</span>
-              <span class="iso-log__op">{{ row.operation || '' }}</span>
+              @if (row.processing_code) {
+                <span class="iso-log__pc"
+                      matTooltip="DE3 (processing code) apa adanya dari request — inilah yang menentukan operasi mana yang dipilih">{{ row.processing_code }}</span>
+              }
+              <span class="iso-log__op">{{ row.operation || '(tak dikenali profil)' }}</span>
               @if (row.response_code) {
                 <span class="iso-log__rc"
                       [class.iso-log__rc--ok]="row.response_code === '00'">{{ row.response_code }}</span>
@@ -693,6 +738,16 @@
                   <div class="iso-log__label">Kenapa gagal</div>
                   <pre class="iso-log__err">{{ row.error }}</pre>
                 }
+                <div class="iso-log__label">
+                  Routing — <code>MTI {{ row.mti }}</code>
+                  @if (row.processing_code) { + <code>DE3 {{ row.processing_code }}</code> }
+                  →
+                  @if (row.operation) {
+                    <b>{{ row.operation }}</b>
+                  } @else {
+                    <b>tak ada rute di profil</b> — dibalas DE39=30
+                  }
+                </div>
                 <div class="iso-log__label">Request</div>
                 <pre>{{ row.request_hex }}</pre>
                 <div class="iso-log__label">Response</div>
@@ -743,4 +798,31 @@
       </div>
     </mat-tab>
   </mat-tab-group>
+
+  <mat-card class="iso-legend" appearance="outlined">
+    <div class="iso-legend__head">
+      <mat-icon>menu_book</mat-icon>
+      <span>Panduan Skenario ISO-8583</span>
+    </div>
+    <mat-divider />
+    <p class="iso-hint iso-hint--small">
+      <mat-icon>info</mat-icon>
+      Scenario yang <b>menolak</b> dijalankan sebelum logika alami, dan logika itu
+      dilewati sepenuhnya: <b>tidak ada</b> saldo yang berpindah, PIN/telepon tak berubah,
+      dan tak ada transaksi yang dicatat — seperti host asli menolak. DE54 tetap
+      melaporkan saldo yang <b>belum</b> berubah. Tersedia untuk <b>setiap</b> operasi di
+      profil, dipilih dari tab Operasi &amp; Scenario.
+    </p>
+    <div class="iso-legend__grid">
+      @for (sc of isoScenarios; track sc.name) {
+        <div class="iso-legend__item">
+          <mat-icon class="opt-ico opt-ico--{{ sc.tone }}">{{ sc.icon }}</mat-icon>
+          <div>
+            <div class="iso-legend__name">{{ sc.name }}</div>
+            <div class="iso-legend__desc">{{ sc.desc }}</div>
+          </div>
+        </div>
+      }
+    </div>
+  </mat-card>
 </div>

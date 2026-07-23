@@ -30,3 +30,5 @@ databaseChangeLog:
       file: db/changelog/iso8583/005-pin-phone.sql
   - include:
       file: db/changelog/iso8583/006-log-error.sql
+  - include:
+      file: db/changelog/iso8583/007-log-processing-code.sql

@@ -84,6 +84,7 @@ public final class FieldDictionary {
         put(m, FieldSpec.fixed(11, "System Trace Audit Number", FieldType.N, 6));
         put(m, FieldSpec.fixed(12, "Time, Local Transaction", FieldType.N, 6));
         put(m, FieldSpec.fixed(13, "Date, Local Transaction", FieldType.N, 4));
+        put(m, FieldSpec.fixed(14, "Date, Expiration", FieldType.N, 4));
         put(m, FieldSpec.fixed(15, "Date, Settlement", FieldType.N, 4));
         put(m, FieldSpec.fixed(18, "Merchant Type", FieldType.N, 4));
         put(m, FieldSpec.fixed(22, "POS Entry Mode", FieldType.N, 3));

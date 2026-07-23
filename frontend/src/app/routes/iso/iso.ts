@@ -17,6 +17,7 @@ import { MatTabsModule } from '@angular/material/tabs';
 import { MatTooltipModule } from '@angular/material/tooltip';
 
 import {
+  ISO_SCENARIOS,
   IsoAccount,
   IsoApi,
   IsoCard,
@@ -57,6 +58,19 @@ interface LogRow extends IsoLog {
 })
 export class Iso implements OnInit, OnDestroy {
   private static readonly LAST_SIM_KEY = 'behavio.iso.lastSimId';
+  private static readonly LAST_TAB_KEY = 'behavio.iso.lastTab';
+
+  /**
+   * Urutan tab — disimpan sebagai LABEL, bukan indeks.
+   *
+   * <p>Indeks bergeser diam-diam begitu ada tab baru disisipkan, dan pemakai akan
+   * mendarat di tab yang salah tanpa gejala apa pun. Label bertahan; kalau suatu tab
+   * dihapus, labelnya sekadar tak ketemu dan pilihan jatuh ke tab pertama.
+   */
+  private static readonly TAB_LABELS = [
+    'Operasi & Scenario', 'Koneksi', 'Profil Spec', 'Uji Trace',
+    'Rekening & Kartu', 'Live View', 'Buat Simulator',
+  ];
 
   private readonly clipboard = inject(ClipboardService);
 
@@ -106,6 +120,9 @@ export class Iso implements OnInit, OnDestroy {
   readonly traceResult = signal<TraceResult | null>(null);
 
   // scenario
+  /** Katalog scenario bawaan — ditampilkan sebagai panduan di bawah halaman. */
+  readonly isoScenarios = ISO_SCENARIOS;
+
   readonly operations = signal<string[]>([]);
   /** Operasi + processing code-nya — dipakai panel "informasi request" di tab Rekening. */
   readonly operationRoutes = signal<{ name: string; mti: string; processingCode: string }[]>([]);
@@ -162,7 +179,18 @@ export class Iso implements OnInit, OnDestroy {
     return this.sims().find(s => s.id === this.selectedSimId());
   }
 
+  /** Indeks tab yang dipulihkan dari kunjungan terakhir; 0 bila belum ada/tak dikenal. */
+  readonly tabIndex = signal(0);
+
   ngOnInit() {
+    const label = this.rememberedTab();
+    const i = Iso.TAB_LABELS.indexOf(label);
+    if (i >= 0) {
+      this.tabIndex.set(i);
+      // activeTab diisi SEKARANG juga: reload() memakainya untuk memutuskan data apa yang
+      // perlu dimuat, dan ia berjalan sebelum mat-tab-group sempat memancarkan event.
+      this.activeTab.set(label);
+    }
     this.publicHost.load();
     this.reload();
   }
@@ -183,7 +211,8 @@ export class Iso implements OnInit, OnDestroy {
       try {
         const d = JSON.parse(e.data);
         const row: LogRow = {
-          mti: d.mti, operation: d.operation, response_code: d.responseCode,
+          mti: d.mti, processing_code: d.processingCode,
+          operation: d.operation, response_code: d.responseCode,
           request_hex: d.requestHex, response_hex: d.responseHex,
           duration_ms: d.durationMillis, error: d.error,
           created_at: new Date().toISOString(), open: false,
@@ -244,6 +273,8 @@ export class Iso implements OnInit, OnDestroy {
    */
   onTabChange(label: string) {
     this.activeTab.set(label);
+    this.tabIndex.set(Math.max(0, Iso.TAB_LABELS.indexOf(label)));
+    this.storage.set(Iso.LAST_TAB_KEY, label);
     if (!this.selectedSimId()) {
       return;
     }
@@ -827,6 +858,11 @@ export class Iso implements OnInit, OnDestroy {
   /** LocalStorageService.get() balikin {} bila key belum ada — jadi cek tipenya. */
   private rememberedSimId(): string {
     const v = this.storage.get(Iso.LAST_SIM_KEY);
+    return typeof v === 'string' ? v : '';
+  }
+
+  private rememberedTab(): string {
+    const v = this.storage.get(Iso.LAST_TAB_KEY);
     return typeof v === 'string' ? v : '';
   }
 }

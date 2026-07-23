@@ -1,17 +1,54 @@
 # Changelog
 
 Catatan perubahan Behavio, **dipisah per simulator** — sejak pemisahan produk
-(design.md §3.4), Bank & QRIS adalah produk terpisah penuh (modul, schema PostgreSQL,
-dan port sendiri-sendiri). Detail rancangan tetap di `docs/design.md`; file ini ringkasan
-"apa yang berubah & kenapa" agar mudah ditelusuri tanpa membaca seluruh spec.
+(design.md §3.4) Bank & QRIS adalah produk terpisah penuh, dan sejak 2026-07-22
+**ISO-8583** menyusul sebagai produk ketiga di atas socket TCP (design.md §3.5). Masing-
+masing punya modul, schema PostgreSQL, dan port sendiri.
+
+Detail rancangan tetap di `docs/design.md` (§14 = status implementasi) dan
+`docs/architecture.md` (§4 = cara menambah produk, §5 = keterbatasan yang diketahui);
+khusus ISO-8583 ada `docs/iso8583-plan.md`. File ini ringkasan "apa yang berubah & kenapa"
+agar mudah ditelusuri tanpa membaca seluruh spec.
 
 Label: **[BANK]** `product-bank` · **[QRIS]** `product-qris` · **[SHARED]** core-engine /
 adapter-web (kena kedua simulator) · **[DASHBOARD]** frontend ·
-**[ISO-8583]** `product-iso8583` (modul & schema terpisah penuh, transport TCP).
+**[ISO-8583]** `product-iso8583` (modul & schema terpisah penuh, transport TCP) ·
+**[DEPLOY]** skrip & compose di `deploy/`.
 
 ---
 
-## 2026-07-22
+## 2026-07-23
+
+### [DASHBOARD] Live View menampilkan DE3 & alasan routing
+- **Dilaporkan pemakai:** *"saya request `400000` tapi di log tercatat
+  `transfer-on-us-inquiry`"*.
+- **Routing terbukti benar** — diuji: `400000` → `transfer-on-us`, `330000` →
+  `transfer-on-us-inquiry`, `010000` (di luar profil `shinhan-klien`) → tak ada rute,
+  `DE39=30`. Kecocokan memakai processing code 6 digit penuh, jadi tak mungkin tertukar.
+- **Masalah sebenarnya: pemakai tak bisa memeriksanya sendiri.** Baris log hanya memuat
+  nama operasi hasil routing; nilai yang MENENTUKAN routing (DE3) tersembunyi di dalam hex.
+- **Perbaikan:** `processing_code` disimpan di `request_logs` (changeset
+  `007-log-processing-code.sql`), ikut disiarkan lewat SSE, dan tampil sebagai lencana di
+  baris Live View. Detail barisnya menampilkan alasannya utuh:
+  `MTI 0200 + DE3 400000 → transfer-on-us`, atau `tak ada rute di profil — dibalas DE39=30`.
+- Klien Shinhan mengirim DE3 dari `transactionType.value()`
+  (`EdcTransactionServiceImpl:273`), jadi operasi yang tercatat = jenis transaksi yang
+  benar-benar dikirim. Alur inquiry→eksekusi mengirim **dua** pesan; yang terlihat lebih
+  dulu di Live View adalah yang terbaru.
+
+### [ISO-8583] Profil bawaan kedua: `shinhan-klien` (persis enum klien)
+- **Permintaan pemakai** setelah pemeriksaan §13.4: sediakan profil yang cakupannya
+  **persis** enum `TransactionType` klien.
+- **`shinhan-klien` v1.0** ditanam saat boot berdampingan dengan `shinhan-default` v1.1 —
+  17 processing code, tanpa `010000`/`341000`/`500000` yang hanya ada di simulator
+  referensi.
+- **Diturunkan, bukan disalin:** `clientProfile()` = `profile()` dikurangi ketiga kode itu,
+  supaya kedua daftar tak bisa melenceng diam-diam.
+- **Nama baru, bukan `shinhan-default` v1.2** — profil turunan memakai versi TERBARU dari
+  nama induknya, jadi v1.2 akan mengubah perilaku turunan yang sudah dipakai tanpa suara.
+- **Diuji:** 17 kode cocok persis dengan enum klien (nol kurang, nol lebih); simulator
+  dialihkan ke `shinhan-termsys` v3.0 (packager XML klien + induk `shinhan-klien`) →
+  `310000` dibalas `00`, `010000` dibalas `30`. Boot 0 ERROR.
 
 ### [ISO-8583] **Defect:** kelas bitmap di packager XML diabaikan
 - **Gejala:** profil hasil unggah XML tak bisa membaca pesan host —
@@ -29,6 +66,102 @@ adapter-web (kena kedua simulator) · **[DASHBOARD]** frontend ·
   ber-`IFA_BITMAP` membaca DE7/DE11/DE70 bersih. + 2 unit test. Boot 0 ERROR.
 - **Perhatian:** profil XML yang diunggah sebelum perbaikan tetap BINARY (profil
   immutable) — unggah ulang sebagai versi baru lalu alihkan simulatornya.
+
+### [ISO-8583] Disesuaikan dengan simulator referensi klien (`bankshinhan-simulator`)
+- **Sumber:** kode simulator Shinhan milik pemakai — acuan paling otoritatif sejauh ini.
+- **Operasi yang HILANG di kami, kini ditambahkan** (profil `shinhan-default` **v1.1**):
+  `withdraw` `010000` · `sale` `500000` · `create-pin` `341000`.
+- **Reversal MTI `0420`** — klien mengirim advice `0420`/`0430`, bukan `0400`/`0410`.
+  Tanpa rute ini pesan reversal tak dikenali dan dibalas `DE39=30`. `0400` dipertahankan
+  untuk profil generik.
+- **Saldo (DE54) ikut dibalas** pada `change-pin`, `create-pin`, `change-phone`,
+  `reset-password-ib`, dan inquiry transfer — simulator referensi melakukan hal yang sama.
+  Yang dilaporkan saldo PEMEGANG KARTU (dari PAN/Track 2), bukan rekening tujuan; melaporkan
+  saldo rekening tujuan ke terminal yang cuma menanyakan nama bukan perilaku host mana pun.
+- **Diuji lewat socket:** `withdraw` debit 50,00 · `sale` debit 25,00 · `create-pin` `00` ·
+  **reversal `0420` → `0430`** `00` dan saldo kembali +50,00. Saldo akhir cocok.
+  Boot 0 ERROR.
+- **Field balasan disamakan** (§13.3): **DE54 kini angka polos** seperti referensi — bukan
+  lagi additional-amounts ISO 20 karakter, karena klien mem-parse format polos; plus DE14,
+  DE38, DE60, DE102, DE62 (router), dan DE48 (key exchange).
+- **Nilainya diturunkan, bukan diacak:** DE38 dari STAN, DE60 dari tanggal, DE14 dari
+  Track 2. Balasan yang tak bisa diulang membuat bug sulit direproduksi dan DE38 acak tak
+  bisa dicocokkan dengan log. Perilaku state tetap alami — saldo benar-benar berpindah.
+- **Field hanya diisi bila profil mengenalnya**, jika tidak pack gagal dan host tampak "tak
+  membalas". DE14 ikut ditambahkan ke kamus baseline.
+- **Diuji:** balasan saldo memuat DE14 `4912` · DE38 `003001` · DE54 `499915500`
+  (= 4.999.155,00, cocok dengan saldo) · DE60 `000023` · DE102 `1111111111`; router → DE62
+  `AJ`; key exchange → DE48 kunci. Boot 0 ERROR.
+
+### [DASHBOARD] PIN block ditampilkan (dan kenapa PIN-nya sendiri tak bisa)
+- **Ditanya pemakai:** *"bagaimana kalau lupa PIN — bukankah harusnya tampil di dashboard?"*
+- **PIN-nya tak pernah kami punya.** Yang dikirim terminal adalah **PIN block** terenkripsi
+  di bawah working key; mengembalikannya jadi angka PIN menuntut HSM/ZPK. Menampilkan
+  "PIN: 1234" berarti mengarangnya.
+- **Yang penting:** PIN **tidak pernah diverifikasi** simulator, jadi lupa PIN bukan
+  penghalang — nilai apa pun di DE52/DE53 diterima. Ini kini ditulis di panel informasi
+  request supaya tak perlu ditebak.
+- **Yang ditampilkan:** PIN block terakhir yang diterima + kapan diubah, di kolom PIN tabel
+  kartu dan di panel informasi request, lengkap dengan tombol salin untuk dikirim ulang.
+  Kolomnya tak lagi cuma "ter-set"/"belum".
+- **Diuji:** `GET /cards` kini mengembalikan `pinBlock` + `pinChangedAt`. Boot 0 ERROR.
+
+### [ISO-8583] **Defect:** scenario penolakan tetap memindahkan dana
+- **Dilaporkan pemakai:** *"bukankah perubahan saldo harus menyesuaikan response?"* — dan
+  memang benar.
+- **Gejala:** scenario `Saldo Tidak Cukup` membalas `DE39=51`, tapi saldo tetap terdebit
+  dan transaksinya tetap tercatat. `PIN Salah` membalas `55`, tapi PIN tetap berganti.
+- **Sebab — keputusan kami sendiri yang salah:** scenario sengaja ditimpakan **setelah**
+  logika alami, dengan alasan "agar penolakan bisa diuji tanpa memalsukan state". Alasan
+  itu keliru: tak ada host yang memindahkan dana pada transaksi yang ditolaknya, dan klien
+  yang diuji terhadap simulator seperti itu lulus untuk alasan yang salah — jalur
+  kompensasi/reversal-nya tak pernah benar-benar teruji.
+- **Perbaikan:** scenario yang memaksa DE39 ≠ `00` diperiksa **sebelum** logika alami
+  dijalankan, dan logika itu dilewati sepenuhnya — tak ada debit, kredit, perubahan PIN
+  atau telepon, dan tak ada baris transaksi. DE54 tetap dilampirkan berisi saldo yang
+  **belum** berubah, sebagaimana host asli menjawab transaksi tertolak.
+- **Penolakan ALAMI tak berubah** (saldo kurang, rekening tak ada): memang sudah tak
+  memindahkan dana.
+- **Diuji:** transfer 100,00 · Normal → `00`, 999.250→999.150 & 1.550→1.650, transaksi
+  tercatat · `Saldo Tidak Cukup` → `51`, kedua saldo **utuh**, **tak ada** baris transaksi,
+  DE54 melaporkan saldo yang benar · change-PIN + `PIN Salah` → `55`, `pin_block` tetap
+  nilai lama. Boot 0 ERROR.
+
+### [DASHBOARD] Tab ISO-8583 diingat setelah refresh
+- Halaman selalu kembali ke tab pertama saat di-refresh, padahal simulator yang dipilih
+  sudah diingat sejak lama (`behavio.iso.lastSimId`). Kini tabnya ikut
+  (`behavio.iso.lastTab`).
+- **Disimpan sebagai LABEL, bukan indeks.** Indeks bergeser diam-diam begitu ada tab baru
+  disisipkan dan pemakai mendarat di tab yang salah tanpa gejala — jebakan yang sudah
+  pernah mengenai kode ini saat tab "Koneksi" ditambahkan. Label yang tak dikenal cukup
+  jatuh ke tab pertama.
+- `activeTab` diisi saat `ngOnInit`, sebelum `reload()`, karena pemuatan data per-tab
+  membacanya dan berjalan lebih dulu daripada event pertama `mat-tab-group`.
+- **Diverifikasi:** daftar label di kode dibandingkan dengan `<mat-tab label=…>` di
+  template — sama persis dan urutannya sama.
+
+### [DASHBOARD] Header halaman ISO-8583 disamakan dengan produk lain
+- Halaman ISO langsung membuka dengan bar pemilih simulator, sementara Bank
+  (`.sim-hero`) dan QRIS (`.qris-hero`) punya header pengantar. Kini ISO memakai pola yang
+  sama (`.iso-hero`) — gradien, ukuran, dan struktur judul/teks identik.
+- **Isinya informatif, bukan hiasan:** menyebut bahwa produk ini berperan sebagai host di
+  atas **socket TCP, bukan HTTP** — beda paling mendasar dari dua produk lain dan yang
+  paling sering disalahpahami; bahwa bentuk pesan ditentukan **profil spec** yang diunggah;
+  dan bahwa datanya terpisah penuh (schema `iso8583`, rekening & port sendiri).
+- Judul "Simulator ISO-8583" yang tadinya di bar pemilih dihapus agar tak muncul dua kali;
+  ikonnya tetap.
+
+### [DASHBOARD] Panduan Skenario ISO-8583 di bawah halaman
+- Menyusul pola QRIS (`Panduan Skenario QRIS`) dan Bank (`Panduan Skenario Transfer`):
+  15 scenario bawaan ditampilkan lengkap dengan ikon, nada (ok/warn/fault), dan penjelasan
+  singkat — termasuk **kode DE39**-nya.
+- **Tiga scenario transport dijelaskan terpisah** karena tak punya padanan di produk HTTP:
+  pada TCP, "Tanpa Balasan", "Koneksi Diputus", dan "Timeout" adalah tiga kegagalan berbeda
+  yang klien harus tangani berbeda pula — dan justru itu yang paling jarang diuji.
+- Ditegaskan di panduannya: scenario ditimpakan **setelah** logika alami, jadi mutasi saldo
+  tetap terjadi apa adanya dan yang berubah hanya apa yang dilaporkan.
+- **Diverifikasi cocok dengan backend:** 15 nama di `ISO_SCENARIOS` dibandingkan dengan
+  `GET .../scenarios` — tak ada selisih di kedua arah.
 
 ### [DASHBOARD] Tombol salin tak berfungsi di halaman non-HTTPS
 - **Gejala:** tombol salin di tab Koneksi (dan semua tombol salin lain) tak melakukan
@@ -155,6 +288,10 @@ adapter-web (kena kedua simulator) · **[DASHBOARD]** frontend ·
   menghidupkan `:3000` lagi. Boot 0 ERROR.
 - **Belum disentuh:** produk bank & QRIS kemungkinan punya celah yang sama — di luar
   lingkup permintaan ini.
+
+---
+
+## 2026-07-22
 
 ### [ISO-8583] **Defect:** profil bawaan simulator baru menunjuk versi yang tak ada
 - **Gejala:** membuat simulator tanpa menyebut profil → `Profil 'iso8583-1987' versi '1.0'
@@ -380,6 +517,28 @@ adapter-web (kena kedua simulator) · **[DASHBOARD]** frontend ·
 
 ## Belum dikerjakan / catatan
 
-- **Cash Withdrawal / Tarik Tunai:** ASPI **tidak** punya service ini. Padanan terdekat =
-  **Transfer to OTC** (service 44/45/46, path `/{version}/emoney/otc-*`). Belum dibangun —
-  menunggu keputusan apakah mengikuti OTC (sesuai ASPI) atau endpoint custom.
+- **Cash Withdrawal / Tarik Tunai (produk BANK):** ASPI **tidak** punya service ini.
+  Padanan terdekat = **Transfer to OTC** (service 44/45/46, path
+  `/{version}/emoney/otc-*`). Belum dibangun — menunggu keputusan apakah mengikuti OTC
+  (sesuai ASPI) atau endpoint custom. *(Tarik tunai di produk ISO-8583 sudah ada:
+  `withdraw` DE3 `010000` — beda produk, beda kanal.)*
+- **Belum di-deploy:** seluruh pekerjaan ISO-8583 & perbaikan dashboard 22–23 Juli masih
+  di kerja lokal. `10.1.20.3` masih menjalankan build lama, sehingga profil
+  `shinhan-default` belum ada di sana dan bitmap dari packager XML masih terbaca BINARY.
+- **Bank & QRIS belum diperiksa** untuk dua celah yang ditemukan di ISO: status simulator
+  yang tetap `RUNNING` setelah restart aplikasi, dan panel state yang tak ikut segar saat
+  ada lalu lintas. Tombol salin sudah diperbaiki untuk ketiga produk.
+- **`TransactionType` — sudah diperiksa (2026-07-23), tidak ada yang kurang.**
+  Perbandingan tiga sumber: klien `bankshinhan-termsys` **17** processing code · simulator
+  referensi **20** · profil `shinhan-default` v1.1 **20**.
+  - Dikirim klien tapi tak ada di profil kami: **tidak ada** ✓
+  - Kelebihan kami: `010000` WITHDRAW · `341000` CREATE_PIN · `500000` SALE — ketiganya
+    dari simulator referensi, tak ada di enum klien.
+  - **Dibiarkan.** Rute dicocokkan per processing code, jadi kode yang tak pernah dikirim
+    tak pernah aktif — nol biaya. Membuangnya menuntut profil v1.2 + realihkan simulator,
+    tanpa keuntungan fungsional.
+  - **Yang masih terbuka** bukan daftar kodenya, melainkan **arah** `421000`/`422000`:
+    komentar enum menyebut "bank lain → shinhan", pesan nyata justru dana keluar. Ditangani
+    lewat arah-dari-data di `transferExternal()`; menunggu konfirmasi pemakai.
+- **Unit test ISO-8583** baru menutup codec & parser profil. Operasi host, scenario, dan
+  reversal sejauh ini diverifikasi lewat socket nyata, belum lewat test otomatis.

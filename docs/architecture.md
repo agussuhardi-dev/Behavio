@@ -402,7 +402,9 @@ sama punya dunia rekening & transaksi yang tak tercampur.
 
 ## 4. Menambah produk baru
 
-Inilah ujian sesungguhnya dari desain ini. Untuk produk baru (mis. `iso8583`):
+Inilah ujian sesungguhnya dari desain ini. Ada **dua jalan**, tergantung transportnya.
+
+### 4.1 Produk HTTP (memakai ulang mesin generik)
 
 1. Buat schema-nya di Liquibase (`db/changelog/<produk>/001-*.sql`).
 2. Modul `:product-<nama>` + kelas `ProductCatalog` (daftar operasi + preset blueprint).
@@ -412,9 +414,24 @@ Inilah ujian sesungguhnya dari desain ini. Untuk produk baru (mis. `iso8583`):
 **Mesin tidak disentuh sama sekali.** Admin API `/api/admin/v1/<nama>/…` otomatis ada,
 karena controller-nya generik.
 
+### 4.2 Produk non-HTTP — jalan yang ditempuh `iso8583` (2026-07-22)
+
+Modul `iso8583` **tidak** memakai ulang mesin di atas, dan itu disengaja. SPI-nya
+ber-cetakan HTTP (§5): `Operation` punya `method`/`defaultPath`, `Result` punya `status`
+HTTP — tak satu pun punya arti di atas socket biner. Memaksakannya berarti mengarang
+padanan (`method` = "TCP"? `path` = "/0200"?) yang menyesatkan pembaca kode.
+
+Yang ditempuh: modul berdiri sendiri dengan codec, transport, state, dan scenario-nya
+sendiri — plus Admin API yang ditulis manual (`/api/admin/v1/iso8583/…`), sengaja **tidak**
+mewarisi `ProductApi` di dashboard karena separuh method-nya (partner, endpoint, webhook,
+export OpenAPI) pasti 404. Duplikasi kode diterima sebagai harga dari isolasi penuh —
+keputusan yang sama seperti pemisahan Bank ↔ QRIS (design.md §3.4).
+
+Rancangan lengkapnya di `docs/iso8583-plan.md`, ringkasannya di design.md §3.5.
+
 ---
 
-## 5. Keterbatasan yang diketahui (jujur, per 2026-07-14)
+## 5. Keterbatasan yang diketahui (jujur, per 2026-07-23)
 
 Bagian ini sengaja ada supaya dokumen ini tidak jadi brosur.
 
@@ -441,19 +458,20 @@ Konsekuensinya nyata: menambah operasi baru (mis. daftar operasi di `addon.md`) 
 bisa lewat konfigurasi** — tiap satu butuh entri katalog + blueprint + handler Java.
 Untuk endpoint yang cuma perlu balas statis, ini kejutan yang mahal.
 
-**`AccountService` & `TransactionHistoryService` adalah kode mati** (±386 baris). Bean-nya
-dibuat dan variabelnya di-assign di `BankProductConfig`, tapi tak satu pun method-nya
-dipanggil — handler `balance-inquiry`, `account-inquiry-internal`, dan
-`transaction-history-list` semuanya dialihkan ke engine (§6.1), bukan ke service ini.
+~~**`AccountService` & `TransactionHistoryService` adalah kode mati** (±386 baris).~~
+**Selesai 2026-07-15** — keduanya dihapus; handler `balance-inquiry`,
+`account-inquiry-internal`, dan `transaction-history-list` memang dilayani engine (§6.1).
 
 **SPI masih ber-cetakan HTTP.** `Operation` punya `method` + `defaultPath`;
 `OperationHandler.Request` punya `method/path/headers/body`; `Result` punya `status`
-(HTTP); server-nya `com.sun.net.httpserver.HttpServer`. Rencana ISO-8583 (design.md §2A
-"gRPC/ISO-8583 nanti = tambah adapter inbound") **belum dapat ditepati** tanpa mengangkat
-abstraksi transport dulu — ISO-8583 tak punya path/header/HTTP status, melainkan MTI,
-bitmap, dan field bernomor di atas TCP. Perlu diputuskan lebih dulu: ISO-8583 itu
-**produk baru** atau **transport lain untuk produk bank yang sudah ada** (ATM/POS
-menyentuh rekening yang sama).
+(HTTP); server-nya `com.sun.net.httpserver.HttpServer`. Abstraksi transport **belum**
+diangkat, dan sampai sekarang belum perlu.
+
+*Terjawab 2026-07-22:* pertanyaan "ISO-8583 itu produk baru atau transport lain untuk
+produk bank?" dijawab **produk baru** — modul, schema, rekening, dan port sendiri
+(design.md §3.5, §4.2 di atas). Konsekuensinya ia **tidak** memakai SPI ini sama sekali,
+jadi keterbatasan di paragraf ini tak lagi menghalangi apa pun; ia baru menghalangi kalau
+suatu saat produk HTTP dan non-HTTP harus berbagi mesin yang sama.
 
 **Dua klaim pola di design.md §2A tak cocok dengan kode**: *Chain of Responsibility* —
 `DefaultBehaviorEngine.process()` sebenarnya method lurus dengan early-return, bukan

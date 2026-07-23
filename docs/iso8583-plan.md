@@ -1,7 +1,15 @@
-# Rencana: Module Simulator ISO-8583 (backend)
+# Module Simulator ISO-8583
 
-> **Status: RENCANA — lingkup BACKEND saja.** Dashboard/tab UI **belum** termasuk
-> (keputusan 2026-07-22: "fokus ke BE saja dulu"). Setujui dokumen ini dulu, baru kode.
+> **Tempatnya dalam dokumentasi:** ISO-8583 adalah **produk ketiga** Behavio, terpisah
+> penuh dari Bank & QRIS — ringkasannya di `design.md` **§3.5**, status implementasinya di
+> `design.md` **§14 Fase 6**, jalan arsitekturnya di `architecture.md` **§4.2**, dan
+> riwayat perubahannya di `changelog.md` berlabel **[ISO-8583]**. Berkas ini memuat
+> rancangan & keputusan detailnya — berperan seperti Lampiran A2/A3 bagi VA/QRIS.
+
+> **Status: TERBANGUN** (backend + dashboard), 2026-07-22 → 2026-07-23. Berkas ini bermula
+> sebagai rencana — bagian §1–§11 masih memakai bahasa rencana dan sengaja dibiarkan
+> sebagai jejak keputusan; **§12 ke bawah adalah catatan perubahan sesudah dibangun**, dan
+> di situlah perilaku yang berlaku sekarang dijelaskan bila berbeda dari rencana awal.
 
 ---
 
@@ -604,3 +612,104 @@ pemisah; `=` maupun `D` sama-sama diterima karena keduanya ditemui di lapangan.
 **Kedaluwarsa & service code di dalam Track 2 TIDAK diperiksa.** Simulator tak menyimpan
 tanggal kedaluwarsa kartu, jadi memeriksanya hanya akan berpura-pura. "Kartu kedaluwarsa"
 diuji lewat **scenario** (DE39=54) — di situlah kendalinya.
+
+### 13.2 Scenario penolakan tidak menyentuh state (2026-07-23)
+
+Scenario yang memaksa `DE39 ≠ 00` dijalankan **sebelum** logika alami, dan logika itu
+dilewati sepenuhnya: tak ada debit/kredit, PIN & telepon tak berubah, dan tak ada baris
+`iso8583.transactions`. DE54 tetap dilampirkan — berisi saldo yang **belum** berubah,
+sebagaimana host asli menjawab transaksi tertolak.
+
+Sebelumnya urutannya terbalik: dana dipindahkan dulu, lalu DE39 ditimpa. Alasannya waktu
+itu "agar penolakan bisa diuji tanpa memalsukan state" — dan itu keliru. Tak ada host yang
+memindahkan dana pada transaksi yang ditolaknya, dan klien yang diuji terhadap simulator
+seperti itu **lulus untuk alasan yang salah**: jalur kompensasi/reversal-nya tak pernah
+teruji karena dananya terlanjur berpindah.
+
+Konsekuensi yang perlu disadari: karena transaksi tertolak tak lagi dicatat, **reversal
+atasnya dijawab `DE39=25`** (original not found). Itu benar — tak ada yang perlu dibalik.
+
+Penolakan **alami** (saldo kurang, rekening tak ada) tak berubah; ia memang sudah tak
+pernah memindahkan dana.
+
+### 13.3 Penyesuaian field balasan ke simulator referensi (2026-07-23)
+
+Dibandingkan `bankshinhan-simulator` milik pemakai. **Bentuk balasan disamakan; perilaku
+state tetap alami** (saldo benar-benar berpindah, bukan angka tetap).
+
+| Field | Referensi | Kami sekarang |
+|---|---|---|
+| **DE54** | angka polos `999000` | **angka polos** — sama. *Bukan* lagi additional-amounts 20 karakter |
+| DE14 Expiry | YYMM acak | dari **Track 2** bila dikirim, kalau tidak: tak diisi |
+| DE38 Approval | 6 digit acak | diturunkan dari **STAN** |
+| DE60 Batch | tanggal, 6 digit | sama |
+| DE102 | konstanta `700000958539` | **nomor rekening sebenarnya** |
+| DE62 (router) | acak `AJ`/`PRIMA` | tetap `AJ` |
+| DE48 (key exchange) | kunci tetap | sama |
+| DE22/DE35/DE43 | di-*unset* | tak pernah digemakan sejak awal — tak ada yang perlu di-unset |
+
+**Kenapa nilai diturunkan, bukan diacak.** Referensinya mengisi DE38/DE14/DE60 dengan angka
+acak. Di simulator itu merugikan: balasan yang tak bisa diulang membuat bug sulit
+direproduksi, dan DE38 yang berubah tiap panggilan tak bisa dicocokkan dengan log maupun
+reversal. Fieldnya tetap ada — hanya isinya yang deterministik.
+
+**Setiap field hanya diisi bila profil mengenalnya.** Profil ramping yang tak memuat DE14
+akan gagal saat pack, dan host tampak "tak membalas" — kegagalan yang jauh lebih mahal
+daripada satu field yang absen. DE14 juga ditambahkan ke kamus baseline.
+
+**Yang sengaja berbeda:** inquiry transfer kami membawa **DE54** (saldo pemegang kartu) atas
+permintaan pemakai; referensinya tidak. Dan `DE102` diisi rekening sebenarnya, bukan
+konstanta — konstanta tak mencerminkan state mana pun.
+
+### 13.4 Verifikasi kelengkapan operasi terhadap klien (2026-07-23)
+
+Tiga sumber dibandingkan langsung dari kodenya, bukan dari ingatan:
+
+| Sumber | Jumlah processing code |
+|---|---|
+| Klien `bankshinhan-termsys` (`enumeric/TransactionType`) | 17 |
+| Simulator referensi `bankshinhan-simulator` | 20 |
+| Profil `shinhan-default` v1.1 | 20 |
+
+- **Tak satu pun kode yang dikirim klien absen dari profil kami.** Inilah arah yang
+  berbahaya: kode yang dikirim tapi tak punya rute akan dibalas `DE39=30`.
+- Kelebihan kami tiga: `010000` WITHDRAW, `341000` CREATE_PIN, `500000` SALE — berasal dari
+  simulator referensi. **Dibiarkan**: rute dicocokkan per processing code, jadi kode yang
+  tak pernah dikirim tak pernah aktif. Tak ada tabrakan karena semuanya 6 digit penuh.
+- Empat kode `001`/`002`/`101`/`301` bukan DE3 melainkan **DE70** (network management), dan
+  ditangani satu rute `0800` — DE70 digemakan sehingga klien tetap bisa membedakannya.
+
+**Kalau tetap ingin persis 17:** buat profil **v1.2** tanpa ketiga rute itu, lalu alihkan
+simulator lewat `PUT /simulators/{id}/spec-profile`. Profil immutable — v1.1 tak boleh
+diedit.
+
+### 13.5 Profil `shinhan-klien` — persis sebesar enum klien (2026-07-23)
+
+Ditanam otomatis saat boot, berdampingan dengan `shinhan-default`:
+
+| Profil | Processing code | Untuk |
+|---|---|---|
+| `shinhan-default` v1.1 | **20** | mengikuti simulator referensi (`+ 010000`, `341000`, `500000`) |
+| **`shinhan-klien` v1.0** | **17** | persis enum `TransactionType` klien `bankshinhan-termsys` |
+
+Keduanya mewarisi kamus DE `iso8583-1987` dan sama-sama memuat `network-management` (0800)
+serta `reversal` (0400 & 0420).
+
+**Daftarnya diturunkan, bukan disalin.** `clientProfile()` = `profile()` dikurangi tiga
+kode yang hanya ada di simulator referensi. Dua daftar yang disalin akan melenceng begitu
+salah satunya diubah, dan selisihnya baru terlihat saat ada pesan yang ditolak.
+
+**Namanya sengaja BEDA, bukan `shinhan-default` v1.2.** Profil turunan menunjuk *nama*
+induk dan selalu memakai versi terbaru — menambah v1.2 akan mengubah perilaku profil
+turunan yang sudah dipakai, diam-diam.
+
+**Memakainya bersama packager XML host:**
+
+```bash
+curl -X POST ".../spec-profiles?name=host-anda&version=1.0&parent=shinhan-klien" \
+  -H 'Content-Type: application/xml' --data-binary @cfg/packager.xml
+```
+
+Terbukti: `310000` dibalas `DE39=00`, sedangkan `010000` (di luar enum klien) dibalas
+`DE39=30` — itu memang gunanya profil ini, permukaan simulator persis sebesar yang dipakai
+klien.

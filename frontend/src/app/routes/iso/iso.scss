@@ -450,3 +450,104 @@
   white-space: nowrap;
   width: 1%;
 }
+
+/* ── Panduan skenario (mengikuti pola .qris-legend agar konsisten antar-produk) ── */
+.opt-ico {
+  font-size: 18px; width: 18px; height: 18px; margin-right: 4px;
+  &--ok { color: var(--mat-sys-tertiary); }
+  &--warn { color: #ff9800; }
+  &--fault { color: #ef5350; }
+}
+
+.iso-legend {
+  margin-top: 16px;
+
+  &__head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 16px 20px;
+    font-weight: 600;
+  }
+
+  &__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 0;
+    padding: 0;
+  }
+
+  &__item {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--mat-sys-outline-variant);
+    transition: background .12s;
+    &:hover { background: var(--mat-sys-surface-container-highest); }
+    mat-icon { margin-top: 2px; flex-shrink: 0; }
+  }
+
+  &__name {
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 2px;
+  }
+
+  &__desc {
+    font-size: 12px;
+    color: var(--mat-sys-on-surface-variant);
+    line-height: 1.4;
+  }
+}
+
+/* ── Hero header (mengikuti .qris-hero / .sim-hero agar seragam antar-produk) ── */
+.iso-hero {
+  padding: 28px 24px;
+  margin: 0 0 20px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, var(--mat-sys-primary-container), var(--mat-sys-surface-container-highest));
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+
+  &__text {
+    h1 {
+      margin: 0 0 4px;
+      font-size: 30px;
+      font-weight: 800;
+      letter-spacing: -.5px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    p {
+      margin: 0;
+      color: var(--mat-sys-on-surface-variant);
+      font-size: 15px;
+      max-width: 760px;
+    }
+  }
+
+  &__note {
+    margin-top: 8px !important;
+    font-size: 13px !important;
+    code {
+      background: var(--mat-sys-surface-container-highest);
+      padding: 1px 5px;
+      border-radius: 4px;
+    }
+  }
+
+  &__icon { font-size: 34px; width: 34px; height: 34px; color: var(--mat-sys-primary); }
+}
+
+.iso-log__pc {
+  font-family: var(--iso-mono, monospace);
+  font-size: 12px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--mat-sys-secondary-container);
+  color: var(--mat-sys-on-secondary-container);
+}

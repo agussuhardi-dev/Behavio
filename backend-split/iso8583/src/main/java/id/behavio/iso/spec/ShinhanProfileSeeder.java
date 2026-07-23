@@ -37,23 +37,71 @@ import java.util.List;
 public class ShinhanProfileSeeder {
 
     public static final String NAME = "shinhan-default";
-    public static final String VERSION = "1.0";
+
+    /**
+     * Profil kedua: <b>persis kode yang ada di enum {@code TransactionType} klien</b>
+     * ({@code bankshinhan-termsys}) — 17 processing code, TANPA {@code 010000} WITHDRAW,
+     * {@code 341000} CREATE_PIN, dan {@code 500000} SALE.
+     *
+     * <p>Ketiga kode itu hanya ada di simulator referensi, tak pernah dikirim klien. Rute
+     * yang tak pernah cocok memang tak berbahaya — profil ini bukan perbaikan bug,
+     * melainkan pilihan bagi yang ingin permukaan simulator <b>persis</b> sebesar yang
+     * dipakai klien, sehingga processing code di luar itu dibalas {@code DE39=30} alih-alih
+     * diam-diam dilayani.
+     *
+     * <p>Sengaja bernama LAIN, bukan {@code shinhan-default} v1.2: profil turunan menunjuk
+     * NAMA induk dan selalu memakai versi terbaru, jadi menambah v1.2 akan mengubah
+     * perilaku profil turunan yang sudah dipakai — diam-diam.
+     */
+    public static final String CLIENT_NAME = "shinhan-klien";
+    public static final String CLIENT_VERSION = "1.0";
+    /**
+     * 1.1 — ditambahkan setelah membandingkan dengan simulator referensi milik klien
+     * ({@code bankshinhan-simulator}): SALE, CREATE_PIN, WITHDRAW, dan reversal MTI 0420.
+     * Profil immutable, jadi 1.0 tetap ada berdampingan.
+     */
+    public static final String VERSION = "1.1";
 
     private static final Logger log = LoggerFactory.getLogger(ShinhanProfileSeeder.class);
 
     @Bean
     public ApplicationRunner isoShinhanProfileSeeder(SpecProfileRepository repo) {
         return args -> {
-            if (repo.exists(NAME, VERSION)) {
-                return;
-            }
-            try {
-                repo.save(profile(), "JSON");
-                log.info("Profil spec ISO-8583 Shinhan ditanam: {} v{}", NAME, VERSION);
-            } catch (RuntimeException e) {
-                log.warn("Seed profil Shinhan dilewati: {}", e.getMessage());
-            }
+            seed(repo, NAME, VERSION, ShinhanProfileSeeder::profile);
+            seed(repo, CLIENT_NAME, CLIENT_VERSION, ShinhanProfileSeeder::clientProfile);
         };
+    }
+
+    private static void seed(SpecProfileRepository repo, String name, String version,
+                             java.util.function.Supplier<SpecProfile> factory) {
+        if (repo.exists(name, version)) {
+            return;
+        }
+        try {
+            repo.save(factory.get(), "JSON");
+            log.info("Profil spec ISO-8583 ditanam: {} v{}", name, version);
+        } catch (RuntimeException e) {
+            // Boot tak boleh gagal hanya karena seed — mis. dua instance start bersamaan.
+            log.warn("Seed profil {} v{} dilewati: {}", name, version, e.getMessage());
+        }
+    }
+
+    /** Processing code yang HANYA ada di simulator referensi, tak ada di enum klien. */
+    private static final List<String> HANYA_DI_REFERENSI = List.of("010000", "341000", "500000");
+
+    /**
+     * Profil sepadan enum klien: {@link #profile()} dikurangi {@link #HANYA_DI_REFERENSI}.
+     *
+     * <p>Diturunkan, bukan ditulis ulang — dua daftar yang disalin akan melenceng begitu
+     * salah satunya diubah, dan selisihnya tak akan terlihat sampai ada pesan yang ditolak.
+     */
+    public static SpecProfile clientProfile() {
+        List<OperationRoute> ops = profile().operations().stream()
+                .filter(r -> r.processingCode() == null
+                        || !HANYA_DI_REFERENSI.contains(r.processingCode()))
+                .toList();
+        return new SpecProfile(CLIENT_NAME, CLIENT_VERSION, BaselineProfileSeeder.NAME,
+                null, List.of(), ops);
     }
 
     public static SpecProfile profile() {
@@ -64,7 +112,10 @@ public class ShinhanProfileSeeder {
                 new OperationRoute("network-management", "0800", null),
 
                 new OperationRoute("balance-inquiry", "0200", "310000"),
+                new OperationRoute("withdraw", "0200", "010000"),
+                new OperationRoute("sale", "0200", "500000"),
                 new OperationRoute("change-pin", "0200", "340000"),
+                new OperationRoute("create-pin", "0200", "341000"),
                 new OperationRoute("change-phone", "0200", "700000"),
                 new OperationRoute("reset-password-ib", "0200", "710000"),
 
@@ -86,7 +137,11 @@ public class ShinhanProfileSeeder {
 
                 new OperationRoute("router-interbank", "0200", "900000"),
 
-                new OperationRoute("reversal", "0400", null));
+                // DUA MTI reversal. Klien Shinhan mengirim 0420 (advice), bukan 0400 —
+                // tanpa rute ini pesannya tak dikenali dan dibalas DE39=30. 0400
+                // dipertahankan karena profil generik memakainya.
+                new OperationRoute("reversal", "0400", null),
+                new OperationRoute("reversal", "0420", null));
 
         return new SpecProfile(NAME, VERSION, BaselineProfileSeeder.NAME, null, List.of(), ops);
     }

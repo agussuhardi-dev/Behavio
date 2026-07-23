@@ -111,10 +111,10 @@ public class IsoSimulatorService {
 
         servers.start(id, s.port(), spec,
                 (simId, req) -> handler.handle(simId, spec, req),
-                (simId, mti, operation, rc, reqHex, respHex, ms, error) -> {
-                    state.logExchange(simId, mti, operation, rc, reqHex, respHex, ms, error);
-                    live.publish(new IsoSseBroadcaster.Exchange(simId.toString(), mti, operation,
-                            rc, reqHex, respHex, ms, error));
+                (simId, mti, pc, operation, rc, reqHex, respHex, ms, error) -> {
+                    state.logExchange(simId, mti, pc, operation, rc, reqHex, respHex, ms, error);
+                    live.publish(new IsoSseBroadcaster.Exchange(simId.toString(), mti, pc,
+                            operation, rc, reqHex, respHex, ms, error));
                 });
 
         db.sql("UPDATE iso8583.simulators SET status = 'RUNNING' WHERE id = ?").param(id).update();

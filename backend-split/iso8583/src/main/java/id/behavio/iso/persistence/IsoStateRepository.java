@@ -93,8 +93,16 @@ public class IsoStateRepository {
         return id;
     }
 
+    /**
+     * @param pinBlock PIN block terakhir yang DITERIMA, apa adanya. Ini <b>bukan PIN</b>:
+     *                 terminal mengenkripsinya di bawah working key, dan tanpa HSM/ZPK
+     *                 nilainya tak bisa dikembalikan jadi angka PIN — oleh siapa pun,
+     *                 termasuk kami. Ditampilkan supaya bisa dilihat & dikirim ulang saat
+     *                 menguji, bukan supaya PIN-nya "ketahuan".
+     */
     public record Card(UUID id, String pan, String accountNo, String status,
-                       boolean pinSet) {}
+                       boolean pinSet, String pinBlock,
+                       java.time.OffsetDateTime pinChangedAt) {}
 
     /**
      * Daftar kartu. Penting ditampilkan: klien ISO mengirim PAN (DE2), dan tanpa baris
@@ -103,7 +111,8 @@ public class IsoStateRepository {
      */
     public List<Card> listCards(UUID simulatorId) {
         return db.sql("""
-                SELECT id, pan, account_no, status, (pin_block IS NOT NULL) AS pin_set
+                SELECT id, pan, account_no, status, (pin_block IS NOT NULL) AS pin_set,
+                       pin_block, pin_changed_at
                 FROM iso8583.cards WHERE simulator_id = ? ORDER BY pan
                 """)
                 .param(simulatorId).query(Card.class).list();
@@ -203,16 +212,17 @@ public class IsoStateRepository {
     }
 
     @Transactional
-    public void logExchange(UUID simulatorId, String mti, String operation, String responseCode,
-                            String requestHex, String responseHex, long durationMillis,
-                            String error) {
+    public void logExchange(UUID simulatorId, String mti, String processingCode, String operation,
+                            String responseCode, String requestHex, String responseHex,
+                            long durationMillis, String error) {
         db.sql("""
                 INSERT INTO iso8583.request_logs
-                    (id, simulator_id, mti, operation, response_code, request_hex, response_hex,
-                     duration_ms, error)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (id, simulator_id, mti, processing_code, operation, response_code,
+                     request_hex, response_hex, duration_ms, error)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """)
-                .param(UUID.randomUUID()).param(simulatorId).param(mti).param(operation)
+                .param(UUID.randomUUID()).param(simulatorId).param(mti).param(processingCode)
+                .param(operation)
                 .param(responseCode).param(requestHex).param(responseHex).param(durationMillis)
                 .param(error)
                 .update();
@@ -227,8 +237,8 @@ public class IsoStateRepository {
      */
     public List<java.util.Map<String, Object>> recentLogs(UUID simulatorId, int limit, int offset) {
         return db.sql("""
-                SELECT mti, operation, response_code, request_hex, response_hex, duration_ms,
-                       error, created_at
+                SELECT mti, processing_code, operation, response_code, request_hex, response_hex,
+                       duration_ms, error, created_at
                 FROM iso8583.request_logs WHERE simulator_id = ?
                 ORDER BY created_at DESC, id DESC
                 LIMIT ? OFFSET ?

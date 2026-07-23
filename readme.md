@@ -18,6 +18,7 @@ Platform ini **fokus pada transaksi finansial** — perbankan dan pembayaran:
 
 * **SNAP BI** (Standar Nasional Open API Pembayaran — ASPI/Bank Indonesia): Access Token, Transfer (intrabank/interbank), Virtual Account, Balance Inquiry.
 * **QRIS** (MPM dynamic/static).
+* **ISO-8583** — berperan sebagai **host** ATM/EDC di atas **socket TCP** (bukan HTTP): cek saldo, transfer on-us & antar-bank, tarik tunai, ganti PIN/telepon, reversal. Spec host tidak publik, jadi bentuk pesannya **diunggah sebagai profil** (packager XML jPOS / JSON), bukan ditulis di kode. Lihat `docs/iso8583-plan.md`.
 
 Domain di luar finansial (mis. logistik, e-commerce) **di luar cakupan** — untuk menjaga fokus dan kesetiaan pada standar.
 
@@ -87,6 +88,8 @@ PENDING → SUCCESS / FAILED
 ## Simulator per-Port
 
 Tiap simulator = **server pada portnya sendiri** yang bisa **start/stop** (mirip WireMock/Mockoon). Path SNAP tetap asli, isolasi natural, dan mematikan port = simulasi bank yang benar-benar *down* (connection refused).
+
+Berlaku sama untuk ISO-8583, hanya portnya **TCP mentah**: mematikan simulator = *connection refused* di sisi klien jPOS, dan itu skenario uji tersendiri.
 
 ---
 

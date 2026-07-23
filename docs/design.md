@@ -14,7 +14,8 @@ Sebuah **simulator API transaksi finansial** yang bisa diatur lewat dashboard,
 berperilaku semirip sistem asli (bank & PJP), bukan sekadar mock statis.
 
 - **Domain:** perbankan & pembayaran — **SNAP BI** (Standar Nasional Open API
-  Pembayaran) dan **QRIS** (dynamic/static). **Tidak** melebar ke logistik/
+  Pembayaran), **QRIS** (dynamic/static), dan **ISO-8583** (host ATM/EDC di atas
+  socket TCP; lihat §3.5 & `docs/iso8583-plan.md`). **Tidak** melebar ke logistik/
   e-commerce.
 - **Bentuk produk:** tool developer **self-hosted lokal** (mirip WireMock/
   Mockoon), bukan SaaS multi-tenant.
@@ -99,8 +100,9 @@ Manfaat konkret:
   transfer/idempotensi harus super-andal (ini uang).
 - **Tukar implementasi tanpa sentuh core** — signature STRICT↔SIMULATED,
   evaluator JEXL→mini, in-memory→Postgres = ganti adapter saja.
-- **Multi pintu masuk** — per-port HTTP kini; gRPC/ISO-8583 nanti = tambah
-  adapter inbound.
+- **Multi pintu masuk** — HTTP per-port untuk bank/QRIS, dan **socket TCP** untuk
+  ISO-8583 (sudah dibangun, §3.5); pintu berikutnya (mis. gRPC) = tambah adapter
+  inbound.
 
 ### Pola desain di dalam engine (GoF & integrasi)
 | Bagian | Pola |
@@ -254,6 +256,42 @@ Yang khusus produk: `…/bank/simulators/{id}/accounts`, `…/bank/simulators/{i
 
 ---
 
+
+### 3.5 Produk ketiga: ISO-8583 (keputusan 2026-07-22)
+
+**Keputusan:** ISO-8583 adalah **produk ketiga yang terpisah penuh**, mengikuti pola §3.4 —
+modul Java sendiri (`backend-split/iso8583`), schema PostgreSQL sendiri (`iso8583`), dan
+port sendiri. Ia **tidak** memakai ulang `Simulator`, rekening, maupun scenario milik bank.
+
+**Kenapa terpisah, bukan produk keempat di mesin yang sama:** transportnya **socket TCP
+biner**, bukan HTTP. Tak ada URL, tak ada partner, tak ada access-token, tak ada webhook —
+tiga per empat konsep mesin HTTP tak punya arti di sini. Yang ada sebagai gantinya: kamus
+data element, bitmap, framing panjang pesan, dan rute operasi berdasarkan MTI + processing
+code.
+
+#### Bentuk
+```
+Produk "iso8583" → schema iso8583 → simulator :3000/:9201/…  (port bebas, TCP)
+                                    profil spec (kamus DE + transport + rute operasi)
+                                    rekening & kartu sendiri, scenario sendiri
+```
+
+#### Yang menggantikan konsep mesin HTTP
+| Konsep bank/QRIS | Padanan di ISO-8583 |
+|---|---|
+| Endpoint + path | **Rute operasi** = MTI + processing code (DE3) |
+| Body JSON + blueprint | **Peta data element** (DE) |
+| Partner + signature SNAP | — (tak ada; keamanan di level jaringan) |
+| Scenario responseCode | **Scenario DE39** + 4 fault transport (delay/diam/putus/rusak) |
+| Live View SSE | sama — `…/simulators/{id}/logs/stream` |
+
+**Spec host tidak publik**, jadi bentuk pesan tidak ditulis di kode melainkan **diunggah
+sebagai profil** (packager XML jPOS atau JSON), dan profil bersifat *immutable* + bisa
+`extends`. Rancangan lengkap, katalog operasi, dan riwayat keputusannya ada di
+**`docs/iso8583-plan.md`** — dokumen itu berperan untuk ISO-8583 seperti Lampiran A2/A3
+berperan untuk VA/QRIS.
+
+---
 ## 4. Mesin Eksekusi (Pipeline)
 
 Alur satu request API simulasi (contoh `POST /openapi/v1.0/transfer-intrabank`):
@@ -335,7 +373,7 @@ localhost:9002/openapi/v1.0/transfer-intrabank   → Bank Simulasi B
 
 ### 6.2 API Admin (statis)
 Port tetap `:9000` (sejak 2026-07-22; sebelumnya 8080). **Tanpa auth dulu** (lokal). Dipakai dashboard.
-`{product}` = `bank` | `qris` (§3.4); produk tak dikenal → `404`.
+`{product}` = `bank` | `qris` | `iso8583` (§3.4, §3.5); produk tak dikenal → `404`.
 ```
 /api/admin/v1/{product}/
   simulators                          GET, POST
@@ -632,6 +670,12 @@ auto-send-nya rusak dan itu bug, bukan alur normal.
   sederhana.
 - Live view **tidak** butuh reaktif. Tiap request setelah diproses meng-emit
   `RequestEvent` → **Event Bus in-app** → **SSE** → dashboard.
+- **ISO-8583 memakai pola & bentuk URL yang sama** (`…/simulators/{id}/logs/stream`), hanya
+  isinya pertukaran pesan biner: MTI, operasi, DE39, hex request/response, dan **alasan
+  gagal** bila pesan tak bisa diproses. Yang terakhir itu penting: tanpa alasan yang
+  tercatat, pesan gagal hanya tampak sebagai "host tak membalas" di sisi klien.
+- Di belakang nginx, blok SSE **wajib** `proxy_buffering off` — kalau tidak, event ditahan
+  di buffer dan dashboard tampak diam padahal request mengalir (lihat `deploy/nginx.conf`).
 
 ---
 
@@ -665,6 +709,11 @@ Recorder/Replay, Monitoring, Audit trail.
 Bank & QRIS jadi dua produk terpisah penuh: modul Gradle sendiri, schema PostgreSQL
 sendiri, port sendiri. Mesin tetap satu salinan, di-instansiasi per produk. Dashboard
 ikut dipisah (BankApi/QrisApi di atas ProductApi generik).
+
+### Fase 6 — Produk ISO-8583 (§3.5) ✅
+Produk ketiga di atas **socket TCP**, bukan HTTP: modul & schema sendiri, spec host
+diunggah sebagai **profil** (packager XML jPOS / JSON) alih-alih ditulis di kode.
+Detailnya di `docs/iso8583-plan.md`; status implementasinya di §14.
 
 ---
 
@@ -1391,6 +1440,31 @@ Keputusan & alasannya di **§15**. Yang dibangun:
 
 **Catatan jujur:** `access-token` QRIS tak punya blueprint, jadi ia satu-satunya endpoint
 tanpa contoh response (hanya `200` kosong). Bukan bug — memang tak ada yang bisa dirujuk.
+
+---
+
+### Fase 6 — Produk ISO-8583 (host TCP) ✅ (2026-07-22 → 2026-07-23)
+
+Produk ketiga, terpisah penuh (§3.5). Rancangan & riwayat keputusan lengkap ada di
+**`docs/iso8583-plan.md`**; ringkasnya:
+
+- **Profil spec sebagai data, bukan kode** — unggah **packager XML jPOS** (format yang
+  biasa diserahkan bank; XML diparse sendiri, **tanpa dependensi jPOS** sehingga AGPL v3
+  terhindar) atau JSON. Profil *immutable* + berversi + bisa `extends`, dan bisa
+  dibuktikan lewat **uji trace** (tempel hex dari host asli).
+- **Transport TCP** — framing panjang pesan, bitmap BINARY/HEX, virtual thread per koneksi.
+- **Operasi host** dari rute MTI + processing code: cek saldo, transfer on-us/antar-bank/
+  masuk/numpang-lewat (+ inquiry-nya), tarik tunai, sale, change/create PIN, change phone,
+  reset password IB, router interbank, reversal (`0400` & `0420`).
+- **Scenario** 15 bawaan per operasi: 11 DE39 + 4 fault transport (delay, diam, putus,
+  balasan rusak) — tiga terakhir tak punya padanan di produk HTTP.
+- **Live View SSE** + riwayat berhalaman + hapus riwayat, sepola bank simulator.
+
+**Catatan jujur:** simulator ini **tidak** melakukan kriptografi. PIN block dan DE55 (EMV)
+diterima & disimpan apa adanya, tak pernah diverifikasi — verifikasi sungguhan menuntut
+HSM/ZPK. Karena itu "PIN salah" dan "kartu kedaluwarsa" **hanya** bisa diuji lewat
+scenario, dan itu disengaja: berpura-pura memverifikasi jauh lebih menyesatkan daripada
+menyatakan batasnya.
 
 ---
 

@@ -47,9 +47,9 @@ public class IsoSseBroadcaster {
      * Satu pertukaran pesan. {@code error} terisi berarti klien TIDAK menerima balasan —
      * di situlah sebabnya (lihat request_logs.error).
      */
-    public record Exchange(String simulatorId, String mti, String operation,
-                           String responseCode, String requestHex, String responseHex,
-                           long durationMillis, String error) {}
+    public record Exchange(String simulatorId, String mti, String processingCode,
+                           String operation, String responseCode, String requestHex,
+                           String responseHex, long durationMillis, String error) {}
 
     public void publish(Exchange event) {
         List<SseEmitter> list = emitters.get(UUID.fromString(event.simulatorId()));
