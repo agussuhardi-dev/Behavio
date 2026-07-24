@@ -6,6 +6,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatSelectModule } from '@angular/material/select';
 import { MatTooltipModule } from '@angular/material/tooltip';
+import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 
 import {
   OpenApiAction,
@@ -47,6 +48,7 @@ interface Row extends OpenApiPreviewRow {
     MatProgressBarModule,
     MatSelectModule,
     MatTooltipModule,
+    TranslatePipe,
   ],
   templateUrl: './openapi-import-dialog.html',
   styleUrl: './openapi-import-dialog.scss',
@@ -54,6 +56,7 @@ interface Row extends OpenApiPreviewRow {
 export class OpenApiImportDialog {
   readonly dialogRef = inject(MatDialogRef<OpenApiImportDialog, OpenApiImportResult>);
   readonly data = inject<OpenApiImportData>(MAT_DIALOG_DATA);
+  private readonly translate = inject(TranslateService);
 
   readonly fileName = signal('');
   readonly sourceTitle = signal('');
@@ -100,7 +103,7 @@ export class OpenApiImportDialog {
         this.busy.set(false);
       },
       error: err => {
-        this.error.set(err?.error?.error ?? 'Spec tidak bisa dibaca');
+        this.error.set(err?.error?.error ?? this.translate.instant('openapi.spec_unreadable'));
         this.rows.set([]);
         this.busy.set(false);
       },
@@ -144,7 +147,7 @@ export class OpenApiImportDialog {
     this.data.api.importOpenApi(this.data.simulatorId, this.spec, mappings).subscribe({
       next: result => this.dialogRef.close(result),
       error: err => {
-        this.error.set(err?.error?.error ?? 'Impor gagal');
+        this.error.set(err?.error?.error ?? this.translate.instant('openapi.import_failed'));
         this.busy.set(false);
       },
     });

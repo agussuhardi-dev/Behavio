@@ -1,5 +1,6 @@
 import { Component, OnDestroy, OnInit, inject, signal } from '@angular/core';
 import { MatSnackBar } from '@angular/material/snack-bar';
+import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { ClipboardService } from '../../shared/services/clipboard.service';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
@@ -49,6 +50,7 @@ interface LiveEvent {
     MatMenuModule, MatPaginatorModule, MatProgressBarModule, MatSelectModule, MatTooltipModule,
     EndpointUrlPanel,
     WebhookPanel,
+    TranslatePipe,
   ],
   templateUrl: './qris.html',
   styleUrl: './qris.scss',
@@ -60,6 +62,7 @@ export class Qris implements OnInit, OnDestroy {
    */
   private readonly clipboard = inject(ClipboardService);
   private readonly snackBar = inject(MatSnackBar);
+  private readonly translate = inject(TranslateService);
   readonly api = inject(QrisApi);
   private readonly openApi = inject(OpenApiService);
   private readonly dialog = inject(MatDialog);
@@ -125,43 +128,43 @@ export class Qris implements OnInit, OnDestroy {
     {
       // Sejak pemisahan produk (design.md §3.4), profil QRIS = PJP tersendiri yang
       // menerbitkan token B2B-nya SENDIRI — token profil bank tak berlaku di sini.
-      key: 'access-token', label: 'Access Token B2B', operation: '',
-      desc: 'Terbitkan token Bearer B2B milik PJP ini — dipakai endpoint QRIS lain saat mode STRICT. Token profil bank TIDAK berlaku di sini.',
+      key: 'access-token', label: 'qris.ep.access-token.label', operation: '',
+      desc: 'qris.ep.access-token.desc',
       curl: this.curlToken(), curlKey: 'tok', scenarioList: [],
     },
     {
-      key: 'qris-generate', label: 'Generate QR', operation: 'qris-generate',
-      desc: 'Buat QR (dynamic/static). Bisa di-custom: tolak amount ≤ 0, blokir merchant, simulasi down.',
+      key: 'qris-generate', label: 'qris.ep.qris-generate.label', operation: 'qris-generate',
+      desc: 'qris.ep.qris-generate.desc',
       curl: this.curlDynamic(), curlKey: 'gen', scenarioList: QRIS_SCENARIOS,
     },
     {
-      key: 'qris-query', label: 'Query Status', operation: 'qris-query',
-      desc: 'Cek status QR — pending/success/refunded/expired.',
+      key: 'qris-query', label: 'qris.ep.qris-query.label', operation: 'qris-query',
+      desc: 'qris.ep.qris-query.desc',
       curl: this.curlQuery(), curlKey: 'qry', scenarioList: [{ name: 'Normal', desc: 'Response standar SNAP.', icon: 'check_circle', tone: 'ok' }],
     },
     {
-      key: 'qris-refund', label: 'Refund', operation: 'qris-refund',
-      desc: 'Refund QR yang sudah dibayar (full/partial).',
+      key: 'qris-refund', label: 'qris.ep.qris-refund.label', operation: 'qris-refund',
+      desc: 'qris.ep.qris-refund.desc',
       curl: this.curlRefund(), curlKey: 'rfd', scenarioList: [{ name: 'Normal', desc: 'Response standar SNAP.', icon: 'check_circle', tone: 'ok' }],
     },
     {
-      key: 'qris-cancel', label: 'Cancel Payment', operation: 'qris-cancel',
-      desc: 'Batalkan QR yang belum dibayar (service 77).',
+      key: 'qris-cancel', label: 'qris.ep.qris-cancel.label', operation: 'qris-cancel',
+      desc: 'qris.ep.qris-cancel.desc',
       curl: this.curlCancel(), curlKey: 'cnl', scenarioList: [{ name: 'Normal', desc: 'Response standar SNAP.', icon: 'check_circle', tone: 'ok' }],
     },
     {
-      key: 'qris-decode', label: 'Decode QR', operation: 'qris-decode',
-      desc: 'Decode QR content → merchant info.',
+      key: 'qris-decode', label: 'qris.ep.qris-decode.label', operation: 'qris-decode',
+      desc: 'qris.ep.qris-decode.desc',
       curl: this.curlDecode(), curlKey: 'dcd', scenarioList: [{ name: 'Normal', desc: 'Response standar SNAP.', icon: 'check_circle', tone: 'ok' }],
     },
     {
-      key: 'qris-payment', label: 'Payment H2H', operation: 'qris-payment',
-      desc: 'Host-to-host payment — customer bayar QR.',
+      key: 'qris-payment', label: 'qris.ep.qris-payment.label', operation: 'qris-payment',
+      desc: 'qris.ep.qris-payment.desc',
       curl: this.curlPayment(), curlKey: 'pay', scenarioList: [{ name: 'Normal', desc: 'Response standar SNAP.', icon: 'check_circle', tone: 'ok' }],
     },
     {
-      key: 'qris-apply-ott', label: 'Apply OTT', operation: 'qris-apply-ott',
-      desc: 'One-time token untuk redirect payment.',
+      key: 'qris-apply-ott', label: 'qris.ep.qris-apply-ott.label', operation: 'qris-apply-ott',
+      desc: 'qris.ep.qris-apply-ott.desc',
       curl: this.curlOtt(), curlKey: 'ott', scenarioList: [{ name: 'Normal', desc: 'Response standar SNAP.', icon: 'check_circle', tone: 'ok' }],
     },
   ];
@@ -172,8 +175,8 @@ export class Qris implements OnInit, OnDestroy {
     // berfungsi tanpa error apa pun.
     this.clipboard.copy(text).then(ok => {
       if (!ok) {
-        this.snackBar.open('Gagal menyalin — salin manual dari teks di layar.', 'Tutup',
-          { duration: 4000 });
+        this.snackBar.open(this.translate.instant('common.copy_failed'),
+          this.translate.instant('common.close'), { duration: 4000 });
         return;
       }
       this.copiedKey.set(key);
@@ -322,13 +325,13 @@ export class Qris implements OnInit, OnDestroy {
 
   /** Rapikan JSON agar mudah dibaca saat debugging; biarkan apa adanya bila bukan JSON. */
   prettyJson(text: string): string {
-    if (!text) return '(kosong)';
+    if (!text) return this.translate.instant('common.empty');
     try { return JSON.stringify(JSON.parse(text), null, 2); } catch { return text; }
   }
 
   headerLines(h: Record<string, string>): string {
     const keys = Object.keys(h ?? {});
-    if (keys.length === 0) return '(tidak ada header)';
+    if (keys.length === 0) return this.translate.instant('common.no_header');
     return keys.sort().map(k => `${k}: ${h[k]}`).join('\n');
   }
 
@@ -395,9 +398,9 @@ export class Qris implements OnInit, OnDestroy {
   removeSelected() {
     const s = this.selectedSim; if (!s) return;
     this.confirmDialog({
-      title: 'Hapus profil?',
-      message: `Profil "${s.name}" (port ${s.port}) akan dihapus permanen beserta QR, partner, dan rekeningnya. Tindakan ini tidak bisa dibatalkan.`,
-      confirmText: 'Hapus',
+      title: this.translate.instant('qris.msg.delete_title'),
+      message: this.translate.instant('qris.msg.delete_body', { name: s.name, port: s.port }),
+      confirmText: this.translate.instant('common.delete'),
       danger: true,
     }).subscribe(ok => {
       if (!ok) return;
@@ -446,6 +449,16 @@ export class Qris implements OnInit, OnDestroy {
 
   activeScenarioFor(key: string): string { return this.activeScenarios()[key] ?? 'Normal'; }
 
+  /**
+   * Kunci i18n untuk label/deskripsi scenario. `name` TETAP identifier ke backend
+   * (nilai select & payload) — hanya TAMPILANNYA yang dipetakan ke terjemahan.
+   */
+  scName(name: string): string { return `scenario.qris.${this.scSlug(name)}.name`; }
+  scDesc(name: string): string { return `scenario.qris.${this.scSlug(name)}.desc`; }
+  private scSlug(name: string): string {
+    return (name || '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  }
+
   changeScenario(ep: EpMeta, name: string) {
     this.activeScenarios.update(m => ({ ...m, [ep.key]: name }));
     this.api.setScenario(this.selectedSimId(), name, ep.operation).subscribe();
@@ -461,7 +474,9 @@ export class Qris implements OnInit, OnDestroy {
       },
       error: err => {
         this.editorLoading.set(false);
-        this.editorError.set(err?.status === 0 ? 'Backend tidak terjangkau.' : `Gagal memuat (${err?.status ?? '?'})`);
+        this.editorError.set(err?.status === 0
+          ? this.translate.instant('qris.msg.backend_unreachable')
+          : this.translate.instant('qris.msg.load_failed', { status: err?.status ?? '?' }));
       },
     });
   }
@@ -473,7 +488,7 @@ export class Qris implements OnInit, OnDestroy {
   saveEditor(ep: EpMeta) {
     this.api.saveDefinition(this.selectedSimId(), this.editorScenario(), this.editorText(), ep.operation).subscribe({
       next: () => { this.editorSaved.set(true); this.editorError.set(''); },
-      error: err => this.editorError.set(err?.error?.error ?? 'JSON tidak valid.'),
+      error: err => this.editorError.set(err?.error?.error ?? this.translate.instant('qris.msg.invalid_json')),
     });
   }
 
@@ -516,40 +531,38 @@ export class Qris implements OnInit, OnDestroy {
   resendNotification(qr: QrisView) {
     this.api.resendQrisNotification(this.selectedSimId(), qr.referenceNo).subscribe({
       next: r => this.qrMsg.set(r.note),
-      error: err => this.qrMsg.set(err?.error?.error ?? 'Gagal mengirim ulang notifikasi.'),
+      error: err => this.qrMsg.set(err?.error?.error ?? this.translate.instant('qris.msg.resend_failed')),
     });
   }
 
   pay(qr: QrisView) {
     const amount = qr.qrType === 'STATIC' ? this.payAmounts()[qr.referenceNo] : undefined;
-    if (qr.qrType === 'STATIC' && !amount) { this.qrMsg.set('QR static butuh nominal.'); return; }
+    if (qr.qrType === 'STATIC' && !amount) { this.qrMsg.set(this.translate.instant('qris.msg.static_needs_amount')); return; }
     const nominal = qr.qrType === 'STATIC' ? `${amount} ${qr.currency}` : `${qr.amount} ${qr.currency}`;
     this.confirmDialog({
-      title: 'Tandai QR sebagai dibayar?',
-      message: `QR "${qr.referenceNo}" akan berstatus PAID sebesar ${nominal},`
-        + ' dan Payment Notify dikirim otomatis ke URL yang didaftarkan partner.'
-        + ' Partner tanpa registrasi tidak menerima notifikasi.',
-      confirmText: 'Tandai Dibayar',
+      title: this.translate.instant('qris.msg.pay_title'),
+      message: this.translate.instant('qris.msg.pay_body', { qr: qr.referenceNo, nominal }),
+      confirmText: this.translate.instant('common.mark_paid'),
     }).subscribe(ok => {
       if (!ok) return;
       this.api.payQris(this.selectedSimId(), qr.referenceNo, amount).subscribe({
-        next: r => { this.qrMsg.set(r.webhookSent ? 'Payment Notify terkirim.' : r.note); this.reloadQr(true); },
-        error: () => this.qrMsg.set('Gagal.'),
+        next: r => { this.qrMsg.set(r.webhookSent ? this.translate.instant('qris.msg.notify_sent') : r.note); this.reloadQr(true); },
+        error: () => this.qrMsg.set(this.translate.instant('qris.msg.failed')),
       });
     });
   }
 
   expireQr(qr: QrisView) {
     this.confirmDialog({
-      title: 'Kedaluwarsakan QR?',
-      message: `QR "${qr.referenceNo}" akan berstatus EXPIRED dan tidak bisa dibayar lagi.`,
-      confirmText: 'Kedaluwarsakan',
+      title: this.translate.instant('qris.msg.expire_title'),
+      message: this.translate.instant('qris.msg.expire_body', { qr: qr.referenceNo }),
+      confirmText: this.translate.instant('qris.expire'),
       danger: true,
     }).subscribe(ok => {
       if (!ok) return;
       this.api.expireQris(this.selectedSimId(), qr.referenceNo).subscribe({
         next: r => { this.qrMsg.set(r.note); this.reloadQr(true); },
-        error: () => this.qrMsg.set('Gagal.'),
+        error: () => this.qrMsg.set(this.translate.instant('qris.msg.failed')),
       });
     });
   }

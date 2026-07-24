@@ -1,9 +1,9 @@
 <div class="qris-page">
   <div class="qris-hero">
     <div class="qris-hero__text">
-      <h1><mat-icon class="qris-hero__icon">qr_code_2</mat-icon> QRIS MPM</h1>
-      <p>Simulasikan semua endpoint QRIS SNAP BI — generate, query, refund, cancel, decode, payment, apply-ott. Setiap endpoint dapat di-custom dari dashboard.</p>
-      <p class="qris-hero__note">Profil di sini adalah <strong>PJP/acquirer</strong> — berdiri sendiri dengan port, partner, dan access-token sendiri, terpisah penuh dari profil di halaman Bank Simulator.</p>
+      <h1><mat-icon class="qris-hero__icon">qr_code_2</mat-icon> {{ 'qris.hero_title' | translate }}</h1>
+      <p [innerHTML]="'qris.hero_desc' | translate"></p>
+      <p class="qris-hero__note" [innerHTML]="'qris.hero_note' | translate"></p>
     </div>
   </div>
 
@@ -13,12 +13,12 @@
     <mat-card class="qris-empty" appearance="outlined">
       <mat-card-content class="qris-empty__inner">
         <mat-icon class="qris-empty__icon">info</mat-icon>
-        <h3>Belum ada profil QRIS</h3>
-        <p>Profil PJP berdiri sendiri — profil di halaman Bank Simulator tidak dipakai di sini.</p>
+        <h3>{{ 'qris.empty_title' | translate }}</h3>
+        <p>{{ 'qris.empty_desc' | translate }}</p>
         <!-- Tombol ini WAJIB ada di empty state: sejak profil QRIS jadi entitas sendiri,
              tanpa ini user tak punya jalan membuat profil pertamanya. -->
         <button mat-flat-button color="primary" (click)="openCreate()">
-          <mat-icon>add</mat-icon> Tambah Profil PJP
+          <mat-icon>add</mat-icon> {{ 'qris.add_pjp' | translate }}
         </button>
       </mat-card-content>
     </mat-card>
@@ -28,7 +28,7 @@
     <mat-card class="qris-bar" appearance="outlined">
       <div class="qris-bar__row">
         <mat-form-field appearance="outline" class="qris-bar__field">
-          <mat-label>Profil PJP</mat-label>
+          <mat-label>{{ 'qris.profile_pjp' | translate }}</mat-label>
           <mat-select [value]="selectedSimId()" (valueChange)="onSelectSim($event)">
             @for (s of sims(); track s.id) {
               <mat-option [value]="s.id">{{ s.name }} — :{{ s.port }}</mat-option>
@@ -38,28 +38,28 @@
         @if (selectedSim; as s) {
           <span class="qris-chip" [class.qris-chip--on]="s.status === 'RUNNING'">
             <span class="qris-chip__dot"></span>
-            {{ s.status === 'RUNNING' ? 'Menyala' : 'Mati' }}
+            {{ (s.status === 'RUNNING' ? 'common.on' : 'common.off') | translate }}
           </span>
           <button mat-stroked-button [color]="s.status === 'RUNNING' ? 'warn' : 'primary'" (click)="toggleRunning()">
             <mat-icon>{{ s.status === 'RUNNING' ? 'stop' : 'play_arrow' }}</mat-icon>
-            {{ s.status === 'RUNNING' ? 'Matikan' : 'Nyalakan' }}
+            {{ (s.status === 'RUNNING' ? 'common.turn_off' : 'common.turn_on') | translate }}
           </button>
         }
         <span class="qris-bar__spacer"></span>
-        <button mat-flat-button color="primary" (click)="openCreate()"><mat-icon>add</mat-icon> Tambah</button>
-        <button mat-icon-button [matMenuTriggerFor]="profileMenu" matTooltip="Lainnya" [disabled]="!selectedSim"><mat-icon>more_vert</mat-icon></button>
+        <button mat-flat-button color="primary" (click)="openCreate()"><mat-icon>add</mat-icon> {{ 'common.add' | translate }}</button>
+        <button mat-icon-button [matMenuTriggerFor]="profileMenu" [matTooltip]="'common.more' | translate" [disabled]="!selectedSim"><mat-icon>more_vert</mat-icon></button>
         <mat-menu #profileMenu="matMenu">
-          <button mat-menu-item (click)="openClone()"><mat-icon>content_copy</mat-icon> Duplikat</button>
+          <button mat-menu-item (click)="openClone()"><mat-icon>content_copy</mat-icon> {{ 'common.duplicate' | translate }}</button>
           <mat-divider />
           <button mat-menu-item (click)="exportOpenApi()"
-                  matTooltip="Spec OpenAPI 3.0.3 — siap dipakai di Postman. Perilaku ikut di x-behavio.">
-            <mat-icon>download</mat-icon> Export OpenAPI
+                  [matTooltip]="'common.openapi_export_tip' | translate">
+            <mat-icon>download</mat-icon> {{ 'common.export_openapi' | translate }}
           </button>
           <button mat-menu-item (click)="openImportOpenApi()">
-            <mat-icon>upload_file</mat-icon> Impor OpenAPI
+            <mat-icon>upload_file</mat-icon> {{ 'common.import_openapi' | translate }}
           </button>
           <mat-divider />
-          <button mat-menu-item (click)="removeSelected()"><mat-icon color="warn">delete</mat-icon> Hapus</button>
+          <button mat-menu-item (click)="removeSelected()"><mat-icon color="warn">delete</mat-icon> {{ 'common.delete' | translate }}</button>
         </mat-menu>
       </div>
     </mat-card>
@@ -68,11 +68,11 @@
       <mat-card class="qris-card" appearance="outlined">
         <div class="qris-card__head">
           <mat-icon class="qris-card__head-icon">api</mat-icon>
-          <span>Endpoint QRIS</span>
+          <span>{{ 'qris.endpoints_title' | translate }}</span>
           <span class="qris-bar__spacer"></span>
           <button mat-stroked-button (click)="epuOpen.set(!epuOpen())" class="qris-card__head-btn"
-                  matTooltip="Atur URL endpoint simulator dan daftarkan URL notifikasi (webhook) per partner">
-            <mat-icon>link</mat-icon> {{ epuOpen() ? 'Tutup' : 'URL & Webhook' }}
+                  [matTooltip]="'common.url_webhook_tip' | translate">
+            <mat-icon>link</mat-icon> {{ (epuOpen() ? 'common.close' : 'common.url_webhook') | translate }}
           </button>
         </div>
         <mat-divider />
@@ -91,27 +91,27 @@
               <mat-expansion-panel-header>
                 <mat-panel-title>
                   <span class="qris-ep__badge">POST</span>
-                  <span class="qris-ep__label">{{ ep.label }}</span>
-                  <span class="qris-ep__scenario-tag">{{ activeScenarioFor(ep.key) }}</span>
+                  <span class="qris-ep__label">{{ ep.label | translate }}</span>
+                  <span class="qris-ep__scenario-tag">{{ scName(activeScenarioFor(ep.key)) | translate }}</span>
                 </mat-panel-title>
-                <mat-panel-description>{{ ep.desc }}</mat-panel-description>
+                <mat-panel-description>{{ ep.desc | translate }}</mat-panel-description>
               </mat-expansion-panel-header>
 
               <div class="qris-ep__body">
                 <div class="qris-ep__bar">
                   <mat-form-field appearance="outline" class="qris-ep__scenario">
-                    <mat-label>Skenario</mat-label>
+                    <mat-label>{{ 'common.scenario' | translate }}</mat-label>
                     <mat-select [value]="activeScenarioFor(ep.key)" (valueChange)="changeScenario(ep, $event)">
                       @for (sc of ep.scenarioList; track sc.name) {
                         <mat-option [value]="sc.name">
-                          <mat-icon class="opt-ico opt-ico--{{ sc.tone }}">{{ sc.icon }}</mat-icon> {{ sc.name }}
+                          <mat-icon class="opt-ico opt-ico--{{ sc.tone }}">{{ sc.icon }}</mat-icon> {{ scName(sc.name) | translate }}
                         </mat-option>
                       }
                     </mat-select>
                   </mat-form-field>
 
                   <button mat-stroked-button (click)="editingEp() === ep.key ? closeEditor() : openEditor(ep)" [disabled]="editorLoading() && editingEp() !== ep.key">
-                    <mat-icon>edit</mat-icon> {{ editingEp() === ep.key ? 'Tutup Editor' : 'Edit Response' }}
+                    <mat-icon>edit</mat-icon> {{ (editingEp() === ep.key ? 'common.close_editor' : 'common.edit_response') | translate }}
                   </button>
 
                   @if (editorError() && editingEp() !== ep.key) {
@@ -122,14 +122,14 @@
                     <div class="qris-editor">
                       <div class="qris-editor__head">
                         <mat-icon>tune</mat-icon>
-                        <span>Definisi <b>{{ editorScenario() }}</b> &mdash; edit JSON, lalu Simpan</span>
+                        <span>{{ 'common.definition_of' | translate }} <b>{{ scName(editorScenario()) | translate }}</b> {{ 'common.edit_json_hint' | translate }}</span>
                       </div>
                       <textarea class="qris-editor__area" spellcheck="false" [value]="editorText()" (input)="onEditorInput($any($event.target).value)"></textarea>
                       @if (editorError()) { <div class="qris-ep__msg qris-ep__msg--err"><mat-icon>error</mat-icon> {{ editorError() }}</div> }
-                      @if (editorSaved()) { <div class="qris-ep__msg qris-ep__msg--ok"><mat-icon>check_circle</mat-icon> Tersimpan — response berikutnya memakai definisi ini.</div> }
+                      @if (editorSaved()) { <div class="qris-ep__msg qris-ep__msg--ok"><mat-icon>check_circle</mat-icon> {{ 'common.save_saved' | translate }}</div> }
                       <div class="qris-editor__actions">
-                        <button mat-flat-button color="primary" (click)="saveEditor(ep)"><mat-icon>save</mat-icon> Simpan</button>
-                        <button mat-stroked-button (click)="resetEditor(ep)"><mat-icon>restart_alt</mat-icon> Reset ke Preset</button>
+                        <button mat-flat-button color="primary" (click)="saveEditor(ep)"><mat-icon>save</mat-icon> {{ 'common.save' | translate }}</button>
+                        <button mat-stroked-button (click)="resetEditor(ep)"><mat-icon>restart_alt</mat-icon> {{ 'common.reset_preset' | translate }}</button>
                       </div>
                     </div>
                   }
@@ -139,7 +139,7 @@
                   <summary>curl</summary>
                   <div class="qris-curl__box">
                     <pre>{{ ep.curl }}</pre>
-                    <button mat-icon-button matTooltip="Salin" (click)="copy(ep.curl, ep.curlKey)">
+                    <button mat-icon-button [matTooltip]="'common.copy' | translate" (click)="copy(ep.curl, ep.curlKey)">
                       <mat-icon>{{ copiedKey() === ep.curlKey ? 'check' : 'content_copy' }}</mat-icon>
                     </button>
                   </div>
@@ -153,16 +153,16 @@
       <mat-card class="qris-card" appearance="outlined" [class.qris-card--flash]="qrFlash()">
         <div class="qris-card__head">
           <mat-icon class="qris-card__head-icon">qr_code_2</mat-icon>
-          <span>QR Dibuat</span>
+          <span>{{ 'qris.qr_created' | translate }}</span>
           @if (qrTotal() > 0) { <span class="qris-count">{{ qrTotal() }}</span> }
           <span class="qris-bar__spacer"></span>
-          <button mat-icon-button matTooltip="Muat ulang" (click)="reloadQr()"><mat-icon>refresh</mat-icon></button>
+          <button mat-icon-button [matTooltip]="'common.reload' | translate" (click)="reloadQr()"><mat-icon>refresh</mat-icon></button>
         </div>
         <mat-divider />
         <div class="qris-card__body">
           @if (qrMsg()) { <div class="qris-msg qris-msg--info">{{ qrMsg() }}</div> }
           @if (!qrLoading() && qrTotal() === 0) {
-            <div class="qris-empty-mini">Belum ada QR. Gunakan endpoint Generate di sebelah kiri.</div>
+            <div class="qris-empty-mini">{{ 'qris.qr_empty' | translate }}</div>
           }
           @for (qr of qrList(); track qr.referenceNo) {
             <div class="qris-row">
@@ -171,20 +171,20 @@
                 <span class="qris-tag" [class.qris-tag--dynamic]="qr.qrType === 'DYNAMIC'">{{ qr.qrType }}</span>
                 <span class="qris-chip qris-chip--sm" [class.qris-chip--on]="statusTone(qr.status) === 'ok'" [class.qris-chip--warn]="statusTone(qr.status) === 'warn'" [class.qris-chip--err]="statusTone(qr.status) === 'fault'">{{ qr.status }}</span>
               </div>
-              <div class="qris-row__sub">{{ qr.merchantId || '—' }} · {{ qr.amount ? (qr.amount + ' ' + qr.currency) : 'nominal diisi saat bayar' }}</div>
+              <div class="qris-row__sub">{{ qr.merchantId || '—' }} · {{ qr.amount ? (qr.amount + ' ' + qr.currency) : ('qris.amount_filled_on_pay' | translate) }}</div>
               <div class="qris-row__actions">
                 @if (qr.status === 'ACTIVE') {
                   @if (qr.qrType === 'STATIC') {
-                    <mat-form-field appearance="outline" class="qris-row__amount"><mat-label>Nominal bayar</mat-label><input matInput type="number" (input)="onPayAmount(qr.referenceNo, $any($event.target).value)" /></mat-form-field>
+                    <mat-form-field appearance="outline" class="qris-row__amount"><mat-label>{{ 'qris.pay_amount' | translate }}</mat-label><input matInput type="number" (input)="onPayAmount(qr.referenceNo, $any($event.target).value)" /></mat-form-field>
                   }
-                  <button mat-flat-button color="primary" (click)="pay(qr)"><mat-icon>payments</mat-icon> Tandai Dibayar</button>
-                  <button mat-stroked-button color="warn" (click)="expireQr(qr)"><mat-icon>event_busy</mat-icon> Kedaluwarsakan</button>
+                  <button mat-flat-button color="primary" (click)="pay(qr)"><mat-icon>payments</mat-icon> {{ 'common.mark_paid' | translate }}</button>
+                  <button mat-stroked-button color="warn" (click)="expireQr(qr)"><mat-icon>event_busy</mat-icon> {{ 'qris.expire' | translate }}</button>
                 }
                 @if (qr.status === 'PAID') {
-                  <span class="qris-row__hint">Gunakan curl refund/cancel di sebelah kiri.</span>
+                  <span class="qris-row__hint">{{ 'qris.refund_cancel_hint' | translate }}</span>
                 }
                 <button mat-icon-button
-                  matTooltip="Kirim ulang Payment Notify dengan status saat ini (tidak mengubah data)"
+                  [matTooltip]="'qris.resend_notify' | translate"
                   (click)="resendNotification(qr)">
                   <mat-icon>send</mat-icon>
                 </button>
@@ -209,13 +209,13 @@
     <mat-card class="qris-card qris-live" appearance="outlined">
       <div class="qris-card__head">
         <mat-icon class="qris-card__head-icon">bolt</mat-icon>
-        <span>Live View</span>
+        <span>{{ 'common.live_view' | translate }}</span>
         @if (liveEvents().length > 0) { <span class="qris-count qris-count--live">{{ liveEvents().length }}</span> }
         <span class="qris-bar__spacer"></span>
         @if (liveEvents().length > 0) {
-          <button mat-icon-button matTooltip="Bersihkan" (click)="clearLive()"><mat-icon>clear_all</mat-icon></button>
+          <button mat-icon-button [matTooltip]="'common.clear' | translate" (click)="clearLive()"><mat-icon>clear_all</mat-icon></button>
         }
-        <button mat-icon-button [matTooltip]="liveOpen() ? 'Sembunyikan' : 'Tampilkan'" (click)="toggleLive()">
+        <button mat-icon-button [matTooltip]="(liveOpen() ? 'common.hide' : 'common.show') | translate" (click)="toggleLive()">
           <mat-icon>{{ liveOpen() ? 'expand_less' : 'expand_more' }}</mat-icon>
         </button>
       </div>
@@ -225,7 +225,7 @@
           @if (liveEvents().length === 0) {
             <div class="qris-live__empty">
               <mat-icon>sensors</mat-icon>
-              <span>Menunggu request… kirim ke port <b>:{{ selectedSim?.port }}</b> lalu muncul di sini.</span>
+              <span [innerHTML]="'common.waiting_request' | translate: { port: selectedSim?.port }"></span>
             </div>
           }
           @for (e of liveEvents(); track $index) {
@@ -242,22 +242,22 @@
                 <div class="qris-live-detail">
                   <div class="qris-live-detail__block">
                     <div class="qris-live-detail__label">
-                      <mat-icon>north_east</mat-icon> Request Header
-                      <button mat-icon-button matTooltip="Salin" (click)="copy(headerLines(e.requestHeaders), 'lh' + $index)"><mat-icon>{{ copiedKey() === 'lh' + $index ? 'check' : 'content_copy' }}</mat-icon></button>
+                      <mat-icon>north_east</mat-icon> {{ 'common.request_header' | translate }}
+                      <button mat-icon-button [matTooltip]="'common.copy' | translate" (click)="copy(headerLines(e.requestHeaders), 'lh' + $index)"><mat-icon>{{ copiedKey() === 'lh' + $index ? 'check' : 'content_copy' }}</mat-icon></button>
                     </div>
                     <pre>{{ headerLines(e.requestHeaders) }}</pre>
                   </div>
                   <div class="qris-live-detail__block">
                     <div class="qris-live-detail__label">
-                      <mat-icon>north_east</mat-icon> Request Body
-                      <button mat-icon-button matTooltip="Salin" (click)="copy(e.requestBody, 'lq' + $index)"><mat-icon>{{ copiedKey() === 'lq' + $index ? 'check' : 'content_copy' }}</mat-icon></button>
+                      <mat-icon>north_east</mat-icon> {{ 'common.request_body' | translate }}
+                      <button mat-icon-button [matTooltip]="'common.copy' | translate" (click)="copy(e.requestBody, 'lq' + $index)"><mat-icon>{{ copiedKey() === 'lq' + $index ? 'check' : 'content_copy' }}</mat-icon></button>
                     </div>
                     <pre>{{ prettyJson(e.requestBody) }}</pre>
                   </div>
                   <div class="qris-live-detail__block">
                     <div class="qris-live-detail__label">
-                      <mat-icon>south_west</mat-icon> Response Body
-                      <button mat-icon-button matTooltip="Salin" (click)="copy(e.responseBody, 'ls' + $index)"><mat-icon>{{ copiedKey() === 'ls' + $index ? 'check' : 'content_copy' }}</mat-icon></button>
+                      <mat-icon>south_west</mat-icon> {{ 'common.response_body' | translate }}
+                      <button mat-icon-button [matTooltip]="'common.copy' | translate" (click)="copy(e.responseBody, 'ls' + $index)"><mat-icon>{{ copiedKey() === 'ls' + $index ? 'check' : 'content_copy' }}</mat-icon></button>
                     </div>
                     <pre>{{ prettyJson(e.responseBody) }}</pre>
                   </div>
@@ -272,7 +272,7 @@
     <mat-card class="qris-card qris-legend" appearance="outlined">
       <div class="qris-card__head">
         <mat-icon class="qris-card__head-icon">menu_book</mat-icon>
-        <span>Panduan Skenario QRIS</span>
+        <span>{{ 'qris.legend_title' | translate }}</span>
       </div>
       <mat-divider />
       <div class="qris-legend__grid">
@@ -280,8 +280,8 @@
           <div class="qris-legend__item">
             <mat-icon class="opt-ico opt-ico--{{ sc.tone }}">{{ sc.icon }}</mat-icon>
             <div>
-              <div class="qris-legend__name">{{ sc.name }}</div>
-              <div class="qris-legend__desc">{{ sc.desc }}</div>
+              <div class="qris-legend__name">{{ scName(sc.name) | translate }}</div>
+              <div class="qris-legend__desc">{{ scDesc(sc.name) | translate }}</div>
             </div>
           </div>
         }

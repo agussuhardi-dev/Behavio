@@ -7,6 +7,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
 import { MatTooltipModule } from '@angular/material/tooltip';
+import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 
 import {
   PartnerView,
@@ -33,11 +34,14 @@ import {
     MatInputModule,
     MatSelectModule,
     MatTooltipModule,
+    TranslatePipe,
   ],
   templateUrl: './webhook-panel.html',
   styleUrl: './webhook-panel.scss',
 })
 export class WebhookPanel {
+  private readonly translate = inject(TranslateService);
+
   readonly api = input.required<ProductApi>();
   readonly simulatorId = input.required<string>();
   readonly partners = input.required<PartnerView[]>();
@@ -82,18 +86,18 @@ export class WebhookPanel {
     const partnerId = this.newPartnerId().trim();
     const url = this.newUrl().trim();
     if (!partnerId || !url) {
-      this.msg.set('Partner dan URL wajib diisi.');
+      this.msg.set(this.translate.instant('webhook.msg.fields_required'));
       return;
     }
     this.api()
       .registerWebhook(this.simulatorId(), partnerId, this.newEvent(), url)
       .subscribe({
         next: s => {
-          this.msg.set(`URL ${s.event} untuk ${s.partnerId} tersimpan.`);
+          this.msg.set(this.translate.instant('webhook.msg.registered', { event: s.event, partner: s.partnerId }));
           this.newUrl.set('');
           this.reload();
         },
-        error: err => this.msg.set(err?.error?.error ?? 'Gagal menyimpan registrasi.'),
+        error: err => this.msg.set(err?.error?.error ?? this.translate.instant('webhook.msg.register_failed')),
       });
   }
 
@@ -103,10 +107,10 @@ export class WebhookPanel {
       .setWebhookSubscriptionStatus(this.simulatorId(), s.id, next)
       .subscribe({
         next: () => {
-          this.msg.set(`Registrasi ${s.event} untuk ${s.partnerId} → ${next}.`);
+          this.msg.set(this.translate.instant('webhook.msg.status_changed', { event: s.event, partner: s.partnerId, status: next }));
           this.reload();
         },
-        error: err => this.msg.set(err?.error?.error ?? 'Gagal mengubah status.'),
+        error: err => this.msg.set(err?.error?.error ?? this.translate.instant('webhook.msg.status_change_failed')),
       });
   }
 
@@ -115,14 +119,25 @@ export class WebhookPanel {
       .deleteWebhookSubscription(this.simulatorId(), s.id)
       .subscribe({
         next: () => {
-          this.msg.set(`Registrasi ${s.event} untuk ${s.partnerId} dihapus.`);
+          this.msg.set(this.translate.instant('webhook.msg.deleted', { event: s.event, partner: s.partnerId }));
           this.reload();
         },
-        error: err => this.msg.set(err?.error?.error ?? 'Gagal menghapus registrasi.'),
+        error: err => this.msg.set(err?.error?.error ?? this.translate.instant('webhook.msg.delete_failed')),
       });
   }
 
   eventLabel(key: string): string {
     return this.events().find(e => e.key === key)?.label ?? key;
+  }
+
+  /** Kunci i18n untuk label event webhook — nilai `key` tetap identifier ke backend. */
+  eventLabelKey(key: string): string {
+    const map: Record<string, string> = {
+      ALL: 'webhook.event_all',
+      'transfer-notify': 'webhook.event_transfer_notify',
+      'va-payment': 'webhook.event_va_payment',
+      'qris-payment': 'webhook.event_qris_payment',
+    };
+    return map[key] ?? key;
   }
 }

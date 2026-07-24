@@ -1,46 +1,44 @@
 <h2 mat-dialog-title>
   @if (data.mode === 'create') {
-    Tambah Profil Bank
+    {{ 'dialog.sim_create_title' | translate }}
   } @else {
-    Duplikat "{{ data.sourceName }}"
+    {{ 'dialog.sim_clone_title' | translate: { name: data.sourceName } }}
   }
 </h2>
 
 <mat-dialog-content class="sfd-content">
   <p class="sfd-hint">
     @if (data.mode === 'create') {
-      Simulator baru = "profil bank" tersendiri: endpoint, 8 skenario, partner &
-      rekening baseline disiapkan otomatis. Anda bisa sesuaikan setelahnya.
+      {{ 'dialog.sim_create_hint' | translate }}
     } @else {
-      Konfigurasi & request/response yang sudah Anda ubah akan ikut disalin.
-      Cocok untuk bank yang mirip tapi sedikit berbeda.
+      {{ 'dialog.sim_clone_hint' | translate }}
     }
   </p>
 
   <mat-form-field appearance="outline" class="sfd-field">
-    <mat-label>Nama simulator</mat-label>
-    <input matInput [value]="name()" (input)="name.set($any($event.target).value)" placeholder="mis. Bank Simulasi Mandiri" />
+    <mat-label>{{ 'dialog.sim_name' | translate }}</mat-label>
+    <input matInput [value]="name()" (input)="name.set($any($event.target).value)" [placeholder]="'dialog.sim_name_placeholder' | translate" />
   </mat-form-field>
 
   <mat-form-field appearance="outline" class="sfd-field">
-    <mat-label>Port</mat-label>
+    <mat-label>{{ 'dialog.port' | translate }}</mat-label>
     <input matInput type="number" [value]="port()" (input)="port.set(+$any($event.target).value)" />
   </mat-form-field>
 
   @if (data.mode === 'create') {
     <mat-form-field appearance="outline" class="sfd-field">
-      <mat-label>Mode signature</mat-label>
+      <mat-label>{{ 'dialog.signature_mode' | translate }}</mat-label>
       <mat-select [value]="signatureMode()" (valueChange)="signatureMode.set($event)">
-        <mat-option value="SIMULATED">Simulated (lewati verifikasi)</mat-option>
-        <mat-option value="STRICT">Strict (verifikasi RSA/HMAC)</mat-option>
+        <mat-option value="SIMULATED">{{ 'dialog.sig_simulated' | translate }}</mat-option>
+        <mat-option value="STRICT">{{ 'dialog.sig_strict' | translate }}</mat-option>
       </mat-select>
     </mat-form-field>
   }
 </mat-dialog-content>
 
 <mat-dialog-actions align="end">
-  <button mat-button mat-dialog-close>Batal</button>
+  <button mat-button mat-dialog-close>{{ 'common.cancel' | translate }}</button>
   <button mat-flat-button color="primary" [disabled]="!name().trim() || !port()" (click)="submit()">
-    {{ data.mode === 'create' ? 'Buat' : 'Duplikat' }}
+    {{ (data.mode === 'create' ? 'dialog.create' : 'common.duplicate') | translate }}
   </button>
 </mat-dialog-actions>

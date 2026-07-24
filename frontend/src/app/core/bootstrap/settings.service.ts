@@ -3,7 +3,7 @@ import { MediaMatcher } from '@angular/cdk/layout';
 import { Injectable, inject, DOCUMENT } from '@angular/core';
 import { TranslateService } from '@ngx-translate/core';
 import { AppDirectionality, LocalStorageService } from '@shared';
-import { enUS, Locale, zhCN, zhTW } from 'date-fns/locale';
+import { enUS, id, Locale } from 'date-fns/locale';
 import { BehaviorSubject } from 'rxjs';
 import { AppSettings, AppTheme, defaults } from '../settings';
 
@@ -31,9 +31,9 @@ export class SettingsService {
 
   options: AppSettings = Object.assign(defaults, this.storedOptions);
 
-  languages = ['en-US', 'zh-CN', 'zh-TW'];
+  languages = ['en-US', 'id-ID'];
 
-  localeMap: Record<string, Locale> = { 'en-US': enUS, 'zh-CN': zhCN, 'zh-TW': zhTW };
+  localeMap: Record<string, Locale> = { 'en-US': enUS, 'id-ID': id };
 
   constructor() {
     this.translate.addLangs(this.languages);
@@ -83,11 +83,24 @@ export class SettingsService {
   }
 
   getTranslateLang() {
-    if (this.options.language === 'auto') {
-      const browserLang = navigator.language;
-      return this.languages.includes(browserLang) ? browserLang : 'en-US';
+    // 'auto' atau bahasa lama yang sudah tak didukung (mis. zh-CN yang tersimpan di
+    // localStorage) → cocokkan ke bahasa browser. Tanpa ini, preferensi lama memicu
+    // request i18n 404 dan aplikasi tampil tanpa terjemahan.
+    if (this.options.language === 'auto' || !this.languages.includes(this.options.language)) {
+      return this.matchLang(navigator.language);
     }
     return this.options.language;
+  }
+
+  /**
+   * Cocokkan bahasa browser ke bahasa yang didukung. `navigator.language` bisa berupa
+   * 'en', 'en-US', 'id', atau 'id-ID' — jadi cocokkan juga lewat awalan 2-huruf.
+   * Kalau bukan EN/ID, jatuh ke Bahasa Indonesia (isi aplikasi Indonesia-first).
+   */
+  private matchLang(lang: string): string {
+    if (this.languages.includes(lang)) return lang;
+    const prefix = (lang || '').split('-')[0].toLowerCase();
+    return this.languages.find(l => l.split('-')[0].toLowerCase() === prefix) ?? 'id-ID';
   }
 
   setLanguage(language?: string) {

@@ -8,25 +8,25 @@
         <span class="epu-row__method">{{ row.method }}</span>
         <span>{{ row.label }}</span>
         @if (isCustom(row)) {
-          <span class="epu-row__tag" matTooltip="Berbeda dari default: {{ row.defaultPath }}">CUSTOM</span>
+          <span class="epu-row__tag" [matTooltip]="'epu.custom_tip' | translate: { path: row.defaultPath }">CUSTOM</span>
         }
         @if (row.headers) {
-          <span class="epu-row__hdr-badge" matTooltip="Punya custom headers">HDR</span>
+          <span class="epu-row__hdr-badge" [matTooltip]="'epu.custom_headers_tip' | translate">HDR</span>
         }
       </div>
       <mat-form-field appearance="outline" class="epu-row__field">
         <input matInput [value]="edits()[row.operation] || row.path" (input)="onEdit(row.operation, $any($event.target).value)" />
       </mat-form-field>
-      <button mat-icon-button matTooltip="Simpan" (click)="save(row)">
+      <button mat-icon-button [matTooltip]="'epu.save_tip' | translate" (click)="save(row)">
         <mat-icon>save</mat-icon>
       </button>
-      <button mat-icon-button matTooltip="Reset ke default" [disabled]="!isCustom(row)" (click)="reset(row)">
+      <button mat-icon-button [matTooltip]="'epu.reset_tip' | translate" [disabled]="!isCustom(row)" (click)="reset(row)">
         <mat-icon>restart_alt</mat-icon>
       </button>
-      <button mat-icon-button matTooltip="Header" (click)="toggleHeaders(row)">
+      <button mat-icon-button [matTooltip]="'epu.header_tip' | translate" (click)="toggleHeaders(row)">
         <mat-icon>list_alt</mat-icon>
       </button>
-      <button mat-icon-button matTooltip="Hapus" color="warn" (click)="deleteEndpoint(row)">
+      <button mat-icon-button [matTooltip]="'epu.delete_tip' | translate" color="warn" (click)="deleteEndpoint(row)">
         <mat-icon>delete</mat-icon>
       </button>
     </div>
@@ -34,15 +34,15 @@
     @if (headersOpen() === row.operation) {
       <div class="epu-headers">
         <div class="epu-headers__head">
-          <mat-icon>list_alt</mat-icon> Header: {{ row.label }}
+          <mat-icon>list_alt</mat-icon> {{ 'epu.header_of' | translate: { label: row.label } }}
         </div>
         @for (idx of headerKeys() | keyvalue; track idx.key) {
           <div class="epu-headers__row">
             <mat-form-field appearance="outline" class="epu-headers__key">
-              <input matInput placeholder="Nama" [value]="headerKeys()[idx.key]" (input)="onHeaderKey(idx.key, $any($event.target).value)" />
+              <input matInput [placeholder]="'epu.name' | translate" [value]="headerKeys()[idx.key]" (input)="onHeaderKey(idx.key, $any($event.target).value)" />
             </mat-form-field>
             <mat-form-field appearance="outline" class="epu-headers__val">
-              <input matInput placeholder="Nilai" [value]="headerVals()[idx.key]" (input)="onHeaderVal(idx.key, $any($event.target).value)" />
+              <input matInput [placeholder]="'epu.value' | translate" [value]="headerVals()[idx.key]" (input)="onHeaderVal(idx.key, $any($event.target).value)" />
             </mat-form-field>
             <button mat-icon-button (click)="removeHeader(idx.key)">
               <mat-icon color="warn">remove_circle</mat-icon>
@@ -51,18 +51,18 @@
         }
         <div class="epu-headers__add">
           <mat-form-field appearance="outline" class="epu-headers__key">
-            <input matInput placeholder="Header baru" [value]="newHdrKey()" (input)="newHdrKey.set($any($event.target).value)" />
+            <input matInput [placeholder]="'epu.new_header' | translate" [value]="newHdrKey()" (input)="newHdrKey.set($any($event.target).value)" />
           </mat-form-field>
           <mat-form-field appearance="outline" class="epu-headers__val">
-            <input matInput placeholder="Nilai" [value]="newHdrVal()" (input)="newHdrVal.set($any($event.target).value)" />
+            <input matInput [placeholder]="'epu.value' | translate" [value]="newHdrVal()" (input)="newHdrVal.set($any($event.target).value)" />
           </mat-form-field>
           <button mat-flat-button color="primary" (click)="addHeader()">
-            <mat-icon>add</mat-icon> Tambah
+            <mat-icon>add</mat-icon> {{ 'epu.add' | translate }}
           </button>
         </div>
         <div class="epu-headers__actions">
           <button mat-flat-button color="primary" (click)="saveHeaders(row)">
-            <mat-icon>save</mat-icon> Simpan Headers
+            <mat-icon>save</mat-icon> {{ 'epu.save_headers' | translate }}
           </button>
         </div>
       </div>
@@ -82,7 +82,7 @@
       <input matInput placeholder="/custom/path" [value]="newPath()" (input)="newPath.set($any($event.target).value)" />
     </mat-form-field>
     <button mat-flat-button color="primary" (click)="addEndpoint()">
-      <mat-icon>add</mat-icon> Tambah
+      <mat-icon>add</mat-icon> {{ 'epu.add' | translate }}
     </button>
   </div>
 </div>

@@ -1,5 +1,6 @@
 import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
 import { MatSnackBar } from '@angular/material/snack-bar';
+import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { ClipboardService } from '../../shared/services/clipboard.service';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
@@ -68,6 +69,7 @@ interface LiveEvent {
     MatMenuModule, MatProgressBarModule, MatSelectModule, MatTooltipModule,
     EndpointUrlPanel,
     WebhookPanel,
+    TranslatePipe,
   ],
   templateUrl: './simulators.html',
   styleUrl: './simulators.scss',
@@ -76,6 +78,7 @@ export class Simulators implements OnInit, OnDestroy {
   /** Produk BANK (schema `bank`, design.md §3.4) — halaman ini tak pernah menyentuh QRIS. */
   private readonly clipboard = inject(ClipboardService);
   private readonly snackBar = inject(MatSnackBar);
+  private readonly translate = inject(TranslateService);
   readonly api = inject(BankApi);
   private readonly openApi = inject(OpenApiService);
   private readonly dialog = inject(MatDialog);
@@ -106,7 +109,7 @@ export class Simulators implements OnInit, OnDestroy {
       key: cfg.operation,
       label: cfg.label,
       method: cfg.method,
-      desc: `Custom endpoint — ${cfg.method} ${cfg.path}`,
+      desc: this.translate.instant('sim.ep.custom_desc', { method: cfg.method, path: cfg.path }),
       operation: cfg.operation,
       curl: `curl -X ${cfg.method} http://${this.host()}:${this.port()}${cfg.path}`,
       curlKey: `cust-${cfg.operation}`,
@@ -157,55 +160,55 @@ export class Simulators implements OnInit, OnDestroy {
 
   private buildMeta(): EpMeta[] { return [
     {
-      key: 'balance-inquiry', label: 'Balance Inquiry', method: 'POST',
-      desc: 'Cek saldo rekening — Info Saldo (service 11). Mengembalikan saldo available, ledger, float, hold.',
+      key: 'balance-inquiry', label: 'sim.ep.balance-inquiry.label', method: 'POST',
+      desc: 'sim.ep.balance-inquiry.desc',
       operation: 'balance-inquiry', curl: this.curlBalance(), curlKey: 'bal',
       scenarioList: SCENARIOS.filter(s => ['Normal', 'Bank Down', 'Timeout'].includes(s.name)),
     },
     {
-      key: 'account-inquiry-internal', label: 'Internal Account Inquiry', method: 'POST',
-      desc: 'Validasi nomor & nama rekening internal sebelum transfer (service 15).',
+      key: 'account-inquiry-internal', label: 'sim.ep.account-inquiry-internal.label', method: 'POST',
+      desc: 'sim.ep.account-inquiry-internal.desc',
       operation: 'account-inquiry-internal', curl: this.curlAccountInquiry(), curlKey: 'aci',
       scenarioList: SCENARIOS.filter(s => ['Normal', 'Bank Down', 'Timeout'].includes(s.name)),
     },
     {
-      key: 'transaction-history-list', label: 'Transaction History List', method: 'POST',
-      desc: 'Mini statement — riwayat transaksi per-partner (service 12). Mendukung paginasi & rentang tanggal.',
+      key: 'transaction-history-list', label: 'sim.ep.transaction-history-list.label', method: 'POST',
+      desc: 'sim.ep.transaction-history-list.desc',
       operation: 'transaction-history-list', curl: this.curlTxHistory(), curlKey: 'txh',
       scenarioList: SCENARIOS.filter(s => ['Normal', 'Bank Down', 'Timeout'].includes(s.name)),
     },
     {
-      key: 'access-token', label: 'Access Token B2B', method: 'POST',
-      desc: 'Terbitkan token Bearer B2B — dipakai semua endpoint lain saat mode STRICT.',
+      key: 'access-token', label: 'sim.ep.access-token.label', method: 'POST',
+      desc: 'sim.ep.access-token.desc',
       operation: 'access-token', curl: this.curlToken(), curlKey: 'tok',
       scenarioList: SCENARIOS.filter(s => ['Normal', 'Bank Down', 'Timeout'].includes(s.name)),
     },
     {
-      key: 'transfer', label: 'Transfer Intrabank', method: 'POST',
-      desc: 'Transfer antar rekening internal (service 17). Saldo benar-benar didebit & dikredit.',
+      key: 'transfer', label: 'sim.ep.transfer.label', method: 'POST',
+      desc: 'sim.ep.transfer.desc',
       operation: 'transfer', curl: this.curlTransfer(), curlKey: 'trf', scenarioList: SCENARIOS,
     },
     {
-      key: 'transfer-interbank', label: 'Transfer Interbank', method: 'POST',
-      desc: 'Transfer ke bank lain (service 18). Hanya debit sumber — rekening tujuan di bank berbeda.',
+      key: 'transfer-interbank', label: 'sim.ep.transfer-interbank.label', method: 'POST',
+      desc: 'sim.ep.transfer-interbank.desc',
       operation: 'transfer-interbank', curl: this.curlInterbank(), curlKey: 'ibi',
       scenarioList: SCENARIOS.filter(s => ['Normal', 'Saldo Kurang', 'Limit', 'Bank Down', 'Timeout'].includes(s.name)),
     },
     {
-      key: 'va-create', label: 'Virtual Account — Create', method: 'POST',
-      desc: 'Buat VA. Tandai dibayar dari panel kanan untuk memicu Payment Notification.',
+      key: 'va-create', label: 'sim.ep.va-create.label', method: 'POST',
+      desc: 'sim.ep.va-create.desc',
       operation: 'va-create', curl: this.curlVaCreate(), curlKey: 'vac',
       scenarioList: SCENARIOS.filter(s => ['Normal', 'Bank Down', 'Timeout'].includes(s.name)),
     },
     {
-      key: 'va-status', label: 'Virtual Account — Inquiry Status', method: 'POST',
-      desc: 'Cek status VA — ACTIVE/PAID/EXPIRED.',
+      key: 'va-status', label: 'sim.ep.va-status.label', method: 'POST',
+      desc: 'sim.ep.va-status.desc',
       operation: 'va-status', curl: this.curlVaStatus(), curlKey: 'vas',
       scenarioList: SCENARIOS.filter(s => ['Normal', 'Bank Down', 'Timeout'].includes(s.name)),
     },
     {
-      key: 'va-delete', label: 'Virtual Account — Delete', method: 'DELETE',
-      desc: 'Hapus VA yang sudah dibuat.',
+      key: 'va-delete', label: 'sim.ep.va-delete.label', method: 'DELETE',
+      desc: 'sim.ep.va-delete.desc',
       operation: 'va-delete', curl: this.curlVaDelete(), curlKey: 'vad',
       scenarioList: SCENARIOS.filter(s => ['Normal', 'Bank Down', 'Timeout'].includes(s.name)),
     },
@@ -217,8 +220,8 @@ export class Simulators implements OnInit, OnDestroy {
     // berfungsi tanpa error apa pun.
     this.clipboard.copy(text).then(ok => {
       if (!ok) {
-        this.snackBar.open('Gagal menyalin — salin manual dari teks di layar.', 'Tutup',
-          { duration: 4000 });
+        this.snackBar.open(this.translate.instant('common.copy_failed'),
+          this.translate.instant('common.close'), { duration: 4000 });
         return;
       }
       this.copiedKey.set(key);
@@ -377,13 +380,13 @@ export class Simulators implements OnInit, OnDestroy {
 
   /** Rapikan JSON agar mudah dibaca saat debugging; biarkan apa adanya bila bukan JSON. */
   prettyJson(text: string): string {
-    if (!text) return '(kosong)';
+    if (!text) return this.translate.instant('common.empty');
     try { return JSON.stringify(JSON.parse(text), null, 2); } catch { return text; }
   }
 
   headerLines(h: Record<string, string>): string {
     const keys = Object.keys(h ?? {});
-    if (keys.length === 0) return '(tidak ada header)';
+    if (keys.length === 0) return this.translate.instant('common.no_header');
     return keys.sort().map(k => `${k}: ${h[k]}`).join('\n');
   }
 
@@ -403,12 +406,12 @@ export class Simulators implements OnInit, OnDestroy {
       this.simMsg.set('');
       this.api.create(r.name, r.port, r.signatureMode).subscribe({
         next: c => {
-          this.simMsg.set(`Profil "${c.name}" berhasil dibuat di port ${c.port}.`);
+          this.simMsg.set(this.translate.instant('sim.msg.created', { name: c.name, port: c.port }));
           this.selectedSimId.set(c.id);
           this.rememberSim(c.id);
           this.reload();
         },
-        error: err => this.simMsg.set(err?.error?.error ?? 'Gagal membuat profil.'),
+        error: err => this.simMsg.set(err?.error?.error ?? this.translate.instant('sim.msg.create_failed')),
       });
     });
   }
@@ -421,12 +424,12 @@ export class Simulators implements OnInit, OnDestroy {
       this.simMsg.set('');
       this.api.clone(s.id, r.name, r.port).subscribe({
         next: c => {
-          this.simMsg.set(`Profil "${c.name}" berhasil diduplikasi di port ${c.port}.`);
+          this.simMsg.set(this.translate.instant('sim.msg.cloned', { name: c.name, port: c.port }));
           this.selectedSimId.set(c.id);
           this.rememberSim(c.id);
           this.reload();
         },
-        error: err => this.simMsg.set(err?.error?.error ?? 'Gagal menduplikasi profil.'),
+        error: err => this.simMsg.set(err?.error?.error ?? this.translate.instant('sim.msg.clone_failed')),
       });
     });
   }
@@ -458,9 +461,9 @@ export class Simulators implements OnInit, OnDestroy {
   removeSelected() {
     const s = this.selectedSim; if (!s) return;
     this.confirmDialog({
-      title: 'Hapus profil?',
-      message: `Profil "${s.name}" (port ${s.port}) akan dihapus permanen beserta partner, rekening, dan VA-nya. Tindakan ini tidak bisa dibatalkan.`,
-      confirmText: 'Hapus',
+      title: this.translate.instant('sim.msg.delete_title'),
+      message: this.translate.instant('sim.msg.delete_body', { name: s.name, port: s.port }),
+      confirmText: this.translate.instant('common.delete'),
       danger: true,
     }).subscribe(ok => {
       if (!ok) return;
@@ -516,6 +519,16 @@ export class Simulators implements OnInit, OnDestroy {
 
   scenarioMeta(list: Scenario[], name: string): Scenario | undefined { return list.find(s => s.name === name); }
 
+  /**
+   * Kunci i18n untuk label/deskripsi scenario. `name` TETAP identifier ke backend
+   * (nilai select & payload) — hanya TAMPILANNYA yang dipetakan ke terjemahan.
+   */
+  scName(name: string): string { return `scenario.bank.${this.scSlug(name)}.name`; }
+  scDesc(name: string): string { return `scenario.bank.${this.scSlug(name)}.desc`; }
+  private scSlug(name: string): string {
+    return (name || '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  }
+
   changeScenario(ep: EpMeta, name: string) {
     if (!ep.operation) return;
     this.activeScenarios.update(m => ({ ...m, [ep.key]: name }));
@@ -533,7 +546,9 @@ export class Simulators implements OnInit, OnDestroy {
       },
       error: err => {
         this.editorLoading.set(false);
-        this.editorError.set(err?.status === 0 ? 'Backend tidak terjangkau.' : `Gagal memuat (${err?.status ?? '?'})`);
+        this.editorError.set(err?.status === 0
+          ? this.translate.instant('sim.msg.backend_unreachable')
+          : this.translate.instant('sim.msg.load_failed', { status: err?.status ?? '?' }));
       },
     });
   }
@@ -546,7 +561,7 @@ export class Simulators implements OnInit, OnDestroy {
     if (!ep.operation) return;
     this.api.saveDefinition(this.selectedSimId(), this.editorScenario(), this.editorText(), ep.operation).subscribe({
       next: () => { this.editorSaved.set(true); this.editorError.set(''); },
-      error: err => this.editorError.set(err?.error?.error ?? 'JSON tidak valid.'),
+      error: err => this.editorError.set(err?.error?.error ?? this.translate.instant('sim.msg.invalid_json')),
     });
   }
 
@@ -577,22 +592,21 @@ export class Simulators implements OnInit, OnDestroy {
   resendVaNotification(va: VirtualAccountView) {
     this.api.resendVirtualAccountNotification(this.selectedSimId(), va.virtualAccountNo).subscribe({
       next: r => this.vaMsg.set(r.note),
-      error: err => this.vaMsg.set(err?.error?.error ?? 'Gagal mengirim ulang notifikasi.'),
+      error: err => this.vaMsg.set(err?.error?.error ?? this.translate.instant('sim.msg.resend_failed')),
     });
   }
 
   payVa(va: VirtualAccountView) {
     this.confirmDialog({
-      title: 'Tandai VA sebagai dibayar?',
-      message: `VA "${va.virtualAccountNo}" akan berstatus PAID sebesar ${va.amount} ${va.currency},`
-        + ' dan Payment Notification dikirim otomatis ke URL yang didaftarkan partner.'
-        + ' Partner tanpa registrasi tidak menerima notifikasi.',
-      confirmText: 'Tandai Dibayar',
+      title: this.translate.instant('sim.msg.pay_va_title'),
+      message: this.translate.instant('sim.msg.pay_va_body',
+        { va: va.virtualAccountNo, amount: va.amount, currency: va.currency }),
+      confirmText: this.translate.instant('common.mark_paid'),
     }).subscribe(ok => {
       if (!ok) return;
       this.api.payVirtualAccount(this.selectedSimId(), va.virtualAccountNo).subscribe({
-        next: r => { this.vaMsg.set(r.webhookSent ? 'Payment Notification terkirim.' : r.note); this.reloadVa(true); },
-        error: () => this.vaMsg.set('Gagal menandai VA dibayar.'),
+        next: r => { this.vaMsg.set(r.webhookSent ? this.translate.instant('sim.msg.notify_sent') : r.note); this.reloadVa(true); },
+        error: () => this.vaMsg.set(this.translate.instant('sim.msg.pay_va_failed')),
       });
     });
   }
@@ -625,18 +639,18 @@ export class Simulators implements OnInit, OnDestroy {
       next: () => {
         this.newPartnerId.set('');
         this.newPartnerSecret.set('');
-        this.bankMsg.set(`Partner "${partnerId}" ditambahkan.`);
+        this.bankMsg.set(this.translate.instant('sim.msg.partner_added', { partner: partnerId }));
         this.reloadBank(true);
       },
-      error: err => this.bankMsg.set(err?.error?.error ?? 'Gagal menambah partner.'),
+      error: err => this.bankMsg.set(err?.error?.error ?? this.translate.instant('sim.msg.partner_add_failed')),
     });
   }
 
   removePartner(p: PartnerView) {
     this.confirmDialog({
-      title: 'Hapus partner?',
-      message: `Partner "${p.partnerId}" akan dihapus beserta seluruh rekening miliknya.`,
-      confirmText: 'Hapus',
+      title: this.translate.instant('sim.msg.partner_delete_title'),
+      message: this.translate.instant('sim.msg.partner_delete_body', { partner: p.partnerId }),
+      confirmText: this.translate.instant('common.delete'),
       danger: true,
     }).subscribe(ok => {
       if (!ok) return;
@@ -654,10 +668,10 @@ export class Simulators implements OnInit, OnDestroy {
           this.newAccNo.set('');
           this.newAccHolder.set('');
           this.newAccBalance.set('0');
-          this.bankMsg.set(`Rekening "${accNo}" ditambahkan.`);
+          this.bankMsg.set(this.translate.instant('sim.msg.account_added', { account: accNo }));
           this.reloadBank(true);
         },
-        error: err => this.bankMsg.set(err?.error?.error ?? 'Gagal menambah rekening.'),
+        error: err => this.bankMsg.set(err?.error?.error ?? this.translate.instant('sim.msg.account_add_failed')),
       });
   }
 
@@ -667,16 +681,17 @@ export class Simulators implements OnInit, OnDestroy {
 
   saveBalance(a: AccountView) {
     this.api.setAccountBalance(this.selectedSimId(), a.id, this.balanceEdits()[a.id]).subscribe({
-      next: () => { this.bankMsg.set(`Saldo ${a.accountNo} diperbarui.`); this.reloadBank(true); },
-      error: err => this.bankMsg.set(err?.error?.error ?? 'Gagal mengubah saldo.'),
+      next: () => { this.bankMsg.set(this.translate.instant('sim.msg.balance_updated', { account: a.accountNo })); this.reloadBank(true); },
+      error: err => this.bankMsg.set(err?.error?.error ?? this.translate.instant('sim.msg.balance_failed')),
     });
   }
 
   removeAccount(a: AccountView) {
     this.confirmDialog({
-      title: 'Hapus rekening?',
-      message: `Rekening "${a.accountNo}" (${a.holderName || 'tanpa nama'}) akan dihapus permanen.`,
-      confirmText: 'Hapus',
+      title: this.translate.instant('sim.msg.account_delete_title'),
+      message: this.translate.instant('sim.msg.account_delete_body',
+        { account: a.accountNo, holder: a.holderName || this.translate.instant('sim.msg.no_name') }),
+      confirmText: this.translate.instant('common.delete'),
       danger: true,
     }).subscribe(ok => {
       if (!ok) return;

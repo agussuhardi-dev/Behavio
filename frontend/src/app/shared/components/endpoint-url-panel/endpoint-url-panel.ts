@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, OnChanges, input, output, signal } from '@angular/core';
+import { Component, OnChanges, inject, input, output, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatFormFieldModule } from '@angular/material/form-field';
@@ -8,6 +8,7 @@ import { MatInputModule } from '@angular/material/input';
 import { MatOptionModule } from '@angular/material/core';
 import { MatSelectModule } from '@angular/material/select';
 import { MatTooltipModule } from '@angular/material/tooltip';
+import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 
 import { EndpointConfig, ProductApi } from '../../../core/api/product-api';
 
@@ -15,11 +16,12 @@ import { EndpointConfig, ProductApi } from '../../../core/api/product-api';
   selector: 'app-endpoint-url-panel',
   standalone: true,
   imports: [CommonModule, FormsModule, MatButtonModule, MatFormFieldModule, MatIconModule, MatInputModule,
-            MatOptionModule, MatSelectModule, MatTooltipModule],
+            MatOptionModule, MatSelectModule, MatTooltipModule, TranslatePipe],
   templateUrl: './endpoint-url-panel.html',
   styleUrl: './endpoint-url-panel.scss',
 })
 export class EndpointUrlPanel implements OnChanges {
+  private readonly translate = inject(TranslateService);
   /**
    * API produk pemilik halaman (BankApi / QrisApi). Sengaja input, bukan inject:
    * komponen ini dipakai ulang di dua halaman dengan DUA produk berbeda, sehingga
@@ -75,24 +77,24 @@ export class EndpointUrlPanel implements OnChanges {
   save(row: EndpointConfig) {
     const newPath = this.edits()[row.operation];
     this.api().updateEndpointPath(this.simulatorId(), row.operation, newPath).subscribe({
-      next: () => { this.msg.set(`URL "${row.label}" diperbarui.`); this.reload(); },
-      error: err => this.msg.set(err?.error?.error ?? 'Gagal menyimpan URL.'),
+      next: () => { this.msg.set(this.translate.instant('epu.msg.url_updated', { label: row.label })); this.reload(); },
+      error: err => this.msg.set(err?.error?.error ?? this.translate.instant('epu.msg.url_save_failed')),
     });
   }
 
   reset(row: EndpointConfig) {
     this.api().updateEndpointPath(this.simulatorId(), row.operation, row.defaultPath).subscribe({
-      next: () => { this.msg.set(`URL "${row.label}" dikembalikan ke default.`); this.reload(); },
-      error: () => this.msg.set('Gagal reset URL.'),
+      next: () => { this.msg.set(this.translate.instant('epu.msg.url_reset', { label: row.label })); this.reload(); },
+      error: () => this.msg.set(this.translate.instant('epu.msg.url_reset_failed')),
     });
   }
 
   deleteEndpoint(row: EndpointConfig) {
     if (!row.operation) return;
-    if (!confirm(`Hapus endpoint "${row.label}"?`)) return;
+    if (!confirm(this.translate.instant('epu.delete_confirm', { label: row.label }))) return;
     this.api().deleteEndpoint(this.simulatorId(), row.operation).subscribe({
-      next: () => { this.msg.set(`Endpoint "${row.label}" dihapus.`); this.reload(); this.endpointAdded.emit(); },
-      error: err => this.msg.set(err?.error?.error ?? 'Gagal menghapus endpoint.'),
+      next: () => { this.msg.set(this.translate.instant('epu.msg.endpoint_deleted', { label: row.label })); this.reload(); this.endpointAdded.emit(); },
+      error: err => this.msg.set(err?.error?.error ?? this.translate.instant('epu.msg.endpoint_delete_failed')),
     });
   }
 
@@ -100,8 +102,8 @@ export class EndpointUrlPanel implements OnChanges {
     const path = this.newPath().trim();
     if (!path) return;
     this.api().addEndpoint(this.simulatorId(), this.newMethod(), path).subscribe({
-      next: () => { this.msg.set('Endpoint ditambahkan.'); this.newPath.set(''); this.reload(); this.endpointAdded.emit(); },
-      error: err => this.msg.set(err?.error?.error ?? 'Gagal menambah endpoint.'),
+      next: () => { this.msg.set(this.translate.instant('epu.msg.endpoint_added')); this.newPath.set(''); this.reload(); this.endpointAdded.emit(); },
+      error: err => this.msg.set(err?.error?.error ?? this.translate.instant('epu.msg.endpoint_add_failed')),
     });
   }
 
@@ -166,11 +168,11 @@ export class EndpointUrlPanel implements OnChanges {
     const json = Object.keys(obj).length > 0 ? JSON.stringify(obj) : '';
     this.api().updateEndpointMeta(this.simulatorId(), row.operation, row.method, json).subscribe({
       next: () => {
-        this.msg.set(`Headers "${row.label}" diperbarui.`);
+        this.msg.set(this.translate.instant('epu.msg.headers_updated', { label: row.label }));
         this.headersOpen.set(null);
         this.reload();
       },
-      error: err => this.msg.set(err?.error?.error ?? 'Gagal menyimpan headers.'),
+      error: err => this.msg.set(err?.error?.error ?? this.translate.instant('epu.msg.headers_save_failed')),
     });
   }
 

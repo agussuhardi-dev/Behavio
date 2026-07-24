@@ -1,5 +1,6 @@
 import { Injectable, inject } from '@angular/core';
 import { MatDialog } from '@angular/material/dialog';
+import { TranslateService } from '@ngx-translate/core';
 import { Observable } from 'rxjs';
 
 import { OpenApiImportResult, ProductApi, Simulator } from '../../core/api/product-api';
@@ -16,6 +17,7 @@ import { OpenApiImportDialog } from '../components/openapi-import-dialog/openapi
 @Injectable({ providedIn: 'root' })
 export class OpenApiService {
   private readonly dialog = inject(MatDialog);
+  private readonly translate = inject(TranslateService);
 
   /** Unduh spec sebagai file. Nama file mengikuti Content-Disposition dari server. */
   export(api: ProductApi, sim: Simulator, format: 'yaml' | 'json' = 'yaml') {
@@ -30,7 +32,11 @@ export class OpenApiService {
         a.click();
         URL.revokeObjectURL(url);
       },
-      error: () => this.alert('Export gagal', 'Spec tidak bisa dibuat. Periksa log server.'),
+      error: () =>
+        this.alert(
+          this.translate.instant('openapi.export_failed_title'),
+          this.translate.instant('openapi.export_failed_body')
+        ),
     });
   }
 
@@ -56,17 +62,17 @@ export class OpenApiService {
   /** Ringkasan hasil impor — termasuk yang gagal, bukan cuma yang berhasil. */
   summarize(result: OpenApiImportResult): string {
     const parts: string[] = [];
-    if (result.overridden) parts.push(`${result.overridden} path operasi di-override`);
-    if (result.created) parts.push(`${result.created} endpoint kustom dibuat`);
-    if (result.scenariosRestored) parts.push(`${result.scenariosRestored} scenario dipulihkan`);
-    if (result.skipped) parts.push(`${result.skipped} dilewati`);
-    const head = parts.length ? parts.join(' · ') : 'Tak ada yang diubah';
+    if (result.overridden) parts.push(this.translate.instant('openapi.sum_overridden', { count: result.overridden }));
+    if (result.created) parts.push(this.translate.instant('openapi.sum_created', { count: result.created }));
+    if (result.scenariosRestored) parts.push(this.translate.instant('openapi.sum_restored', { count: result.scenariosRestored }));
+    if (result.skipped) parts.push(this.translate.instant('openapi.sum_skipped', { count: result.skipped }));
+    const head = parts.length ? parts.join(' · ') : this.translate.instant('openapi.sum_nothing');
     return result.messages.length ? `${head}\n\n${result.messages.join('\n')}` : head;
   }
 
   showResult(result: OpenApiImportResult) {
     return this.alert(
-      result.messages.length ? 'Impor selesai dengan catatan' : 'Impor selesai',
+      this.translate.instant(result.messages.length ? 'openapi.import_done_notes' : 'openapi.import_done'),
       this.summarize(result)
     );
   }
@@ -74,7 +80,7 @@ export class OpenApiService {
   private alert(title: string, message: string) {
     return this.dialog
       .open(ConfirmDialog, {
-        data: { title, message, confirmText: 'Tutup', cancelText: '' },
+        data: { title, message, confirmText: this.translate.instant('common.close'), cancelText: '' },
         width: '32rem',
         autoFocus: false,
       })

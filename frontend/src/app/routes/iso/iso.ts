@@ -15,6 +15,7 @@ import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatSelectModule } from '@angular/material/select';
 import { MatTabsModule } from '@angular/material/tabs';
 import { MatTooltipModule } from '@angular/material/tooltip';
+import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 
 import {
   ISO_SCENARIOS,
@@ -52,6 +53,7 @@ interface LogRow extends IsoLog {
     MatExpansionModule, MatFormFieldModule, MatIconModule, MatInputModule,
     MatMenuModule,
     MatPaginatorModule, MatProgressBarModule, MatSelectModule, MatTabsModule, MatTooltipModule,
+    TranslatePipe,
   ],
   templateUrl: './iso.html',
   styleUrl: './iso.scss',
@@ -61,18 +63,20 @@ export class Iso implements OnInit, OnDestroy {
   private static readonly LAST_TAB_KEY = 'behavio.iso.lastTab';
 
   /**
-   * Urutan tab — disimpan sebagai LABEL, bukan indeks.
+   * Urutan tab — disimpan sebagai ID stabil, bukan label maupun indeks.
    *
-   * <p>Indeks bergeser diam-diam begitu ada tab baru disisipkan, dan pemakai akan
-   * mendarat di tab yang salah tanpa gejala apa pun. Label bertahan; kalau suatu tab
-   * dihapus, labelnya sekadar tak ketemu dan pilihan jatuh ke tab pertama.
+   * <p>Label kini diterjemahkan (EN/ID), jadi tak bisa lagi jadi kunci logika: teks tab
+   * berubah saat bahasa berganti. ID ini tetap; indeks bergeser diam-diam begitu ada tab
+   * baru disisipkan. Kalau suatu tab dihapus, ID-nya sekadar tak ketemu dan pilihan jatuh
+   * ke tab pertama.
    */
-  private static readonly TAB_LABELS = [
-    'Operasi & Scenario', 'Koneksi', 'Profil Spec', 'Uji Trace',
-    'Rekening & Kartu', 'Live View', 'Buat Simulator',
+  private static readonly TAB_IDS = [
+    'operations', 'connection', 'profiles', 'trace',
+    'accounts', 'live', 'create',
   ];
 
   private readonly clipboard = inject(ClipboardService);
+  private readonly translate = inject(TranslateService);
 
   readonly api = inject(IsoApi);
   private readonly dialog = inject(MatDialog);
@@ -168,12 +172,12 @@ export class Iso implements OnInit, OnDestroy {
   readonly logPageSize = signal(20);
   readonly livePending = signal(0);
 
-  // Dicocokkan dengan LABEL tab, bukan indeks: indeks bergeser diam-diam begitu ada tab
+  // Dicocokkan dengan ID tab, bukan indeks: indeks bergeser diam-diam begitu ada tab
   // baru disisipkan, dan pemuatan akan menempel di tab yang salah tanpa gejala apa pun.
   /** Profil bawaan — memuat seluruh operasi Shinhan, dipilih otomatis saat membuat simulator. */
   private static readonly DEFAULT_PROFILE = 'shinhan-default';
-  private static readonly TAB_ACCOUNTS = 'Rekening & Kartu';
-  private static readonly TAB_LIVE = 'Live View';
+  private static readonly TAB_ACCOUNTS = 'accounts';
+  private static readonly TAB_LIVE = 'live';
 
   get selectedSim(): IsoSimulator | undefined {
     return this.sims().find(s => s.id === this.selectedSimId());
@@ -183,13 +187,13 @@ export class Iso implements OnInit, OnDestroy {
   readonly tabIndex = signal(0);
 
   ngOnInit() {
-    const label = this.rememberedTab();
-    const i = Iso.TAB_LABELS.indexOf(label);
+    const id = this.rememberedTab();
+    const i = Iso.TAB_IDS.indexOf(id);
     if (i >= 0) {
       this.tabIndex.set(i);
       // activeTab diisi SEKARANG juga: reload() memakainya untuk memutuskan data apa yang
       // perlu dimuat, dan ia berjalan sebelum mat-tab-group sempat memancarkan event.
-      this.activeTab.set(label);
+      this.activeTab.set(id);
     }
     this.publicHost.load();
     this.reload();
@@ -271,14 +275,15 @@ export class Iso implements OnInit, OnDestroy {
    * SSE begitu simulator dipilih, jadi pesan yang datang saat tab lain terbuka pun tetap
    * tercatat.
    */
-  onTabChange(label: string) {
-    this.activeTab.set(label);
-    this.tabIndex.set(Math.max(0, Iso.TAB_LABELS.indexOf(label)));
-    this.storage.set(Iso.LAST_TAB_KEY, label);
+  onTabChange(index: number) {
+    const id = Iso.TAB_IDS[index] ?? Iso.TAB_IDS[0];
+    this.activeTab.set(id);
+    this.tabIndex.set(Math.max(0, index));
+    this.storage.set(Iso.LAST_TAB_KEY, id);
     if (!this.selectedSimId()) {
       return;
     }
-    if (label === Iso.TAB_ACCOUNTS) {
+    if (id === Iso.TAB_ACCOUNTS) {
       this.loadAccounts();
     }
   }
@@ -305,18 +310,19 @@ export class Iso implements OnInit, OnDestroy {
     const sim = this.selectedSim;
     if (!sim) return [];
     const d = this.profileDetail();
+    const t = (k: string) => this.translate.instant(k);
     const rows: { label: string; value: string; key: string; note?: string }[] = [
       { label: 'Host', value: this.host(), key: 'host' },
-      { label: 'Port TCP', value: String(sim.port), key: 'port' },
-      { label: 'Alamat', value: this.address(), key: 'addr' },
-      { label: 'Profil spec', value: `${sim.specProfileName}:${sim.specProfileVersion}`, key: 'spec' },
+      { label: t('iso.port_tcp'), value: String(sim.port), key: 'port' },
+      { label: t('iso.address'), value: this.address(), key: 'addr' },
+      { label: t('iso.conn_spec'), value: `${sim.specProfileName}:${sim.specProfileVersion}`, key: 'spec' },
     ];
     if (d) {
       rows.push(
-        { label: 'Panjang header', value: `${d.transport.lengthPrefixBytes} byte`, key: 'lenb',
-          note: 'penanda panjang di depan tiap pesan' },
-        { label: 'Encoding header', value: d.transport.lengthPrefixEncoding, key: 'lene' },
-        { label: 'Charset field', value: d.transport.charset, key: 'cs' },
+        { label: t('iso.conn_len_header'), value: `${d.transport.lengthPrefixBytes} byte`, key: 'lenb',
+          note: t('iso.conn_len_note') },
+        { label: t('iso.conn_enc_header'), value: d.transport.lengthPrefixEncoding, key: 'lene' },
+        { label: t('iso.conn_charset'), value: d.transport.charset, key: 'cs' },
         { label: 'Bitmap', value: d.transport.bitmap, key: 'bm' }
       );
     }
@@ -354,7 +360,7 @@ export class Iso implements OnInit, OnDestroy {
     // berfungsi tanpa error apa pun.
     this.clipboard.copy(text).then(ok => {
       if (!ok) {
-        this.err.set('Gagal menyalin — salin manual dari teks di layar.');
+        this.err.set(this.translate.instant('iso.msg.copy_failed'));
         return;
       }
       this.copiedKey.set(key);
@@ -412,7 +418,6 @@ export class Iso implements OnInit, OnDestroy {
     this.loadLogs();
     // Stream mengikuti simulator yang sedang dipilih, bukan yang lama.
     this.connectLive();
-    this.onTabChange(this.activeTab());
   }
 
   /** Operasi datang dari PROFIL SPEC simulator, bukan daftar tetap di frontend. */
@@ -422,7 +427,12 @@ export class Iso implements OnInit, OnDestroy {
     this.api.profileDetail(sim.specProfileName, sim.specProfileVersion).subscribe({
       next: d => {
         this.profileDetail.set(d);
-        const ops = d.operations.map(o => o.name);
+        // Satu operasi bisa punya BEBERAPA rute dengan nama sama — mis. `reversal`
+        // menangani MTI 0400 dan 0420 (dua rute, satu operasi logis). Scenario di backend
+        // di-key per NAMA operasi, jadi keduanya berbagi satu set scenario. Tanpa dedup di
+        // sini, tab Operasi & Scenario me-render panel (beserta dropdown scenario) ganda
+        // untuk nama yang sama — persis gejala "scenario dobel" pada profil turunan.
+        const ops = [...new Set(d.operations.map(o => o.name))];
         this.operations.set(ops);
         this.operationRoutes.set(d.operations);
         ops.forEach(op => this.loadScenario(op));
@@ -462,7 +472,7 @@ export class Iso implements OnInit, OnDestroy {
    */
   addAccount() {
     if (!this.accNo().trim()) {
-      this.err.set('Nomor rekening wajib diisi.');
+      this.err.set(this.translate.instant('iso.msg.acc_no_required'));
       return;
     }
     this.api
@@ -470,7 +480,7 @@ export class Iso implements OnInit, OnDestroy {
         this.accBalance().trim() || '0', this.accPhone().trim())
       .subscribe({
         next: () => {
-          this.msg.set(`Rekening ${this.accNo()} dibuat.`);
+          this.msg.set(this.translate.instant('iso.msg.acc_created', { account: this.accNo() }));
           this.err.set('');
           // Nomor rekening diisikan ke form kartu: langkah berikutnya hampir selalu
           // membuatkan kartunya, dan mengetik ulang nomor itu mudah salah.
@@ -480,37 +490,39 @@ export class Iso implements OnInit, OnDestroy {
           this.accPhone.set('');
           this.loadAccounts();
         },
-        error: e => this.err.set(e?.error?.error ?? 'Gagal membuat rekening.'),
+        error: e => this.err.set(e?.error?.error ?? this.translate.instant('iso.msg.acc_create_failed')),
       });
   }
 
   addCard() {
     if (!this.cardPan().trim() || !this.cardAccNo().trim()) {
-      this.err.set('PAN dan nomor rekening wajib diisi.');
+      this.err.set(this.translate.instant('iso.msg.card_fields_required'));
       return;
     }
     this.api.addCard(this.selectedSimId(), this.cardPan().trim(), this.cardAccNo().trim()).subscribe({
       next: () => {
-        this.msg.set(`Kartu ${this.cardPan()} ditautkan ke rekening ${this.cardAccNo()}.`);
+        this.msg.set(this.translate.instant('iso.msg.card_created', { pan: this.cardPan(), account: this.cardAccNo() }));
         this.err.set('');
         this.cardPan.set('');
         this.loadAccounts();
       },
-      error: e => this.err.set(e?.error?.error ?? 'Gagal membuat kartu.'),
+      error: e => this.err.set(e?.error?.error ?? this.translate.instant('iso.msg.card_create_failed')),
     });
   }
 
   removeAccount(a: IsoAccount) {
-    this.confirm('Hapus rekening?', `Rekening ${a.accountNo} (${a.holderName}) akan dihapus.`,
+    this.confirm(this.translate.instant('iso.msg.delete_account_title'),
+      this.translate.instant('iso.msg.delete_account_body', { account: a.accountNo, holder: a.holderName }),
       () => this.api.deleteAccount(this.selectedSimId(), a.accountNo).subscribe({
-        next: () => { this.msg.set('Rekening dihapus.'); this.loadAccounts(); },
+        next: () => { this.msg.set(this.translate.instant('iso.msg.account_deleted')); this.loadAccounts(); },
       }));
   }
 
   removeCard(c: IsoCard) {
-    this.confirm('Hapus kartu?', `Kartu ${c.pan} akan dihapus.`,
+    this.confirm(this.translate.instant('iso.msg.delete_card_title'),
+      this.translate.instant('iso.msg.delete_card_body', { pan: c.pan }),
       () => this.api.deleteCard(this.selectedSimId(), c.pan).subscribe({
-        next: () => { this.msg.set('Kartu dihapus.'); this.loadAccounts(); },
+        next: () => { this.msg.set(this.translate.instant('iso.msg.card_deleted')); this.loadAccounts(); },
       }));
   }
 
@@ -560,17 +572,16 @@ export class Iso implements OnInit, OnDestroy {
     if (!sim) {
       return;
     }
-    this.confirm('Hapus riwayat pesan?',
-      `Seluruh riwayat pesan ${sim.name} akan dihapus dari database dan tak bisa dikembalikan.`
-      + ' Rekening, kartu, dan profil tidak tersentuh.',
+    this.confirm(this.translate.instant('iso.msg.clear_history_title'),
+      this.translate.instant('iso.msg.clear_history_body', { name: sim.name }),
       () => this.api.clearLogs(sim.id).subscribe({
         next: r => {
-          this.msg.set(`${r.deleted} baris riwayat dihapus.`);
+          this.msg.set(this.translate.instant('iso.msg.history_cleared', { deleted: r.deleted }));
           this.err.set('');
           this.logPageIndex.set(0);
           this.loadLogs();
         },
-        error: e => this.err.set(e?.error?.error ?? 'Gagal menghapus riwayat.'),
+        error: e => this.err.set(e?.error?.error ?? this.translate.instant('iso.msg.history_clear_failed')),
       }));
   }
 
@@ -579,33 +590,33 @@ export class Iso implements OnInit, OnDestroy {
   createSim() {
     const [name, version] = this.newProfile().split(':');
     if (!name) {
-      this.err.set('Pilih profil spec dulu.');
+      this.err.set(this.translate.instant('iso.msg.pick_profile_first'));
       return;
     }
     this.api.create(this.newName(), Number(this.newPort()), name, version).subscribe({
       next: s => {
-        this.msg.set(`Simulator "${s.name}" dibuat di TCP :${s.port}.`);
+        this.msg.set(this.translate.instant('iso.msg.sim_created', { name: s.name, port: s.port }));
         this.err.set('');
         this.reload();
       },
-      error: e => this.err.set(e?.error?.error ?? 'Gagal membuat simulator.'),
+      error: e => this.err.set(e?.error?.error ?? this.translate.instant('iso.msg.sim_create_failed')),
     });
   }
 
   start() {
     this.api.start(this.selectedSimId()).subscribe({
       next: s => {
-        this.msg.set(`Mendengarkan di TCP :${s.port}.`);
+        this.msg.set(this.translate.instant('iso.msg.listening', { port: s.port }));
         this.reload();
       },
-      error: e => this.err.set(e?.error?.error ?? 'Gagal start.'),
+      error: e => this.err.set(e?.error?.error ?? this.translate.instant('iso.msg.start_failed')),
     });
   }
 
   stop() {
     this.api.stop(this.selectedSimId()).subscribe({
       next: () => {
-        this.msg.set('Simulator dihentikan.');
+        this.msg.set(this.translate.instant('iso.msg.sim_stopped'));
         this.reload();
       },
     });
@@ -614,11 +625,11 @@ export class Iso implements OnInit, OnDestroy {
   removeSim() {
     const sim = this.selectedSim;
     if (!sim) return;
-    this.confirm('Hapus simulator?',
-      `"${sim.name}" beserta rekening, kartu, dan lognya akan dihapus permanen.`,
+    this.confirm(this.translate.instant('iso.msg.delete_sim_title'),
+      this.translate.instant('iso.msg.delete_sim_body', { name: sim.name }),
       () => this.api.remove(sim.id).subscribe({
         next: () => {
-          this.msg.set('Simulator dihapus.');
+          this.msg.set(this.translate.instant('iso.msg.sim_deleted'));
           this.selectedSimId.set('');
           this.reload();
         },
@@ -628,10 +639,10 @@ export class Iso implements OnInit, OnDestroy {
   seedDemo() {
     this.api.seedDemo(this.selectedSimId()).subscribe({
       next: () => {
-        this.msg.set('Data contoh ditambahkan (2 rekening + 1 kartu).');
+        this.msg.set(this.translate.instant('iso.msg.seed_done'));
         this.loadAccounts();
       },
-      error: e => this.err.set(e?.error?.error ?? 'Gagal menambah data contoh.'),
+      error: e => this.err.set(e?.error?.error ?? this.translate.instant('iso.msg.seed_failed')),
     });
   }
 
@@ -639,12 +650,12 @@ export class Iso implements OnInit, OnDestroy {
 
   upload() {
     const done = (id: string) => {
-      this.msg.set(`Profil "${this.upName()}" v${this.upVersion()} tersimpan.`);
+      this.msg.set(this.translate.instant('iso.msg.profile_saved', { name: this.upName(), version: this.upVersion() }));
       this.err.set('');
       this.upContent.set('');
       this.reload();
     };
-    const fail = (e: any) => this.err.set(e?.error?.error ?? 'Unggahan ditolak.');
+    const fail = (e: any) => this.err.set(e?.error?.error ?? this.translate.instant('iso.msg.upload_rejected'));
 
     if (this.upFormat() === 'JSON') {
       this.api.uploadJson(this.upContent()).subscribe({ next: r => done(r.id), error: fail });
@@ -659,7 +670,7 @@ export class Iso implements OnInit, OnDestroy {
   showProfile(p: SpecProfileSummary) {
     this.api.profileDetail(p.name, p.version).subscribe({
       next: d => this.profileDetail.set(d),
-      error: e => this.err.set(e?.error?.error ?? 'Gagal memuat profil.'),
+      error: e => this.err.set(e?.error?.error ?? this.translate.instant('iso.msg.profile_load_failed')),
     });
   }
 
@@ -674,17 +685,16 @@ export class Iso implements OnInit, OnDestroy {
       return;
     }
     const jalan = sim.status === 'RUNNING';
-    this.confirm('Ganti profil spec?',
-      `${sim.name} akan memakai ${p.name} v${p.version}.` +
-      (jalan ? ' Simulator sedang berjalan, jadi akan di-start ulang — koneksi TCP yang'
-             + ' terbuka akan terputus.' : ''),
+    this.confirm(this.translate.instant('iso.msg.switch_title'),
+      this.translate.instant('iso.msg.switch_body', { name: sim.name, profile: p.name, version: p.version }) +
+      (jalan ? this.translate.instant('iso.msg.switch_body_running') : ''),
       () => this.api.switchProfile(sim.id, p.name, p.version).subscribe({
         next: () => {
-          this.msg.set(`${sim.name} kini memakai ${p.name} v${p.version}.`);
+          this.msg.set(this.translate.instant('iso.msg.switch_done', { name: sim.name, profile: p.name, version: p.version }));
           this.err.set('');
           this.reload();
         },
-        error: e => this.err.set(e?.error?.error ?? 'Gagal mengganti profil.'),
+        error: e => this.err.set(e?.error?.error ?? this.translate.instant('iso.msg.switch_failed')),
       }));
   }
 
@@ -693,18 +703,18 @@ export class Iso implements OnInit, OnDestroy {
    * pemakainya — pesan itu ditampilkan apa adanya, karena justru itu yang perlu ditindak.
    */
   removeProfile(p: SpecProfileSummary) {
-    this.confirm('Hapus profil spec?',
-      `Profil ${p.name} v${p.version} akan dihapus. Simulator yang menunjuknya tak akan bisa start.`,
+    this.confirm(this.translate.instant('iso.msg.delete_profile_title'),
+      this.translate.instant('iso.msg.delete_profile_body', { profile: p.name, version: p.version }),
       () => this.api.deleteProfile(p.name, p.version).subscribe({
         next: () => {
-          this.msg.set(`Profil ${p.name} v${p.version} dihapus.`);
+          this.msg.set(this.translate.instant('iso.msg.profile_deleted', { profile: p.name, version: p.version }));
           this.err.set('');
           if (this.profileDetail()) {
             this.profileDetail.set(null);
           }
           this.reload();
         },
-        error: e => this.err.set(e?.error?.error ?? 'Gagal menghapus profil.'),
+        error: e => this.err.set(e?.error?.error ?? this.translate.instant('iso.msg.profile_delete_failed')),
       }));
   }
 
@@ -718,12 +728,12 @@ export class Iso implements OnInit, OnDestroy {
     const name = sim ? sim.specProfileName : p[0]?.name;
     const version = sim ? sim.specProfileVersion : p[0]?.version;
     if (!name) {
-      this.err.set('Belum ada profil spec.');
+      this.err.set(this.translate.instant('iso.msg.no_spec_profile'));
       return;
     }
     this.api.testTrace(name, version, this.traceHex()).subscribe({
       next: r => this.traceResult.set(r),
-      error: e => this.err.set(e?.error?.error ?? 'Uji trace gagal.'),
+      error: e => this.err.set(e?.error?.error ?? this.translate.instant('iso.msg.trace_failed')),
     });
   }
 
@@ -741,13 +751,23 @@ export class Iso implements OnInit, OnDestroy {
     return this.scenarioNames()[operation] ?? [];
   }
 
+  /**
+   * Kunci i18n untuk label/deskripsi scenario. `name` TETAP identifier ke backend
+   * (nilai select & payload) — hanya TAMPILANNYA yang dipetakan ke terjemahan.
+   */
+  scName(name: string): string { return `scenario.iso.${this.scSlug(name)}.name`; }
+  scDesc(name: string): string { return `scenario.iso.${this.scSlug(name)}.desc`; }
+  private scSlug(name: string): string {
+    return (name || '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  }
+
   changeScenario(operation: string, name: string) {
     this.api.setActiveScenario(this.selectedSimId(), operation, name).subscribe({
       next: () => {
         this.activeScenarios.update(m => ({ ...m, [operation]: name }));
-        this.msg.set(`Scenario "${name}" aktif untuk ${operation}.`);
+        this.msg.set(this.translate.instant('iso.msg.scenario_active', { scenario: name, operation }));
       },
-      error: e => this.err.set(e?.error?.error ?? 'Gagal mengubah scenario.'),
+      error: e => this.err.set(e?.error?.error ?? this.translate.instant('iso.msg.scenario_change_failed')),
     });
   }
 
@@ -762,7 +782,7 @@ export class Iso implements OnInit, OnDestroy {
         this.editorText.set(this.pretty(json));
         this.editingOp.set(operation);
       },
-      error: e => this.err.set(e?.error?.error ?? 'Gagal memuat definisi.'),
+      error: e => this.err.set(e?.error?.error ?? this.translate.instant('iso.msg.def_load_failed')),
     });
   }
 
@@ -772,9 +792,9 @@ export class Iso implements OnInit, OnDestroy {
       .subscribe({
         next: () => {
           this.editorSaved.set(true);
-          this.msg.set('Definisi tersimpan — pesan berikutnya memakai ini.');
+          this.msg.set(this.translate.instant('iso.msg.def_saved'));
         },
-        error: e => this.err.set(e?.error?.error ?? 'Definisi ditolak.'),
+        error: e => this.err.set(e?.error?.error ?? this.translate.instant('iso.msg.def_rejected')),
       });
   }
 
@@ -783,7 +803,7 @@ export class Iso implements OnInit, OnDestroy {
       .resetScenarioDefinition(this.selectedSimId(), operation, this.activeFor(operation))
       .subscribe({
         next: () => {
-          this.msg.set('Dikembalikan ke bawaan.');
+          this.msg.set(this.translate.instant('iso.msg.reset_default_done'));
           this.openEditor(operation);
           this.editingOp.set(operation);
         },
@@ -844,7 +864,7 @@ export class Iso implements OnInit, OnDestroy {
 
   private confirm(title: string, message: string, onOk: () => void) {
     this.dialog
-      .open(ConfirmDialog, { data: { title, message, confirmText: 'Hapus', danger: true } })
+      .open(ConfirmDialog, { data: { title, message, confirmText: this.translate.instant('common.delete'), danger: true } })
       .afterClosed()
       .subscribe(ok => {
         if (ok) onOk();

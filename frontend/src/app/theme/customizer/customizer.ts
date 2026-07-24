@@ -8,6 +8,7 @@ import { MatRadioModule } from '@angular/material/radio';
 import { MatSlideToggleModule } from '@angular/material/slide-toggle';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MtxDrawer, MtxDrawerModule, MtxDrawerRef } from '@ng-matero/extensions/drawer';
+import { TranslatePipe } from '@ngx-translate/core';
 import { Subscription } from 'rxjs';
 
 import { AppSettings, SettingsService } from '@core';
@@ -30,6 +31,7 @@ import { DisableControl } from '@shared';
     MatTooltipModule,
     MtxDrawerModule,
     DisableControl,
+    TranslatePipe,
   ],
 })
 export class Customizer {

@@ -1,6 +1,6 @@
 <h2 mat-dialog-title class="oai__title">
   <mat-icon>upload_file</mat-icon>
-  Impor OpenAPI — {{ data.simulatorName }}
+  {{ 'openapi.title' | translate: { name: data.simulatorName } }}
 </h2>
 
 <mat-dialog-content class="oai__content">
@@ -11,7 +11,7 @@
   <div class="oai__pick">
     <button mat-stroked-button (click)="file.click()">
       <mat-icon>folder_open</mat-icon>
-      Pilih file (.yaml / .json)
+      {{ 'openapi.pick_file' | translate }}
     </button>
     <input #file type="file" accept=".yaml,.yml,.json,application/json" hidden (change)="pick($event)" />
     @if (fileName()) {
@@ -28,21 +28,18 @@
 
   @if (rows().length) {
     @if (sourceTitle()) {
-      <p class="oai__source">Sumber: <b>{{ sourceTitle() }}</b> · {{ rows().length }} path ditemukan</p>
+      <p class="oai__source" [innerHTML]="'openapi.source' | translate: { title: sourceTitle(), count: rows().length }"></p>
     }
 
-    <p class="oai__hint">
-      Path tiap bank berbeda, jadi sistem hanya <b>menyarankan</b> operasi — periksa dulu
-      sebelum diterapkan. Belum ada yang berubah sampai Anda menekan Terapkan.
-    </p>
+    <p class="oai__hint" [innerHTML]="'openapi.hint' | translate"></p>
 
     <table class="oai__table">
       <thead>
         <tr>
-          <th>Path di spec</th>
-          <th>Aksi</th>
-          <th>Operasi</th>
-          <th>Perilaku</th>
+          <th>{{ 'openapi.col_spec_path' | translate }}</th>
+          <th>{{ 'openapi.col_action' | translate }}</th>
+          <th>{{ 'openapi.col_operation' | translate }}</th>
+          <th>{{ 'openapi.col_behavior' | translate }}</th>
         </tr>
       </thead>
       <tbody>
@@ -61,9 +58,9 @@
             <td>
               <mat-select class="oai__select" [value]="row.action"
                           (valueChange)="setAction(row, $event)">
-                <mat-option value="CATALOG">Petakan ke operasi</mat-option>
-                <mat-option value="CUSTOM">Buat endpoint kustom</mat-option>
-                <mat-option value="SKIP">Lewati</mat-option>
+                <mat-option value="CATALOG">{{ 'openapi.action_catalog' | translate }}</mat-option>
+                <mat-option value="CUSTOM">{{ 'openapi.action_custom' | translate }}</mat-option>
+                <mat-option value="SKIP">{{ 'openapi.action_skip' | translate }}</mat-option>
               </mat-select>
             </td>
             <td>
@@ -77,7 +74,7 @@
                 </mat-select>
                 @if (isDuplicate(row)) {
                   <span class="oai__dup">
-                    <mat-icon>warning</mat-icon> operasi dipakai baris lain
+                    <mat-icon>warning</mat-icon> {{ 'openapi.duplicate_op' | translate }}
                   </span>
                 }
               } @else {
@@ -87,10 +84,10 @@
             <td>
               @if (row.hasBehavior) {
                 <span class="oai__behavior" [matTooltip]="row.scenarioNames.join(', ')">
-                  <mat-icon>bolt</mat-icon> {{ row.scenarioNames.length }} scenario
+                  <mat-icon>bolt</mat-icon> {{ 'openapi.scenario_count' | translate: { count: row.scenarioNames.length } }}
                 </span>
               } @else {
-                <span class="oai__muted" matTooltip="Spec ini tak membawa x-behavio">bentuk saja</span>
+                <span class="oai__muted" [matTooltip]="'openapi.shape_only_tip' | translate">{{ 'openapi.shape_only' | translate }}</span>
               }
             </td>
           </tr>
@@ -104,13 +101,13 @@
   @if (hasDuplicateOperation()) {
     <span class="oai__dup oai__dup--foot">
       <mat-icon>warning</mat-icon>
-      Satu operasi dipetakan lebih dari sekali — yang terakhir akan menang.
+      {{ 'openapi.duplicate_foot' | translate }}
     </span>
   }
-  <button mat-stroked-button mat-dialog-close>Batal</button>
+  <button mat-stroked-button mat-dialog-close>{{ 'common.cancel' | translate }}</button>
   <button mat-flat-button color="primary"
           [disabled]="busy() || !applyCount()"
           (click)="apply()">
-    Terapkan ({{ applyCount() }})
+    {{ 'openapi.apply' | translate: { count: applyCount() } }}
   </button>
 </mat-dialog-actions>

@@ -6,6 +6,7 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatIconModule } from '@angular/material/icon';
 import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
+import { TranslatePipe } from '@ngx-translate/core';
 
 export interface SimulatorFormData {
   mode: 'create' | 'clone';
@@ -31,6 +32,7 @@ export interface SimulatorFormResult {
     MatIconModule,
     MatInputModule,
     MatSelectModule,
+    TranslatePipe,
   ],
   templateUrl: './simulator-form-dialog.html',
   styleUrl: './simulator-form-dialog.scss',

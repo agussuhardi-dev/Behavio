@@ -1,21 +1,18 @@
 <mat-card class="whp" appearance="outlined">
   <div class="whp__head">
     <mat-icon>webhook</mat-icon>
-    <span class="whp__title">URL Notifikasi (Webhook)</span>
+    <span class="whp__title">{{ 'webhook.title' | translate }}</span>
     <span class="whp__spacer"></span>
-    <button mat-icon-button matTooltip="Muat ulang" (click)="reload()">
+    <button mat-icon-button [matTooltip]="'common.reload' | translate" (click)="reload()">
       <mat-icon>refresh</mat-icon>
     </button>
   </div>
 
-  <p class="whp__hint">
-    Notifikasi dikirim ke URL yang <b>didaftarkan partner</b> — seperti ASPI, bukan lewat
-    header per-request. Partner tanpa registrasi tidak menerima notifikasi.
-  </p>
+  <p class="whp__hint" [innerHTML]="'webhook.hint' | translate"></p>
 
   <div class="whp__form">
     <mat-form-field appearance="outline" class="whp__f">
-      <mat-label>Partner</mat-label>
+      <mat-label>{{ 'webhook.partner' | translate }}</mat-label>
       <mat-select [value]="newPartnerId()" (valueChange)="newPartnerId.set($event)">
         @for (p of partners(); track p.id) {
           <mat-option [value]="p.partnerId">{{ p.partnerId }}</mat-option>
@@ -24,26 +21,26 @@
     </mat-form-field>
 
     <mat-form-field appearance="outline" class="whp__f">
-      <mat-label>Event</mat-label>
+      <mat-label>{{ 'webhook.event' | translate }}</mat-label>
       <mat-select [value]="newEvent()" (valueChange)="newEvent.set($event)">
         @for (e of events(); track e.key) {
-          <mat-option [value]="e.key">{{ e.label }}</mat-option>
+          <mat-option [value]="e.key">{{ eventLabelKey(e.key) | translate }}</mat-option>
         }
       </mat-select>
     </mat-form-field>
 
     <mat-form-field appearance="outline" class="whp__f whp__f--url">
-      <mat-label>URL notifikasi</mat-label>
+      <mat-label>{{ 'webhook.url' | translate }}</mat-label>
       <input matInput [value]="newUrl()" (input)="newUrl.set($any($event.target).value)"
              placeholder="https://app-anda/notif" />
-      <button matSuffix mat-icon-button matTooltip="Pakai sink bawaan untuk tes"
+      <button matSuffix mat-icon-button [matTooltip]="'webhook.use_sink_tip' | translate"
               (click)="useSink()">
         <mat-icon>bug_report</mat-icon>
       </button>
     </mat-form-field>
 
     <button mat-flat-button color="primary" (click)="register()">
-      <mat-icon>add</mat-icon> Daftarkan
+      <mat-icon>add</mat-icon> {{ 'webhook.register' | translate }}
     </button>
   </div>
 
@@ -54,15 +51,15 @@
   @if (subscriptions().length === 0) {
     <p class="whp__empty">
       <mat-icon>info</mat-icon>
-      Belum ada URL terdaftar — notifikasi tidak akan terkirim ke mana pun.
+      {{ 'webhook.empty' | translate }}
     </p>
   } @else {
     <table class="whp__table">
       <thead>
         <tr>
-          <th>Partner</th>
-          <th>Event</th>
-          <th>URL</th>
+          <th>{{ 'webhook.partner' | translate }}</th>
+          <th>{{ 'webhook.event' | translate }}</th>
+          <th>{{ 'webhook.col_url' | translate }}</th>
           <th></th>
         </tr>
       </thead>
@@ -74,11 +71,11 @@
             <td class="whp__url"><code>{{ s.url }}</code></td>
             <td class="whp__actions">
               <button mat-icon-button
-                      [matTooltip]="s.status === 'ACTIVE' ? 'Nonaktifkan' : 'Aktifkan'"
+                      [matTooltip]="(s.status === 'ACTIVE' ? 'webhook.deactivate' : 'webhook.activate') | translate"
                       (click)="toggle(s)">
                 <mat-icon>{{ s.status === 'ACTIVE' ? 'toggle_on' : 'toggle_off' }}</mat-icon>
               </button>
-              <button mat-icon-button matTooltip="Hapus" (click)="remove(s)">
+              <button mat-icon-button [matTooltip]="'webhook.delete_tip' | translate" (click)="remove(s)">
                 <mat-icon color="warn">delete</mat-icon>
               </button>
             </td>

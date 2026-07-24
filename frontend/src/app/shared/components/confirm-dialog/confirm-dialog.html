@@ -8,8 +8,8 @@
 </mat-dialog-content>
 
 <mat-dialog-actions align="end">
-  <button mat-stroked-button [mat-dialog-close]="false">{{ data.cancelText || 'Batal' }}</button>
+  <button mat-stroked-button [mat-dialog-close]="false">{{ data.cancelText || ('common.cancel' | translate) }}</button>
   <button mat-flat-button [color]="data.danger ? 'warn' : 'primary'" [mat-dialog-close]="true" cdkFocusInitial>
-    {{ data.confirmText || 'Ya' }}
+    {{ data.confirmText || ('common.yes' | translate) }}
   </button>
 </mat-dialog-actions>

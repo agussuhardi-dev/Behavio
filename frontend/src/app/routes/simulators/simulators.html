@@ -1,8 +1,8 @@
 <div class="sim-page">
   <div class="sim-hero">
     <div class="sim-hero__text">
-      <h1><mat-icon class="sim-hero__logo">account_balance</mat-icon> Bank Simulator</h1>
-      <p>Simulasikan endpoint bank SNAP BI — cek saldo, transfer, virtual account, dan interbank transfer. Response tiap endpoint dapat di-custom dari dashboard.</p>
+      <h1><mat-icon class="sim-hero__logo">account_balance</mat-icon> {{ 'sim.hero_title' | translate }}</h1>
+      <p [innerHTML]="'sim.hero_desc' | translate"></p>
     </div>
   </div>
 
@@ -12,9 +12,9 @@
     <mat-card class="sim-empty" appearance="outlined">
       <mat-card-content class="sim-empty__inner">
         <mat-icon class="sim-empty__icon">info</mat-icon>
-        <h3>Belum ada profil bank</h3>
-        <p>Buat profil pertama untuk mulai mensimulasikan API bank SNAP BI.</p>
-        <button mat-flat-button color="primary" (click)="openCreate()"><mat-icon>add</mat-icon> Buat Profil</button>
+        <h3>{{ 'sim.empty_title' | translate }}</h3>
+        <p>{{ 'sim.empty_desc' | translate }}</p>
+        <button mat-flat-button color="primary" (click)="openCreate()"><mat-icon>add</mat-icon> {{ 'sim.create_profile' | translate }}</button>
       </mat-card-content>
     </mat-card>
   }
@@ -24,7 +24,7 @@
     <mat-card class="sim-bar" appearance="outlined">
       <div class="sim-bar__row">
         <mat-form-field appearance="outline" class="sim-bar__field">
-          <mat-label>Profil Bank</mat-label>
+          <mat-label>{{ 'sim.profile_bank' | translate }}</mat-label>
           <mat-select [value]="selectedSimId()" (valueChange)="onSelectSim($event)">
             @for (s of sims(); track s.id) {
               <mat-option [value]="s.id">{{ s.name }} — :{{ s.port }}</mat-option>
@@ -35,31 +35,31 @@
         @if (selectedSim; as s) {
           <span class="sim-chip" [class.sim-chip--on]="s.status === 'RUNNING'">
             <span class="sim-chip__dot"></span>
-            {{ s.status === 'RUNNING' ? 'Menyala' : 'Mati' }}
+            {{ (s.status === 'RUNNING' ? 'common.on' : 'common.off') | translate }}
           </span>
           <button mat-stroked-button [color]="s.status === 'RUNNING' ? 'warn' : 'primary'" (click)="toggleRunning()">
             <mat-icon>{{ s.status === 'RUNNING' ? 'stop' : 'play_arrow' }}</mat-icon>
-            {{ s.status === 'RUNNING' ? 'Matikan' : 'Nyalakan' }}
+            {{ (s.status === 'RUNNING' ? 'common.turn_off' : 'common.turn_on') | translate }}
           </button>
         }
 
         <span class="sim-bar__spacer"></span>
-        <button mat-flat-button color="primary" (click)="openCreate()"><mat-icon>add</mat-icon> Tambah</button>
-        <button mat-icon-button [matMenuTriggerFor]="profileMenu" matTooltip="Lainnya" [disabled]="!selectedSim">
+        <button mat-flat-button color="primary" (click)="openCreate()"><mat-icon>add</mat-icon> {{ 'common.add' | translate }}</button>
+        <button mat-icon-button [matMenuTriggerFor]="profileMenu" [matTooltip]="'common.more' | translate" [disabled]="!selectedSim">
           <mat-icon>more_vert</mat-icon>
         </button>
         <mat-menu #profileMenu="matMenu">
-          <button mat-menu-item (click)="openClone()"><mat-icon>content_copy</mat-icon> Duplikat</button>
+          <button mat-menu-item (click)="openClone()"><mat-icon>content_copy</mat-icon> {{ 'common.duplicate' | translate }}</button>
           <mat-divider />
           <button mat-menu-item (click)="exportOpenApi()"
-                  matTooltip="Spec OpenAPI 3.0.3 — siap dipakai di Postman. Perilaku ikut di x-behavio.">
-            <mat-icon>download</mat-icon> Export OpenAPI
+                  [matTooltip]="'common.openapi_export_tip' | translate">
+            <mat-icon>download</mat-icon> {{ 'common.export_openapi' | translate }}
           </button>
           <button mat-menu-item (click)="openImportOpenApi()">
-            <mat-icon>upload_file</mat-icon> Impor OpenAPI
+            <mat-icon>upload_file</mat-icon> {{ 'common.import_openapi' | translate }}
           </button>
           <mat-divider />
-          <button mat-menu-item (click)="removeSelected()"><mat-icon color="warn">delete</mat-icon> Hapus</button>
+          <button mat-menu-item (click)="removeSelected()"><mat-icon color="warn">delete</mat-icon> {{ 'common.delete' | translate }}</button>
         </mat-menu>
       </div>
     </mat-card>
@@ -73,11 +73,11 @@
       <mat-card class="sim-card" appearance="outlined">
         <div class="sim-card__head">
           <mat-icon class="sim-card__head-icon">api</mat-icon>
-          <span>Endpoint Bank SNAP BI</span>
+          <span>{{ 'sim.endpoints_title' | translate }}</span>
           <span class="sim-bar__spacer"></span>
           <button mat-stroked-button (click)="epuOpen.set(!epuOpen())" class="sim-card__head-btn"
-                  matTooltip="Atur URL endpoint simulator dan daftarkan URL notifikasi (webhook) per partner">
-            <mat-icon>link</mat-icon> {{ epuOpen() ? 'Tutup' : 'URL & Webhook' }}
+                  [matTooltip]="'common.url_webhook_tip' | translate">
+            <mat-icon>link</mat-icon> {{ (epuOpen() ? 'common.close' : 'common.url_webhook') | translate }}
           </button>
         </div>
         <mat-divider />
@@ -96,23 +96,23 @@
               <mat-expansion-panel-header>
                 <mat-panel-title>
                   <span class="sim-ep__badge" [class.sim-ep__badge--post]="ep.method === 'POST'" [class.sim-ep__badge--del]="ep.method === 'DELETE'">{{ ep.method }}</span>
-                  <span class="sim-ep__label">{{ ep.label }}</span>
+                  <span class="sim-ep__label">{{ ep.label | translate }}</span>
                   @if (ep.operation) {
-                    <span class="sim-ep__scenario-tag">{{ activeScenarioFor(ep.key) }}</span>
+                    <span class="sim-ep__scenario-tag">{{ scName(activeScenarioFor(ep.key)) | translate }}</span>
                   }
                 </mat-panel-title>
-                <mat-panel-description>{{ ep.desc }}</mat-panel-description>
+                <mat-panel-description>{{ ep.desc | translate }}</mat-panel-description>
               </mat-expansion-panel-header>
 
               <div class="sim-ep__body">
                 @if (ep.operation) {
                   <div class="sim-ep__bar">
                     <mat-form-field appearance="outline" class="sim-ep__scenario">
-                      <mat-label>Skenario</mat-label>
+                      <mat-label>{{ 'common.scenario' | translate }}</mat-label>
                       <mat-select [value]="activeScenarioFor(ep.key)" (valueChange)="changeScenario(ep, $event)">
                         @for (sc of ep.scenarioList; track sc.name) {
                           <mat-option [value]="sc.name">
-                            <mat-icon class="opt-ico opt-ico--{{ sc.tone }}">{{ sc.icon }}</mat-icon> {{ sc.name }}
+                            <mat-icon class="opt-ico opt-ico--{{ sc.tone }}">{{ sc.icon }}</mat-icon> {{ scName(sc.name) | translate }}
                           </mat-option>
                         }
                       </mat-select>
@@ -120,12 +120,12 @@
 
                     @if (scenarioMeta(ep.scenarioList, activeScenarioFor(ep.key)); as meta) {
                       <div class="sim-ep__hint sim-ep__hint--{{ meta.tone }}">
-                        <mat-icon>{{ meta.icon }}</mat-icon><span>{{ meta.desc }}</span>
+                        <mat-icon>{{ meta.icon }}</mat-icon><span>{{ scDesc(meta.name) | translate }}</span>
                       </div>
                     }
 
                     <button mat-stroked-button (click)="editingEp() === ep.key ? closeEditor() : openEditor(ep)" [disabled]="editorLoading() && editingEp() !== ep.key">
-                      <mat-icon>edit</mat-icon> {{ editingEp() === ep.key ? 'Tutup Editor' : 'Edit Response' }}
+                      <mat-icon>edit</mat-icon> {{ (editingEp() === ep.key ? 'common.close_editor' : 'common.edit_response') | translate }}
                     </button>
 
                     @if (editorError() && editingEp() !== ep.key) {
@@ -136,14 +136,14 @@
                       <div class="sim-editor">
                         <div class="sim-editor__head">
                           <mat-icon>tune</mat-icon>
-                          <span>Definisi <b>{{ editorScenario() }}</b> &mdash; edit JSON, lalu Simpan</span>
+                          <span>{{ 'common.definition_of' | translate }} <b>{{ scName(editorScenario()) | translate }}</b> {{ 'common.edit_json_hint' | translate }}</span>
                         </div>
                         <textarea class="sim-editor__area" spellcheck="false" [value]="editorText()" (input)="onEditorInput($any($event.target).value)"></textarea>
                         @if (editorError()) { <div class="sim-ep__msg sim-ep__msg--err"><mat-icon>error</mat-icon> {{ editorError() }}</div> }
-                        @if (editorSaved()) { <div class="sim-ep__msg sim-ep__msg--ok"><mat-icon>check_circle</mat-icon> Tersimpan — response berikutnya memakai definisi ini.</div> }
+                        @if (editorSaved()) { <div class="sim-ep__msg sim-ep__msg--ok"><mat-icon>check_circle</mat-icon> {{ 'common.save_saved' | translate }}</div> }
                         <div class="sim-editor__actions">
-                          <button mat-flat-button color="primary" (click)="saveEditor(ep)"><mat-icon>save</mat-icon> Simpan</button>
-                          <button mat-stroked-button (click)="resetEditor(ep)"><mat-icon>restart_alt</mat-icon> Reset ke Preset</button>
+                          <button mat-flat-button color="primary" (click)="saveEditor(ep)"><mat-icon>save</mat-icon> {{ 'common.save' | translate }}</button>
+                          <button mat-stroked-button (click)="resetEditor(ep)"><mat-icon>restart_alt</mat-icon> {{ 'common.reset_preset' | translate }}</button>
                         </div>
                       </div>
                     }
@@ -154,7 +154,7 @@
                   <summary>curl</summary>
                   <div class="sim-curl__box">
                     <pre>{{ ep.curl }}</pre>
-                    <button mat-icon-button matTooltip="Salin" (click)="copy(ep.curl, ep.curlKey)">
+                    <button mat-icon-button [matTooltip]="'common.copy' | translate" (click)="copy(ep.curl, ep.curlKey)">
                       <mat-icon>{{ copiedKey() === ep.curlKey ? 'check' : 'content_copy' }}</mat-icon>
                     </button>
                   </div>
@@ -170,18 +170,18 @@
         <mat-card class="sim-card" appearance="outlined">
           <div class="sim-card__head">
             <mat-icon class="sim-card__head-icon">groups</mat-icon>
-            <span>Partner &amp; Rekening</span>
+            <span>{{ 'sim.partner_account' | translate }}</span>
             <span class="sim-bar__spacer"></span>
-            <button mat-icon-button matTooltip="Muat ulang" (click)="reloadBank()"><mat-icon>refresh</mat-icon></button>
+            <button mat-icon-button [matTooltip]="'common.reload' | translate" (click)="reloadBank()"><mat-icon>refresh</mat-icon></button>
           </div>
           <mat-divider />
           <div class="sim-card__body">
             @if (bankMsg()) { <div class="sim-msg sim-msg--info">{{ bankMsg() }}</div> }
 
-            <div class="sim-section-label"><mat-icon>badge</mat-icon> Partner</div>
+            <div class="sim-section-label"><mat-icon>badge</mat-icon> {{ 'sim.partner' | translate }}</div>
 
             @if (partnerList().length === 0) {
-              <div class="sim-empty-mini">Belum ada partner. Tambah di bawah.</div>
+              <div class="sim-empty-mini">{{ 'sim.no_partner' | translate }}</div>
             }
             @for (p of partnerList(); track p.id) {
               <div class="sim-row">
@@ -192,27 +192,27 @@
                     @if (p.hasPublicKey) { <span class="sim-tag">RSA</span> }
                   </div>
                 </div>
-                <button mat-icon-button matTooltip="Hapus" (click)="removePartner(p)"><mat-icon color="warn">delete_outline</mat-icon></button>
+                <button mat-icon-button [matTooltip]="'common.delete' | translate" (click)="removePartner(p)"><mat-icon color="warn">delete_outline</mat-icon></button>
               </div>
             }
 
             <div class="sim-add-row">
               <mat-form-field appearance="outline" class="sim-add-row__fld">
-                <mat-label>Partner ID</mat-label>
+                <mat-label>{{ 'sim.partner_id' | translate }}</mat-label>
                 <input matInput [value]="newPartnerId()" (input)="newPartnerId.set($any($event.target).value)" placeholder="PARTNER002" />
               </mat-form-field>
               <mat-form-field appearance="outline" class="sim-add-row__fld">
-                <mat-label>Secret (opsional)</mat-label>
+                <mat-label>{{ 'sim.secret_optional' | translate }}</mat-label>
                 <input matInput [value]="newPartnerSecret()" (input)="newPartnerSecret.set($any($event.target).value)" />
               </mat-form-field>
               <button mat-flat-button color="primary" (click)="addPartner()" [disabled]="!newPartnerId().trim()"><mat-icon>add</mat-icon></button>
             </div>
 
             <mat-divider />
-            <div class="sim-section-label"><mat-icon>account_balance</mat-icon> Rekening</div>
+            <div class="sim-section-label"><mat-icon>account_balance</mat-icon> {{ 'sim.accounts' | translate }}</div>
 
             @if (accountList().length === 0) {
-              <div class="sim-empty-mini">Belum ada rekening.</div>
+              <div class="sim-empty-mini">{{ 'sim.no_account' | translate }}</div>
             }
             @for (a of accountList(); track a.id) {
               <div class="sim-row sim-row--acc">
@@ -221,31 +221,31 @@
                   <span class="sim-row__sub">{{ a.holderName || '—' }} · {{ a.partnerLabel }}</span>
                 </div>
                 <mat-form-field appearance="outline" class="sim-row__bal">
-                  <mat-label>Saldo</mat-label>
+                  <mat-label>{{ 'sim.balance' | translate }}</mat-label>
                   <input matInput type="number" [value]="balanceEdits()[a.id] || a.balance" (input)="onBalanceEdit(a.id, $any($event.target).value)" />
                 </mat-form-field>
-                <button mat-icon-button matTooltip="Simpan" (click)="saveBalance(a)"><mat-icon>save</mat-icon></button>
-                <button mat-icon-button matTooltip="Hapus" (click)="removeAccount(a)"><mat-icon color="warn">delete_outline</mat-icon></button>
+                <button mat-icon-button [matTooltip]="'common.save' | translate" (click)="saveBalance(a)"><mat-icon>save</mat-icon></button>
+                <button mat-icon-button [matTooltip]="'common.delete' | translate" (click)="removeAccount(a)"><mat-icon color="warn">delete_outline</mat-icon></button>
               </div>
             }
 
             <div class="sim-add-row">
               <mat-form-field appearance="outline" class="sim-add-row__fld">
-                <mat-label>Partner</mat-label>
+                <mat-label>{{ 'sim.partner' | translate }}</mat-label>
                 <mat-select [value]="newAccPartnerRowId()" (valueChange)="newAccPartnerRowId.set($event)">
                   @for (p of partnerList(); track p.id) { <mat-option [value]="p.id">{{ p.partnerId }}</mat-option> }
                 </mat-select>
               </mat-form-field>
               <mat-form-field appearance="outline" class="sim-add-row__fld">
-                <mat-label>No. Rekening</mat-label>
+                <mat-label>{{ 'sim.account_no' | translate }}</mat-label>
                 <input matInput [value]="newAccNo()" (input)="newAccNo.set($any($event.target).value)" />
               </mat-form-field>
               <mat-form-field appearance="outline" class="sim-add-row__fld">
-                <mat-label>Nama</mat-label>
+                <mat-label>{{ 'sim.name' | translate }}</mat-label>
                 <input matInput [value]="newAccHolder()" (input)="newAccHolder.set($any($event.target).value)" />
               </mat-form-field>
               <mat-form-field appearance="outline" class="sim-add-row__fld sim-add-row__fld--sm">
-                <mat-label>Saldo</mat-label>
+                <mat-label>{{ 'sim.balance' | translate }}</mat-label>
                 <input matInput type="number" [value]="newAccBalance()" (input)="newAccBalance.set($any($event.target).value)" />
               </mat-form-field>
               <button mat-flat-button color="primary" (click)="addAccount()" [disabled]="!newAccNo().trim() || !newAccPartnerRowId()"><mat-icon>add</mat-icon></button>
@@ -256,16 +256,16 @@
         <mat-card class="sim-card" appearance="outlined">
           <div class="sim-card__head">
             <mat-icon class="sim-card__head-icon">account_balance_wallet</mat-icon>
-            <span>Virtual Account</span>
+            <span>{{ 'sim.va_title' | translate }}</span>
             @if (vaList().length > 0) { <span class="sim-count">{{ vaList().length }}</span> }
             <span class="sim-bar__spacer"></span>
-            <button mat-icon-button matTooltip="Muat ulang" (click)="reloadVa()"><mat-icon>refresh</mat-icon></button>
+            <button mat-icon-button [matTooltip]="'common.reload' | translate" (click)="reloadVa()"><mat-icon>refresh</mat-icon></button>
           </div>
           <mat-divider />
           <div class="sim-card__body">
             @if (vaMsg()) { <div class="sim-msg sim-msg--info">{{ vaMsg() }}</div> }
             @if (!vaLoading() && vaList().length === 0) {
-              <div class="sim-empty-mini">Belum ada VA. Gunakan endpoint <b>Create VA</b> di panel kiri.</div>
+              <div class="sim-empty-mini" [innerHTML]="'sim.va_empty' | translate"></div>
             }
             @for (va of vaList(); track va.virtualAccountNo) {
               <div class="sim-row sim-row--va">
@@ -277,14 +277,14 @@
                 <div class="sim-row__actions">
                   @if (va.status === 'ACTIVE') {
                     <button mat-flat-button color="primary"
-                      matTooltip="Simulasikan pembayaran — Payment Notification dikirim otomatis"
+                      [matTooltip]="'sim.va_pay_tip' | translate"
                       (click)="payVa(va)">
-                      <mat-icon>payments</mat-icon> Tandai Dibayar
+                      <mat-icon>payments</mat-icon> {{ 'common.mark_paid' | translate }}
                     </button>
                   }
-                  @if (va.status === 'PAID') { <span class="sim-row__paid">Sudah dibayar.</span> }
+                  @if (va.status === 'PAID') { <span class="sim-row__paid">{{ 'sim.va_paid' | translate }}</span> }
                   <button mat-icon-button
-                    matTooltip="Kirim ulang notifikasi dengan status saat ini (tidak mengubah data)"
+                    [matTooltip]="'common.resend_notify' | translate"
                     (click)="resendVaNotification(va)">
                     <mat-icon>send</mat-icon>
                   </button>
@@ -300,13 +300,13 @@
     <mat-card class="sim-card sim-live" appearance="outlined">
       <div class="sim-card__head">
         <mat-icon class="sim-card__head-icon">bolt</mat-icon>
-        <span>Live View</span>
+        <span>{{ 'common.live_view' | translate }}</span>
         @if (liveEvents().length > 0) { <span class="sim-count sim-count--live">{{ liveEvents().length }}</span> }
         <span class="sim-bar__spacer"></span>
         @if (liveEvents().length > 0) {
-          <button mat-icon-button matTooltip="Bersihkan" (click)="clearLive()"><mat-icon>clear_all</mat-icon></button>
+          <button mat-icon-button [matTooltip]="'common.clear' | translate" (click)="clearLive()"><mat-icon>clear_all</mat-icon></button>
         }
-        <button mat-icon-button [matTooltip]="liveOpen() ? 'Sembunyikan' : 'Tampilkan'" (click)="toggleLive()">
+        <button mat-icon-button [matTooltip]="(liveOpen() ? 'common.hide' : 'common.show') | translate" (click)="toggleLive()">
           <mat-icon>{{ liveOpen() ? 'expand_less' : 'expand_more' }}</mat-icon>
         </button>
       </div>
@@ -316,7 +316,7 @@
           @if (liveEvents().length === 0) {
             <div class="sim-live__empty">
               <mat-icon>sensors</mat-icon>
-              <span>Menunggu request… kirim ke port <b>:{{ selectedSim?.port }}</b> lalu muncul di sini.</span>
+              <span [innerHTML]="'common.waiting_request' | translate: { port: selectedSim?.port }"></span>
             </div>
           }
           @for (e of liveEvents(); track $index) {
@@ -333,22 +333,22 @@
                 <div class="sim-live-detail">
                   <div class="sim-live-detail__block">
                     <div class="sim-live-detail__label">
-                      <mat-icon>north_east</mat-icon> Request Header
-                      <button mat-icon-button matTooltip="Salin" (click)="copy(headerLines(e.requestHeaders), 'lh' + $index)"><mat-icon>{{ copiedKey() === 'lh' + $index ? 'check' : 'content_copy' }}</mat-icon></button>
+                      <mat-icon>north_east</mat-icon> {{ 'common.request_header' | translate }}
+                      <button mat-icon-button [matTooltip]="'common.copy' | translate" (click)="copy(headerLines(e.requestHeaders), 'lh' + $index)"><mat-icon>{{ copiedKey() === 'lh' + $index ? 'check' : 'content_copy' }}</mat-icon></button>
                     </div>
                     <pre>{{ headerLines(e.requestHeaders) }}</pre>
                   </div>
                   <div class="sim-live-detail__block">
                     <div class="sim-live-detail__label">
-                      <mat-icon>north_east</mat-icon> Request Body
-                      <button mat-icon-button matTooltip="Salin" (click)="copy(e.requestBody, 'lq' + $index)"><mat-icon>{{ copiedKey() === 'lq' + $index ? 'check' : 'content_copy' }}</mat-icon></button>
+                      <mat-icon>north_east</mat-icon> {{ 'common.request_body' | translate }}
+                      <button mat-icon-button [matTooltip]="'common.copy' | translate" (click)="copy(e.requestBody, 'lq' + $index)"><mat-icon>{{ copiedKey() === 'lq' + $index ? 'check' : 'content_copy' }}</mat-icon></button>
                     </div>
                     <pre>{{ prettyJson(e.requestBody) }}</pre>
                   </div>
                   <div class="sim-live-detail__block">
                     <div class="sim-live-detail__label">
-                      <mat-icon>south_west</mat-icon> Response Body
-                      <button mat-icon-button matTooltip="Salin" (click)="copy(e.responseBody, 'ls' + $index)"><mat-icon>{{ copiedKey() === 'ls' + $index ? 'check' : 'content_copy' }}</mat-icon></button>
+                      <mat-icon>south_west</mat-icon> {{ 'common.response_body' | translate }}
+                      <button mat-icon-button [matTooltip]="'common.copy' | translate" (click)="copy(e.responseBody, 'ls' + $index)"><mat-icon>{{ copiedKey() === 'ls' + $index ? 'check' : 'content_copy' }}</mat-icon></button>
                     </div>
                     <pre>{{ prettyJson(e.responseBody) }}</pre>
                   </div>
@@ -364,7 +364,7 @@
     <mat-card class="sim-card sim-legend" appearance="outlined">
       <div class="sim-card__head">
         <mat-icon class="sim-card__head-icon">menu_book</mat-icon>
-        <span>Panduan Skenario Transfer</span>
+        <span>{{ 'sim.legend_title' | translate }}</span>
       </div>
       <mat-divider />
       <div class="sim-legend__grid">
@@ -372,8 +372,8 @@
           <div class="sim-legend__item">
             <mat-icon class="opt-ico opt-ico--{{ sc.tone }}">{{ sc.icon }}</mat-icon>
             <div>
-              <div class="sim-legend__name">{{ sc.name }}</div>
-              <div class="sim-legend__desc">{{ sc.desc }}</div>
+              <div class="sim-legend__name">{{ scName(sc.name) | translate }}</div>
+              <div class="sim-legend__desc">{{ scDesc(sc.name) | translate }}</div>
             </div>
           </div>
         }
